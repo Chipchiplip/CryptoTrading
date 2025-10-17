@@ -1,0 +1,6 @@
+@CryptoTrading_HostAddress = http://localhost:5299
+
+GET {{CryptoTrading_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
