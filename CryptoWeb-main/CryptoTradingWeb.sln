@@ -1,0 +1,43 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.14.36414.22 d17.14
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CryptoTrading.API", "Backend\CryptoTrading.API\CryptoTrading.API\CryptoTrading.API.csproj", "{2D63FEF1-6E46-4D36-AD17-99994866E226}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CryptoTrading.Core", "Backend\CryptoTrading.Core\CryptoTrading.Core\CryptoTrading.Core.csproj", "{C158EE02-B4E6-4B01-AD80-8758C361CFB7}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CryptoTrading.Infrastructure", "Backend\CryptoTrading.Infrastructure\CryptoTrading.Infrastructure\CryptoTrading.Infrastructure.csproj", "{A1908586-22F5-4CA7-A93D-04416B7AAA12}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CryptoTrading.Services", "Backend\CryptoTrading.Services\CryptoTrading.Services\CryptoTrading.Services.csproj", "{9B2807DE-6258-4599-AC30-54821B977DC9}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{2D63FEF1-6E46-4D36-AD17-99994866E226}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{2D63FEF1-6E46-4D36-AD17-99994866E226}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{2D63FEF1-6E46-4D36-AD17-99994866E226}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{2D63FEF1-6E46-4D36-AD17-99994866E226}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C158EE02-B4E6-4B01-AD80-8758C361CFB7}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C158EE02-B4E6-4B01-AD80-8758C361CFB7}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C158EE02-B4E6-4B01-AD80-8758C361CFB7}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C158EE02-B4E6-4B01-AD80-8758C361CFB7}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A1908586-22F5-4CA7-A93D-04416B7AAA12}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A1908586-22F5-4CA7-A93D-04416B7AAA12}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A1908586-22F5-4CA7-A93D-04416B7AAA12}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A1908586-22F5-4CA7-A93D-04416B7AAA12}.Release|Any CPU.Build.0 = Release|Any CPU
+		{9B2807DE-6258-4599-AC30-54821B977DC9}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{9B2807DE-6258-4599-AC30-54821B977DC9}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{9B2807DE-6258-4599-AC30-54821B977DC9}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{9B2807DE-6258-4599-AC30-54821B977DC9}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {34972CF9-1F88-4261-9E46-1D3A52FADFCE}
+	EndGlobalSection
+EndGlobal
