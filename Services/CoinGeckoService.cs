@@ -17,7 +17,7 @@ namespace CryptoTrading.Services
         private readonly HttpClient _httpClient;
         private readonly ICryptoCacheService _cacheService;
         private readonly ILogger<CoinGeckoService> _logger;
-        private readonly string _apiKey;
+        private readonly string? _apiKey;
 
         public CoinGeckoService(HttpClient httpClient, ICryptoCacheService cacheService, ILogger<CoinGeckoService> logger, IConfiguration configuration)
         {

@@ -7,6 +7,15 @@ namespace CryptoTrading.Controllers;
 public class TradingController : ControllerBase
 {
     /// <summary>
+    /// Get trading info
+    /// </summary>
+    [HttpGet]
+    public async Task<IActionResult> GetTradingInfo()
+    {
+        return Ok(new { message = "Trading API - Ready for implementation", endpoints = new[] { "balances", "orders", "history" } });
+    }
+
+    /// <summary>
     /// Get user balances
     /// </summary>
     [HttpGet("balances")]

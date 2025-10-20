@@ -7,6 +7,15 @@ namespace CryptoTrading.Controllers;
 public class PortfolioController : ControllerBase
 {
     /// <summary>
+    /// Get portfolio info
+    /// </summary>
+    [HttpGet]
+    public async Task<IActionResult> GetPortfolioInfo()
+    {
+        return Ok(new { message = "Portfolio API - Ready for implementation", endpoints = new[] { "watchlists", "assets", "performance" } });
+    }
+
+    /// <summary>
     /// Get user watchlists
     /// </summary>
     [HttpGet("watchlists")]

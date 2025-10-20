@@ -7,6 +7,15 @@ namespace CryptoTrading.Controllers;
 public class PaymentController : ControllerBase
 {
     /// <summary>
+    /// Get payment info
+    /// </summary>
+    [HttpGet]
+    public async Task<IActionResult> GetPaymentInfo()
+    {
+        return Ok(new { message = "Payment API - Ready for implementation", endpoints = new[] { "plans", "transactions", "deposits", "withdrawals" } });
+    }
+
+    /// <summary>
     /// Get subscription plans
     /// </summary>
     [HttpGet("plans")]
