@@ -208,7 +208,7 @@ public class AuthController : ControllerBase
     /// </summary>
     [Authorize]
     [HttpPost("verify-2fa")]
-    public async Task<IActionResult> Verify2FA([FromBody] TwoFactorDto twoFactorDto)
+    public async Task<IActionResult> Verify2FA([FromBody] VerifyTwoFactorDto twoFactorDto)
     {
         try
         {

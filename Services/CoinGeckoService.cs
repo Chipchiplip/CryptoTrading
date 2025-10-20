@@ -1,0 +1,220 @@
+using System.Net.Http.Json;
+using System.Text.Json;
+using System.Text.Json.Serialization;
+using CryptoTrading.Models;
+
+namespace CryptoTrading.Services
+{
+    public interface ICoinGeckoService
+    {
+        Task<List<Crypto>> GetMarketDataAsync();
+        Task<List<PriceHistory>> GetPriceHistoryAsync(string coinId, int days = 7);
+        Task<MarketStats> GetMarketStatsAsync();
+    }
+
+    public class CoinGeckoService : ICoinGeckoService
+    {
+        private readonly HttpClient _httpClient;
+        private readonly ICryptoCacheService _cacheService;
+        private readonly ILogger<CoinGeckoService> _logger;
+        private readonly string _apiKey;
+
+        public CoinGeckoService(HttpClient httpClient, ICryptoCacheService cacheService, ILogger<CoinGeckoService> logger, IConfiguration configuration)
+        {
+            _httpClient = httpClient;
+            _cacheService = cacheService;
+            _logger = logger;
+            _apiKey = configuration["CoinGecko:ApiKey"];
+        }
+
+        public async Task<List<Crypto>> GetMarketDataAsync()
+        {
+            // Try to get from cache first
+            if (_cacheService.TryGetCryptoData(out var cachedData))
+            {
+                _logger.LogInformation($"Using cached crypto data ({cachedData?.Count ?? 0} coins)");
+                return cachedData ?? new List<Crypto>();
+            }
+
+            try
+            {
+                _logger.LogInformation("Fetching market data from CoinGecko API...");
+                
+                // Add small delay to respect rate limits
+                await Task.Delay(1000);
+                
+                var url = "coins/markets?vs_currency=usd&order=market_cap_desc&per_page=100&page=1&sparkline=false&price_change_percentage=1h,24h,7d";
+                if (!string.IsNullOrEmpty(_apiKey))
+                {
+                    url += $"&x_cg_demo_api_key={_apiKey}";
+                }
+                
+                var response = await _httpClient.GetFromJsonAsync<List<Crypto>>(url);
+                
+                _logger.LogInformation($"Received {response?.Count ?? 0} coins from API");
+                
+                if (response != null && response.Count > 0)
+                {
+                    // Cache the successful response
+                    _cacheService.SetCryptoData(response);
+                    return response;
+                }
+                
+                return new List<Crypto>();
+            }
+            catch (HttpRequestException httpEx) when (httpEx.Message.Contains("403") || httpEx.Message.Contains("429"))
+            {
+                _logger.LogWarning("Rate limited by CoinGecko API. Using mock data.");
+                var mockData = GetMockCryptoData();
+                _cacheService.SetCryptoData(mockData);
+                return mockData;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error fetching market data");
+                return new List<Crypto>();
+            }
+        }
+
+        private List<Crypto> GetMockCryptoData()
+        {
+            var random = new Random();
+            return new List<Crypto>
+            {
+                new Crypto
+                {
+                    Id = "bitcoin",
+                    Symbol = "btc",
+                    Name = "Bitcoin",
+                    CurrentPrice = 107000 + random.Next(-2000, 2000),
+                    MarketCap = 2100000000000,
+                    PriceChangePercentage1h = (decimal)(random.NextDouble() * 2 - 1), // -1% to +1%
+                    PriceChangePercentage24h = (decimal)(random.NextDouble() * 6 - 3), // -3% to +3%
+                    PriceChangePercentage7d = (decimal)(random.NextDouble() * 20 - 10), // -10% to +10%
+                    TotalVolume = 15000000000,
+                    CirculatingSupply = 19000000,
+                    LastUpdated = DateTime.UtcNow
+                },
+                new Crypto
+                {
+                    Id = "ethereum",
+                    Symbol = "eth",
+                    Name = "Ethereum",
+                    CurrentPrice = 3900 + random.Next(-200, 200),
+                    MarketCap = 470000000000,
+                    PriceChangePercentage1h = (decimal)(random.NextDouble() * 2 - 1),
+                    PriceChangePercentage24h = (decimal)(random.NextDouble() * 6 - 3),
+                    PriceChangePercentage7d = (decimal)(random.NextDouble() * 20 - 10),
+                    TotalVolume = 8000000000,
+                    CirculatingSupply = 120000000,
+                    LastUpdated = DateTime.UtcNow
+                },
+                new Crypto
+                {
+                    Id = "binancecoin",
+                    Symbol = "bnb",
+                    Name = "BNB",
+                    CurrentPrice = 650 + random.Next(-50, 50),
+                    MarketCap = 100000000000,
+                    PriceChangePercentage1h = (decimal)(random.NextDouble() * 2 - 1),
+                    PriceChangePercentage24h = (decimal)(random.NextDouble() * 6 - 3),
+                    PriceChangePercentage7d = (decimal)(random.NextDouble() * 20 - 10),
+                    TotalVolume = 2000000000,
+                    CirculatingSupply = 150000000,
+                    LastUpdated = DateTime.UtcNow
+                },
+                new Crypto
+                {
+                    Id = "ripple",
+                    Symbol = "xrp",
+                    Name = "XRP",
+                    CurrentPrice = 2.3m + (decimal)(random.NextDouble() * 0.4 - 0.2),
+                    MarketCap = 120000000000,
+                    PriceChangePercentage1h = (decimal)(random.NextDouble() * 2 - 1),
+                    PriceChangePercentage24h = (decimal)(random.NextDouble() * 6 - 3),
+                    PriceChangePercentage7d = (decimal)(random.NextDouble() * 20 - 10),
+                    TotalVolume = 5000000000,
+                    CirculatingSupply = 53000000000,
+                    LastUpdated = DateTime.UtcNow
+                }, 
+                new Crypto
+                {
+                    Id = "solana",
+                    Symbol = "sol",
+                    Name = "Solana",
+                    CurrentPrice = 180 + random.Next(-20, 20),
+                    MarketCap = 85000000000,
+                    PriceChangePercentage1h = (decimal)(random.NextDouble() * 2 - 1),
+                    PriceChangePercentage24h = (decimal)(random.NextDouble() * 6 - 3),
+                    PriceChangePercentage7d = (decimal)(random.NextDouble() * 20 - 10),
+                    TotalVolume = 3000000000,
+                    CirculatingSupply = 475000000,
+                    LastUpdated = DateTime.UtcNow
+                }
+            };
+        }
+
+        public async Task<List<PriceHistory>> GetPriceHistoryAsync(string coinId, int days = 7)
+        {
+            try
+            {
+                var response = await _httpClient.GetFromJsonAsync<dynamic>(
+                    $"coins/{coinId}/market_chart?vs_currency=usd&days={days}");
+                
+                var priceHistory = new List<PriceHistory>();
+                if (response?.prices != null)
+                {
+                    foreach (var price in response.prices)
+                    {
+                        priceHistory.Add(new PriceHistory
+                        {
+                            CoinId = coinId,
+                            Price = (decimal)price[1],
+                            Timestamp = DateTimeOffset.FromUnixTimeMilliseconds((long)price[0]).DateTime
+                        });
+                    }
+                }
+                return priceHistory;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error fetching price history for {CoinId}", coinId);
+                return new List<PriceHistory>();
+            }
+        }
+
+        public async Task<MarketStats> GetMarketStatsAsync()
+        {
+            try
+            {
+                _logger.LogInformation("Fetching market stats from CoinGecko API...");
+                var url = "global";
+                if (!string.IsNullOrEmpty(_apiKey))
+                {
+                    url += $"?x_cg_demo_api_key={_apiKey}";
+                }
+                var response = await _httpClient.GetFromJsonAsync<GlobalApiResponse>(url);
+                
+                _logger.LogInformation($"Market stats response received: {response != null}");
+                
+                var stats = new MarketStats();
+                if (response?.Data != null)
+                {
+                    var data = response.Data;
+                    stats.TotalMarketCap = data.TotalMarketCap?.GetValueOrDefault("usd", 0) ?? 0;
+                    stats.TotalVolume = data.TotalVolume?.GetValueOrDefault("usd", 0) ?? 0;
+                    stats.ActiveCryptocurrencies = data.ActiveCryptocurrencies;
+                    stats.MarketCapChangePercentage24h = data.MarketCapChangePercentage24h;
+                    
+                    _logger.LogInformation($"Market cap: {stats.TotalMarketCap}, Volume: {stats.TotalVolume}");
+                }
+                return stats;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error fetching market stats");
+                return new MarketStats();
+            }
+        }
+    }
+}

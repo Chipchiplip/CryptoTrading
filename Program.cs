@@ -88,7 +88,8 @@ builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowFrontend", policy =>
     {
-        policy.WithOrigins("http://localhost:3000", "http://localhost:5173", "http://127.0.0.1:5500", "http://localhost:8080")
+        policy.WithOrigins("http://localhost:3000", "http://localhost:5173", "http://127.0.0.1:5500", "http://localhost:8080", "file://")
+              .SetIsOriginAllowed(origin => true)
               .AllowAnyHeader()
               .AllowAnyMethod()
               .AllowCredentials();
@@ -99,8 +100,22 @@ builder.Services.AddCors(options =>
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
 builder.Services.AddScoped<IEmailSender, EmailService>();
+builder.Services.AddScoped<IEmailService, EmailService>();
 builder.Services.AddScoped<IDateTimeProvider, DateTimeProvider>();
 builder.Services.AddScoped<ICurrentUser, CurrentUserService>();
+builder.Services.AddScoped<ILoggingService, LoggingService>();
+
+// Crypto Services
+builder.Services.AddHttpClient<ICoinGeckoService, CoinGeckoService>(client =>
+{
+    client.BaseAddress = new Uri("https://api.coingecko.com/api/v3/");
+    client.DefaultRequestHeaders.Add("User-Agent", "CryptoTrading/1.0");
+});
+builder.Services.AddScoped<ICryptoCacheService, CryptoCacheService>();
+builder.Services.AddMemoryCache();
+
+// SignalR
+builder.Services.AddSignalR();
 
 // Business Services
 builder.Services.AddScoped<IAuthService, AuthService>();
@@ -118,11 +133,17 @@ if (app.Environment.IsDevelopment())
     });
 }
 
+// Use Error Handling Middleware
+app.UseMiddleware<CryptoTrading.Middleware.ErrorHandlingMiddleware>();
+
 app.UseCors("AllowFrontend");
 app.UseHttpsRedirection();
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
+
+// SignalR Hub
+app.MapHub<CryptoTrading.Hubs.MarketHub>("/marketHub");
 
 // Root endpoint
 app.MapGet("/", () => Results.Ok(new { 
