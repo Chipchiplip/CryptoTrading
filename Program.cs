@@ -51,9 +51,10 @@ builder.Services.AddSwaggerGen(c =>
     });
 });
 
-// Database
+// Database (MySQL)
+var mysqlConnectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
-    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
+    options.UseMySql(mysqlConnectionString, new MySqlServerVersion(new Version(8, 0, 21))));
 
 // JWT Settings
 builder.Services.Configure<JwtSettings>(builder.Configuration.GetSection("JwtSettings"));

@@ -332,16 +332,22 @@ namespace CryptoTrading.Services.Auth
 
         private async Task SendEmailConfirmationAsync(string email, string token)
         {
-            var subject = "Confirm your email";
-            var body = $"Please confirm your email by clicking this link: [Confirmation Link with token: {token}]";
-            await _emailSender.SendEmailAsync(email, subject, body);
+            // Temporarily disabled for testing
+            _logger.LogInformation("Email confirmation would be sent to {Email} with token: {Token}", email, token);
+            // var subject = "Confirm your email";
+            // var body = $"Please confirm your email by clicking this link: [Confirmation Link with token: {token}]";
+            // await _emailSender.SendEmailAsync(email, subject, body);
+            await Task.CompletedTask;
         }
 
         private async Task SendPasswordResetEmailAsync(string email, string token)
         {
-            var subject = "Reset your password";
-            var body = $"Reset your password by clicking this link: [Reset Link with token: {token}]";
-            await _emailSender.SendEmailAsync(email, subject, body);
+            // Temporarily disabled for testing
+            _logger.LogInformation("Password reset email would be sent to {Email} with token: {Token}", email, token);
+            // var subject = "Reset your password";
+            // var body = $"Reset your password by clicking this link: [Reset Link with token: {token}]";
+            // await _emailSender.SendEmailAsync(email, subject, body);
+            await Task.CompletedTask;
         }
 
         public async Task TestConfirmEmailAsync(string email)

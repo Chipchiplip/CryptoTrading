@@ -18,17 +18,19 @@ namespace CryptoTrading.Migrations
 #pragma warning disable 612, 618
             modelBuilder
                 .HasAnnotation("ProductVersion", "9.0.10")
-                .HasAnnotation("Relational:MaxIdentifierLength", 128);
-
-            SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
+                .HasAnnotation("Relational:MaxIdentifierLength", 128)
+                .HasAnnotation("SqlServer:IdentityIncrement", 1)
+                .HasAnnotation("SqlServer:IdentitySeed", 1L)
+                .HasAnnotation("SqlServer:ValueGenerationStrategy", SqlServerValueGenerationStrategy.IdentityColumn);
 
             modelBuilder.Entity("CryptoTrading.Models.User", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+                        .HasColumnType("int")
+                        .HasAnnotation("SqlServer:IdentityIncrement", 1)
+                        .HasAnnotation("SqlServer:IdentitySeed", 1L)
+                        .HasAnnotation("SqlServer:ValueGenerationStrategy", SqlServerValueGenerationStrategy.IdentityColumn);
 
                     b.Property<DateTime>("CreatedAt")
                         .ValueGeneratedOnAdd()
@@ -45,7 +47,7 @@ namespace CryptoTrading.Migrations
                     b.Property<DateTime?>("EmailConfirmationTokenExpiry")
                         .HasColumnType("datetime2");
 
-                    b.Property<bool>("EmailConfirmed")
+                    b.Property<ulong>("EmailConfirmed")
                         .HasColumnType("bit");
 
                     b.Property<string>("FullName")
@@ -70,7 +72,7 @@ namespace CryptoTrading.Migrations
                     b.Property<DateTime?>("RefreshTokenExpiryTime")
                         .HasColumnType("datetime2");
 
-                    b.Property<bool>("TwoFactorEnabled")
+                    b.Property<ulong>("TwoFactorEnabled")
                         .HasColumnType("bit");
 
                     b.Property<string>("TwoFactorSecret")
@@ -81,7 +83,7 @@ namespace CryptoTrading.Migrations
                     b.HasIndex("Email")
                         .IsUnique();
 
-                    b.ToTable("Users");
+                    b.ToTable("Users", (string)null);
                 });
 #pragma warning restore 612, 618
         }
