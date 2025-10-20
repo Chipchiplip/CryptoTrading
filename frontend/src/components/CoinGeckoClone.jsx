@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import useMarketData from '../hooks/useMarketData';
 import SparklineChart from './SparklineChart';
 import './CoinGeckoClone.css';
+import LoginModal from './LoginModal';
 
 const CoinGeckoClone = () => {
   const { coins, marketStats } = useMarketData();
@@ -12,6 +13,7 @@ const CoinGeckoClone = () => {
   const [darkMode, setDarkMode] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [priceHistory, setPriceHistory] = useState({});
+  const [showAuth, setShowAuth] = useState(false);
 
   // Debug logging
   console.log("CoinGeckoClone - coins:", coins);
@@ -132,8 +134,7 @@ const CoinGeckoClone = () => {
                 >
                   {darkMode ? '☀️' : '🌙'}
                 </button>
-                <button className="btn-login">Login</button>
-                <button className="btn-signup">Sign up</button>
+                <button className="btn-login" onClick={() => setShowAuth(true)}>Login</button>
               </div>
             </div>
           </div>
@@ -337,6 +338,7 @@ const CoinGeckoClone = () => {
           </div>
         </div>
       </main>
+      <LoginModal open={showAuth} onClose={() => setShowAuth(false)} onSuccess={() => { setShowAuth(false); window.location.reload(); }} />
     </div>
   );
 };

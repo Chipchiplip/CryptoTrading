@@ -16,7 +16,7 @@ export default function useMarketData() {
     // Initial data load
     console.log("Fetching crypto data from backend...");
     console.log("useEffect called, setting up data fetch...");
-    axios.get("http://localhost:5000/api/market/cryptocurrencies")
+    axios.get("/api/market/cryptocurrencies")
       .then(res => {
         console.log("Received crypto data:", res.data);
         console.log("Response status:", res.status);
@@ -60,14 +60,14 @@ export default function useMarketData() {
       });
 
     // Load market stats
-    axios.get("http://localhost:5000/api/market/stats")
+    axios.get("/api/market/stats")
       .then(res => {
         setMarketStats(prev => ({
           ...prev,
           totalMarketCap: res.data.total_market_cap || prev.totalMarketCap,
           totalVolume: res.data.total_volume || prev.totalVolume,
-          btcDominance: 57.3,
-          ethDominance: 12.5
+          btcDominance: res.data.btc_dominance ?? prev.btcDominance,
+          ethDominance: res.data.eth_dominance ?? prev.ethDominance
         }));
       })
       .catch(err => {
@@ -77,7 +77,7 @@ export default function useMarketData() {
 
     // Setup SignalR connection
     const newConnection = new signalR.HubConnectionBuilder()
-      .withUrl("http://localhost:5000/marketHub")
+      .withUrl("/marketHub")
       .withAutomaticReconnect()
       .build();
 

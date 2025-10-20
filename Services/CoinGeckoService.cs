@@ -205,6 +205,18 @@ namespace CryptoTrading.Services
                     stats.TotalVolume = data.TotalVolume?.GetValueOrDefault("usd", 0) ?? 0;
                     stats.ActiveCryptocurrencies = data.ActiveCryptocurrencies;
                     stats.MarketCapChangePercentage24h = data.MarketCapChangePercentage24h;
+                    // Map dominance
+                    if (data.MarketCapPercentage != null)
+                    {
+                        if (data.MarketCapPercentage.TryGetValue("btc", out var btc))
+                        {
+                            stats.BtcDominance = btc;
+                        }
+                        if (data.MarketCapPercentage.TryGetValue("eth", out var eth))
+                        {
+                            stats.EthDominance = eth;
+                        }
+                    }
                     
                     _logger.LogInformation($"Market cap: {stats.TotalMarketCap}, Volume: {stats.TotalVolume}");
                 }

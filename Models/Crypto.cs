@@ -61,6 +61,13 @@ namespace CryptoTrading.Models
         
         [JsonPropertyName("market_cap_change_percentage_24h_usd")]
         public decimal MarketCapChangePercentage24h { get; set; }
+
+        // Added: Dominance metrics from CoinGecko global endpoint
+        [JsonPropertyName("btc_dominance")]
+        public decimal BtcDominance { get; set; }
+
+        [JsonPropertyName("eth_dominance")]
+        public decimal EthDominance { get; set; }
     }
 
     public class GlobalApiResponse
@@ -82,5 +89,9 @@ namespace CryptoTrading.Models
         
         [JsonPropertyName("market_cap_change_percentage_24h_usd")]
         public decimal MarketCapChangePercentage24h { get; set; }
+
+        // Added: market cap percentage by coin (e.g., { "btc": 57.3, "eth": 12.5 })
+        [JsonPropertyName("market_cap_percentage")]
+        public Dictionary<string, decimal>? MarketCapPercentage { get; set; }
     }
 }
