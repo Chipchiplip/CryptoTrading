@@ -1,0 +1,584 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Auth - Email Verification</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            max-width: 1200px;
+            width: 100%;
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 28px;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            opacity: 0.9;
+            font-size: 14px;
+        }
+
+        .content {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0;
+        }
+
+        .section {
+            padding: 30px;
+        }
+
+        .section:first-child {
+            border-right: 2px solid #f0f0f0;
+        }
+
+        .section h2 {
+            color: #333;
+            margin-bottom: 20px;
+            font-size: 22px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            color: #555;
+            font-weight: 500;
+            margin-bottom: 8px;
+            font-size: 14px;
+        }
+
+        input {
+            width: 100%;
+            padding: 12px 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 14px;
+            transition: all 0.3s;
+        }
+
+        input:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        button {
+            width: 100%;
+            padding: 14px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        button:active {
+            transform: translateY(0);
+        }
+
+        button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .response {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 8px;
+            font-size: 13px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .response.success {
+            background: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+        }
+
+        .response.error {
+            background: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+        }
+
+        .response.info {
+            background: #d1ecf1;
+            border: 1px solid #bee5eb;
+            color: #0c5460;
+        }
+
+        .response pre {
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            margin-top: 10px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+        }
+
+        .status-indicator {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+
+        .status-indicator.success {
+            background: #28a745;
+            box-shadow: 0 0 10px #28a745;
+        }
+
+        .status-indicator.error {
+            background: #dc3545;
+            box-shadow: 0 0 10px #dc3545;
+        }
+
+        .status-indicator.pending {
+            background: #ffc107;
+            box-shadow: 0 0 10px #ffc107;
+            animation: pulse 1.5s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .token-display {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 15px;
+            border-left: 4px solid #667eea;
+        }
+
+        .token-display h4 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 14px;
+        }
+
+        .token-display code {
+            display: block;
+            word-break: break-all;
+            font-size: 11px;
+            color: #666;
+            background: white;
+            padding: 10px;
+            border-radius: 4px;
+            margin-top: 8px;
+        }
+
+        .info-box {
+            background: #fff3cd;
+            border: 1px solid #ffeaa7;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            font-size: 13px;
+            color: #856404;
+        }
+
+        .info-box strong {
+            display: block;
+            margin-bottom: 8px;
+            color: #533f03;
+        }
+
+        .test-status {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: white;
+            padding: 15px 20px;
+            border-radius: 10px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            z-index: 1000;
+        }
+
+        .test-status .status-text {
+            font-size: 14px;
+            font-weight: 600;
+            color: #333;
+        }
+
+        .api-url {
+            background: #f8f9fa;
+            padding: 10px;
+            border-radius: 5px;
+            font-family: monospace;
+            font-size: 12px;
+            margin-bottom: 20px;
+            border-left: 3px solid #667eea;
+        }
+
+        @media (max-width: 768px) {
+            .content {
+                grid-template-columns: 1fr;
+            }
+
+            .section:first-child {
+                border-right: none;
+                border-bottom: 2px solid #f0f0f0;
+            }
+        }
+
+        .email-status {
+            margin-top: 15px;
+            padding: 12px;
+            border-radius: 6px;
+            font-size: 13px;
+        }
+
+        .email-confirmed {
+            background: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+        }
+
+        .email-pending {
+            background: #fff3cd;
+            border: 1px solid #ffeaa7;
+            color: #856404;
+        }
+    </style>
+</head>
+<body>
+    <div class="test-status" id="apiStatus">
+        <span class="status-indicator pending"></span>
+        <span class="status-text">Checking API...</span>
+    </div>
+
+    <div class="container">
+        <div class="header">
+            <h1>🔐 Auth Testing - Email Verification</h1>
+            <p>Test Registration, Login & Email Confirmation Flow</p>
+        </div>
+
+        <div class="api-url">
+            <strong>API Endpoint:</strong> <span id="apiEndpoint">http://localhost:5000</span>
+        </div>
+
+        <div class="content">
+            <!-- REGISTRATION SECTION -->
+            <div class="section">
+                <h2>
+                    <span>📝</span> Registration
+                </h2>
+
+                <div class="info-box">
+                    <strong>ℹ️ Email Verification Status:</strong>
+                    Current: Auto-confirmed (EmailConfirmed = true)<br>
+                    Emails are NOT being sent (commented out for testing)
+                </div>
+
+                <form id="registerForm">
+                    <div class="form-group">
+                        <label>Email *</label>
+                        <input type="email" id="regEmail" placeholder="user@example.com" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Password *</label>
+                        <input type="password" id="regPassword" placeholder="Min 8 chars, 1 upper, 1 lower, 1 number" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Confirm Password *</label>
+                        <input type="password" id="regConfirmPassword" placeholder="Re-enter password" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Full Name *</label>
+                        <input type="text" id="regFullName" placeholder="Your Name" required>
+                    </div>
+
+                    <button type="submit">Register Account</button>
+                </form>
+
+                <div id="registerResponse"></div>
+            </div>
+
+            <!-- LOGIN SECTION -->
+            <div class="section">
+                <h2>
+                    <span>🔑</span> Login
+                </h2>
+
+                <div class="info-box">
+                    <strong>ℹ️ Test Scenario:</strong>
+                    1. Register new account → Auto-confirmed ✅<br>
+                    2. Login → Should work immediately<br>
+                    3. If EmailConfirmed = false → Error expected
+                </div>
+
+                <form id="loginForm">
+                    <div class="form-group">
+                        <label>Email *</label>
+                        <input type="email" id="loginEmail" placeholder="user@example.com" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Password *</label>
+                        <input type="password" id="loginPassword" placeholder="Your password" required>
+                    </div>
+
+                    <button type="submit">Login</button>
+                </form>
+
+                <div id="loginResponse"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:5000';
+
+        // Check API status on load
+        async function checkApiStatus() {
+            const statusEl = document.getElementById('apiStatus');
+            const indicator = statusEl.querySelector('.status-indicator');
+            const text = statusEl.querySelector('.status-text');
+
+            try {
+                const response = await fetch(`${API_BASE}/api/health`, { 
+                    method: 'GET',
+                    timeout: 3000 
+                }).catch(() => null);
+
+                if (response && response.ok) {
+                    indicator.className = 'status-indicator success';
+                    text.textContent = 'API Online ✓';
+                    text.style.color = '#28a745';
+                } else {
+                    throw new Error('API not responding');
+                }
+            } catch (error) {
+                indicator.className = 'status-indicator error';
+                text.textContent = 'API Offline ✗';
+                text.style.color = '#dc3545';
+            }
+        }
+
+        // Registration
+        document.getElementById('registerForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const email = document.getElementById('regEmail').value;
+            const password = document.getElementById('regPassword').value;
+            const confirmPassword = document.getElementById('regConfirmPassword').value;
+            const fullName = document.getElementById('regFullName').value;
+
+            // Client-side validation
+            if (password !== confirmPassword) {
+                const responseDiv = document.getElementById('registerResponse');
+                responseDiv.className = 'response error';
+                responseDiv.innerHTML = `
+                    <span class="status-indicator error"></span>
+                    <strong>❌ Passwords do not match!</strong>
+                    <pre>Please make sure Password and Confirm Password are the same.</pre>
+                `;
+                return;
+            }
+
+            const responseDiv = document.getElementById('registerResponse');
+            responseDiv.className = 'response info';
+            responseDiv.innerHTML = '<span class="status-indicator pending"></span>Registering...';
+
+            try {
+                const response = await fetch(`${API_BASE}/api/auth/register`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        email: email,
+                        password: password,
+                        confirmPassword: confirmPassword,
+                        fullName: fullName
+                    })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    responseDiv.className = 'response success';
+                    responseDiv.innerHTML = `
+                        <span class="status-indicator success"></span>
+                        <strong>✅ Registration Successful!</strong>
+                        <div class="email-status email-confirmed">
+                            <strong>Email Status:</strong> Auto-Confirmed ✓<br>
+                            <small>You can login immediately without email verification</small>
+                        </div>
+                        <pre>${JSON.stringify(data, null, 2)}</pre>
+                    `;
+
+                    // Auto-fill login form
+                    document.getElementById('loginEmail').value = email;
+                    document.getElementById('loginPassword').value = password;
+
+                } else {
+                    responseDiv.className = 'response error';
+                    responseDiv.innerHTML = `
+                        <span class="status-indicator error"></span>
+                        <strong>❌ Registration Failed</strong>
+                        <pre>${JSON.stringify(data, null, 2)}</pre>
+                    `;
+                }
+            } catch (error) {
+                responseDiv.className = 'response error';
+                responseDiv.innerHTML = `
+                    <span class="status-indicator error"></span>
+                    <strong>❌ Network Error</strong>
+                    <pre>${error.message}</pre>
+                `;
+            }
+        });
+
+        // Login
+        document.getElementById('loginForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const email = document.getElementById('loginEmail').value;
+            const password = document.getElementById('loginPassword').value;
+
+            const responseDiv = document.getElementById('loginResponse');
+            responseDiv.className = 'response info';
+            responseDiv.innerHTML = '<span class="status-indicator pending"></span>Logging in...';
+
+            try {
+                const response = await fetch(`${API_BASE}/api/auth/login`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        email: email,
+                        password: password
+                    })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    responseDiv.className = 'response success';
+                    
+                    let tokenDisplay = '';
+                    if (data.token) {
+                        localStorage.setItem('authToken', data.token);
+                        tokenDisplay = `
+                            <div class="token-display">
+                                <h4>🎫 JWT Token (Saved to localStorage)</h4>
+                                <code>${data.token}</code>
+                            </div>
+                        `;
+                    }
+
+                    responseDiv.innerHTML = `
+                        <span class="status-indicator success"></span>
+                        <strong>✅ Login Successful!</strong>
+                        <div class="email-status email-confirmed">
+                            <strong>Email Verified:</strong> Yes ✓<br>
+                            <small>Account is active and ready to use</small>
+                        </div>
+                        ${tokenDisplay}
+                        <pre>${JSON.stringify(data, null, 2)}</pre>
+                    `;
+
+                } else {
+                    responseDiv.className = 'response error';
+                    
+                    // Check if error is about email confirmation
+                    const errorMsg = data.message || data.Message || JSON.stringify(data);
+                    const isEmailError = errorMsg.toLowerCase().includes('email') && 
+                                       (errorMsg.toLowerCase().includes('confirm') || 
+                                        errorMsg.toLowerCase().includes('verif'));
+
+                    let emailStatusHtml = '';
+                    if (isEmailError) {
+                        emailStatusHtml = `
+                            <div class="email-status email-pending">
+                                <strong>⚠️ Email Not Verified</strong><br>
+                                <small>This means EmailConfirmed = false in database</small><br>
+                                <small>Currently emails are NOT being sent (check AuthService.cs)</small>
+                            </div>
+                        `;
+                    }
+
+                    responseDiv.innerHTML = `
+                        <span class="status-indicator error"></span>
+                        <strong>❌ Login Failed</strong>
+                        ${emailStatusHtml}
+                        <pre>${JSON.stringify(data, null, 2)}</pre>
+                    `;
+                }
+            } catch (error) {
+                responseDiv.className = 'response error';
+                responseDiv.innerHTML = `
+                    <span class="status-indicator error"></span>
+                    <strong>❌ Network Error</strong>
+                    <pre>${error.message}</pre>
+                `;
+            }
+        });
+
+        // Check API on load
+        checkApiStatus();
+        setInterval(checkApiStatus, 10000); // Check every 10s
+
+        // Pre-fill test data
+        document.getElementById('regEmail').value = 'test' + Date.now() + '@example.com';
+        document.getElementById('regPassword').value = 'Test123!';
+        document.getElementById('regConfirmPassword').value = 'Test123!';
+        document.getElementById('regFullName').value = 'Test User';
+    </script>
+</body>
+</html>
+

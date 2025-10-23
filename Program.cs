@@ -120,6 +120,7 @@ builder.Services.AddSignalR();
 
 // Business Services
 builder.Services.AddScoped<IAuthService, AuthService>();
+builder.Services.AddScoped<IWatchlistService, WatchlistService>();
 
 var app = builder.Build();
 
