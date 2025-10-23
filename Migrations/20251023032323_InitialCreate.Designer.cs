@@ -4,6 +4,7 @@ using CryptoTrading.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace CryptoTrading.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20251023032323_InitialCreate")]
+    partial class InitialCreate
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -21,137 +24,6 @@ namespace CryptoTrading.Migrations
                 .HasAnnotation("Relational:MaxIdentifierLength", 64);
 
             MySqlModelBuilderExtensions.AutoIncrementColumns(modelBuilder);
-
-            modelBuilder.Entity("CryptoTrading.Models.CryptoPrice", b =>
-                {
-                    b.Property<long>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint");
-
-                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<long>("Id"));
-
-                    b.Property<decimal?>("CirculatingSupply")
-                        .HasColumnType("decimal(28,2)");
-
-                    b.Property<DateTime>("CollectedAtUtc")
-                        .HasColumnType("datetime(6)");
-
-                    b.Property<int>("CryptocurrencyId")
-                        .HasColumnType("int");
-
-                    b.Property<decimal?>("MarketCap")
-                        .HasColumnType("decimal(28,2)");
-
-                    b.Property<decimal?>("PercentChange1h")
-                        .HasColumnType("decimal(10,4)");
-
-                    b.Property<decimal?>("PercentChange24h")
-                        .HasColumnType("decimal(10,4)");
-
-                    b.Property<decimal?>("PercentChange7d")
-                        .HasColumnType("decimal(10,4)");
-
-                    b.Property<decimal>("PriceUsd")
-                        .HasColumnType("decimal(28,8)");
-
-                    b.Property<decimal?>("TotalSupply")
-                        .HasColumnType("decimal(28,2)");
-
-                    b.Property<decimal?>("Volume24h")
-                        .HasColumnType("decimal(28,2)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("CryptocurrencyId", "CollectedAtUtc");
-
-                    b.ToTable("CryptoPrices", "market");
-                });
-
-            modelBuilder.Entity("CryptoTrading.Models.Cryptocurrency", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<string>("CoinGeckoId")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("varchar(100)");
-
-                    b.Property<DateTime>("CreatedAtUtc")
-                        .HasColumnType("datetime(6)");
-
-                    b.Property<string>("IconUrl")
-                        .HasMaxLength(500)
-                        .HasColumnType("varchar(500)");
-
-                    b.Property<bool>("IsActive")
-                        .HasColumnType("tinyint(1)");
-
-                    b.Property<int?>("MarketCapRank")
-                        .HasColumnType("int");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("varchar(100)");
-
-                    b.Property<string>("Symbol")
-                        .IsRequired()
-                        .HasMaxLength(24)
-                        .HasColumnType("varchar(24)");
-
-                    b.Property<DateTime>("UpdatedAtUtc")
-                        .HasColumnType("datetime(6)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("CoinGeckoId")
-                        .IsUnique();
-
-                    b.HasIndex("Symbol")
-                        .IsUnique();
-
-                    b.ToTable("Cryptocurrencies", "market");
-                });
-
-            modelBuilder.Entity("CryptoTrading.Models.MarketStat", b =>
-                {
-                    b.Property<long>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint");
-
-                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<long>("Id"));
-
-                    b.Property<int>("ActiveCryptocurrencies")
-                        .HasColumnType("int");
-
-                    b.Property<decimal?>("BtcDominance")
-                        .HasColumnType("decimal(10,4)");
-
-                    b.Property<DateTime>("CollectedAtUtc")
-                        .HasColumnType("datetime(6)");
-
-                    b.Property<decimal?>("EthDominance")
-                        .HasColumnType("decimal(10,4)");
-
-                    b.Property<decimal>("MarketCapChangePercentage24h")
-                        .HasColumnType("decimal(10,4)");
-
-                    b.Property<decimal>("TotalMarketCap")
-                        .HasColumnType("decimal(28,2)");
-
-                    b.Property<decimal>("TotalVolume")
-                        .HasColumnType("decimal(28,2)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("CollectedAtUtc");
-
-                    b.ToTable("MarketStats", "market");
-                });
 
             modelBuilder.Entity("CryptoTrading.Models.User", b =>
                 {
@@ -271,17 +143,6 @@ namespace CryptoTrading.Migrations
                     b.ToTable("WatchlistItems");
                 });
 
-            modelBuilder.Entity("CryptoTrading.Models.CryptoPrice", b =>
-                {
-                    b.HasOne("CryptoTrading.Models.Cryptocurrency", "Cryptocurrency")
-                        .WithMany("Prices")
-                        .HasForeignKey("CryptocurrencyId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Cryptocurrency");
-                });
-
             modelBuilder.Entity("CryptoTrading.Models.Watchlist", b =>
                 {
                     b.HasOne("CryptoTrading.Models.User", "User")
@@ -302,11 +163,6 @@ namespace CryptoTrading.Migrations
                         .IsRequired();
 
                     b.Navigation("Watchlist");
-                });
-
-            modelBuilder.Entity("CryptoTrading.Models.Cryptocurrency", b =>
-                {
-                    b.Navigation("Prices");
                 });
 
             modelBuilder.Entity("CryptoTrading.Models.Watchlist", b =>

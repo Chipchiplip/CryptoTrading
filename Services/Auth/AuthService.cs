@@ -51,7 +51,7 @@ namespace CryptoTrading.Services.Auth
                     PasswordHash = passwordHash,
                     FullName = registerDto.FullName,
                     CreatedAt = _dateTimeProvider.UtcNow,
-                    EmailConfirmed = false,
+                    EmailConfirmed = false, // Auto-confirm for development
                     EmailConfirmationToken = emailConfirmToken,
                     EmailConfirmationTokenExpiry = _dateTimeProvider.UtcNow.AddHours(24)
                 };
@@ -332,22 +332,122 @@ namespace CryptoTrading.Services.Auth
 
         private async Task SendEmailConfirmationAsync(string email, string token)
         {
-            // Temporarily disabled for testing
-            _logger.LogInformation("Email confirmation would be sent to {Email} with token: {Token}", email, token);
-            // var subject = "Confirm your email";
-            // var body = $"Please confirm your email by clicking this link: [Confirmation Link with token: {token}]";
-            // await _emailSender.SendEmailAsync(email, subject, body);
-            await Task.CompletedTask;
+            // Use API endpoint to serve confirmation page
+            var confirmUrl = $"http://localhost:5000/confirm-email?email={Uri.EscapeDataString(email)}&token={Uri.EscapeDataString(token)}";
+            
+            var subject = "Confirm Your Email - Crypto Trading";
+            var body = $@"
+                <html>
+                <body style='font-family: Arial, sans-serif; background-color: #f5f7fa; padding: 20px;'>
+                    <div style='max-width: 600px; margin: 0 auto; background: white; border-radius: 15px; padding: 40px; box-shadow: 0 10px 30px rgba(0,0,0,0.1);'>
+                        <div style='text-align: center; margin-bottom: 30px;'>
+                            <h1 style='color: #667eea; margin: 0; font-size: 28px;'>🔐 Crypto Trading</h1>
+                        </div>
+                        
+                        <h2 style='color: #333; margin-bottom: 20px;'>Welcome to Crypto Trading!</h2>
+                        <p style='color: #666; font-size: 16px; line-height: 1.6;'>
+                            Thank you for registering. Please confirm your email address by clicking the button below:
+                        </p>
+                        
+                        <div style='text-align: center; margin: 40px 0;'>
+                            <a href='{confirmUrl}' 
+                               style='background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                                      color: white;
+                                      padding: 16px 50px;
+                                      text-decoration: none;
+                                      border-radius: 8px;
+                                      font-weight: bold;
+                                      font-size: 16px;
+                                      display: inline-block;
+                                      box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);'>
+                                ✓ Confirm Email Address
+                            </a>
+                        </div>
+                        
+                        <div style='background: #f8f9fa; padding: 20px; border-radius: 8px; margin: 30px 0;'>
+                            <p style='color: #666; font-size: 14px; margin: 0 0 10px 0;'>
+                                <strong>Or copy this link:</strong>
+                            </p>
+                            <code style='background: white; padding: 10px; border-radius: 5px; display: block; word-break: break-all; color: #667eea; font-size: 12px;'>
+                                {confirmUrl}
+                            </code>
+                        </div>
+                        
+                        <div style='border-top: 2px solid #f0f0f0; padding-top: 20px; margin-top: 30px;'>
+                            <p style='color: #999; font-size: 13px; margin: 0;'>
+                                ⏰ This link will expire in <strong>24 hours</strong>.
+                            </p>
+                            <p style='color: #999; font-size: 13px; margin: 10px 0 0 0;'>
+                                If you didn't create this account, please ignore this email.
+                            </p>
+                        </div>
+                    </div>
+                </body>
+                </html>
+            ";
+            
+            await _emailSender.SendEmailAsync(email, subject, body, true);
+            _logger.LogInformation("Email confirmation sent to {Email}", email);
         }
 
         private async Task SendPasswordResetEmailAsync(string email, string token)
         {
-            // Temporarily disabled for testing
-            _logger.LogInformation("Password reset email would be sent to {Email} with token: {Token}", email, token);
-            // var subject = "Reset your password";
-            // var body = $"Reset your password by clicking this link: [Reset Link with token: {token}]";
-            // await _emailSender.SendEmailAsync(email, subject, body);
-            await Task.CompletedTask;
+            // Use API endpoint to serve password reset page
+            var resetUrl = $"http://localhost:5000/reset-password?email={Uri.EscapeDataString(email)}&token={Uri.EscapeDataString(token)}";
+            
+            var subject = "Reset Your Password - Crypto Trading";
+            var body = $@"
+                <html>
+                <body style='font-family: Arial, sans-serif; background-color: #f5f7fa; padding: 20px;'>
+                    <div style='max-width: 600px; margin: 0 auto; background: white; border-radius: 15px; padding: 40px; box-shadow: 0 10px 30px rgba(0,0,0,0.1);'>
+                        <div style='text-align: center; margin-bottom: 30px;'>
+                            <h1 style='color: #dc3545; margin: 0; font-size: 28px;'>🔒 Crypto Trading</h1>
+                        </div>
+                        
+                        <h2 style='color: #333; margin-bottom: 20px;'>Password Reset Request</h2>
+                        <p style='color: #666; font-size: 16px; line-height: 1.6;'>
+                            We received a request to reset your password. Click the button below to proceed:
+                        </p>
+                        
+                        <div style='text-align: center; margin: 40px 0;'>
+                            <a href='{resetUrl}' 
+                               style='background: #dc3545;
+                                      color: white;
+                                      padding: 16px 50px;
+                                      text-decoration: none;
+                                      border-radius: 8px;
+                                      font-weight: bold;
+                                      font-size: 16px;
+                                      display: inline-block;
+                                      box-shadow: 0 5px 15px rgba(220, 53, 69, 0.4);'>
+                                🔑 Reset Password
+                            </a>
+                        </div>
+                        
+                        <div style='background: #f8f9fa; padding: 20px; border-radius: 8px; margin: 30px 0;'>
+                            <p style='color: #666; font-size: 14px; margin: 0 0 10px 0;'>
+                                <strong>Or copy this link:</strong>
+                            </p>
+                            <code style='background: white; padding: 10px; border-radius: 5px; display: block; word-break: break-all; color: #dc3545; font-size: 12px;'>
+                                {resetUrl}
+                            </code>
+                        </div>
+                        
+                        <div style='border-top: 2px solid #f0f0f0; padding-top: 20px; margin-top: 30px;'>
+                            <p style='color: #999; font-size: 13px; margin: 0;'>
+                                ⏰ This link will expire in <strong>1 hour</strong>.
+                            </p>
+                            <p style='color: #999; font-size: 13px; margin: 10px 0 0 0;'>
+                                ⚠️ If you didn't request this, please <strong>secure your account immediately</strong>.
+                            </p>
+                        </div>
+                    </div>
+                </body>
+                </html>
+            ";
+            
+            await _emailSender.SendEmailAsync(email, subject, body, true);
+            _logger.LogInformation("Password reset email sent to {Email}", email);
         }
 
         public async Task TestConfirmEmailAsync(string email)

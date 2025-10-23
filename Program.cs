@@ -121,6 +121,7 @@ builder.Services.AddSignalR();
 
 // Business Services
 builder.Services.AddScoped<IAuthService, AuthService>();
+builder.Services.AddScoped<IWatchlistService, WatchlistService>();
 builder.Services.AddScoped<ICryptoDataSyncService, CryptoDataSyncService>();
 
 // Background Services

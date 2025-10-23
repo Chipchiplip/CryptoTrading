@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🚀 Watchlist Test - MOCK (No Database)</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+            margin-bottom: 20px;
+        }
+        h1 {
+            color: #667eea;
+            text-align: center;
+            margin-bottom: 10px;
+            font-size: 2.5em;
+        }
+        .subtitle {
+            text-align: center;
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 1.1em;
+        }
+        .alert-success {
+            background: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        .section {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+        }
+        h2 {
+            color: #495057;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #667eea;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 600;
+            color: #495057;
+        }
+        input[type="text"], select {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 14px;
+            transition: border-color 0.3s;
+        }
+        input[type="text"]:focus, select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            margin-right: 10px;
+            margin-bottom: 10px;
+        }
+        .btn-primary {
+            background: #667eea;
+            color: white;
+        }
+        .btn-primary:hover {
+            background: #5568d3;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+        .btn-success {
+            background: #28a745;
+            color: white;
+        }
+        .btn-success:hover {
+            background: #218838;
+        }
+        .btn-danger {
+            background: #dc3545;
+            color: white;
+        }
+        .btn-danger:hover {
+            background: #c82333;
+        }
+        .btn-info {
+            background: #17a2b8;
+            color: white;
+        }
+        .btn-info:hover {
+            background: #138496;
+        }
+        .response {
+            background: #2d3748;
+            color: #a0aec0;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 15px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            max-height: 300px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 15px;
+            margin-top: 15px;
+        }
+        .card {
+            background: white;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            padding: 15px;
+            transition: all 0.3s;
+        }
+        .card:hover {
+            border-color: #667eea;
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.2);
+            transform: translateY(-2px);
+        }
+        .card h3 {
+            color: #667eea;
+            margin-bottom: 10px;
+        }
+        .badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+            margin-left: 8px;
+        }
+        .badge-default {
+            background: #ffc107;
+            color: #000;
+        }
+        .coin-list {
+            margin-top: 10px;
+        }
+        .coin-item {
+            background: #f8f9fa;
+            padding: 10px;
+            border-radius: 6px;
+            margin-bottom: 8px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .coin-symbol {
+            font-weight: 700;
+            color: #667eea;
+        }
+        .coin-price {
+            font-size: 14px;
+            color: #495057;
+        }
+        .positive { color: #28a745; }
+        .negative { color: #dc3545; }
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #667eea;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 Watchlist API Test - MOCK MODE</h1>
+        <p class="subtitle">Không cần database, không cần đăng nhập - Test ngay lập tức!</p>
+        
+        <div class="alert-success">
+            <strong>✅ Ready to test!</strong> API endpoint: <code>http://localhost:5000/api/test/TestWatchlist</code>
+            <br>Tất cả Use Cases (36-45) đều hoạt động với mock data trong memory.
+        </div>
+
+        <div class="section">
+            <h2>📋 UC 40: View All Watchlists</h2>
+            <button class="btn btn-primary" onclick="getAllWatchlists()">🔄 Lấy danh sách Watchlists</button>
+            <button class="btn btn-info" onclick="getDefaultWatchlist()">⭐ Lấy Default Watchlist (UC 45)</button>
+            <button class="btn btn-info" onclick="getQuota()">📊 Check Quota (UC 44)</button>
+            <div id="watchlistsGrid" class="grid"></div>
+            <div id="listResponse" class="response" style="display:none;"></div>
+        </div>
+
+        <div class="section">
+            <h2>➕ UC 36: Create New Watchlist</h2>
+            <div class="form-group">
+                <label>Tên Watchlist:</label>
+                <input type="text" id="newWatchlistName" placeholder="e.g., Top Altcoins" value="My Crypto Portfolio">
+            </div>
+            <button class="btn btn-success" onclick="createWatchlist()">✨ Tạo Watchlist mới</button>
+            <div id="createResponse" class="response" style="display:none;"></div>
+        </div>
+
+        <div class="section">
+            <h2>💰 UC 37/38: Add Coins to Watchlist</h2>
+            <div class="form-group">
+                <label>Chọn Watchlist:</label>
+                <select id="targetWatchlist">
+                    <option value="">-- Chọn watchlist --</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Coin Symbol (BTC, ETH, BNB, XRP, SOL, ADA, DOGE):</label>
+                <input type="text" id="coinSymbol" placeholder="e.g., BTC" value="BTC">
+            </div>
+            <button class="btn btn-success" onclick="addCoin()">➕ Thêm Coin</button>
+            <div id="addResponse" class="response" style="display:none;"></div>
+        </div>
+
+        <div class="section">
+            <h2>✏️ UC 41: Rename Watchlist</h2>
+            <div class="form-group">
+                <label>Chọn Watchlist:</label>
+                <select id="renameWatchlistId"></select>
+            </div>
+            <div class="form-group">
+                <label>Tên mới:</label>
+                <input type="text" id="renameNewName" placeholder="New name">
+            </div>
+            <button class="btn btn-primary" onclick="renameWatchlist()">✏️ Đổi tên</button>
+            <div id="renameResponse" class="response" style="display:none;"></div>
+        </div>
+
+        <div class="section">
+            <h2>🗑️ UC 42: Delete Watchlist</h2>
+            <div class="form-group">
+                <label>Chọn Watchlist:</label>
+                <select id="deleteWatchlistId"></select>
+            </div>
+            <button class="btn btn-danger" onclick="deleteWatchlist()">🗑️ Xóa Watchlist</button>
+            <div id="deleteResponse" class="response" style="display:none;"></div>
+        </div>
+
+        <div class="section">
+            <h2>🔄 UC 43: Realtime Price Updates</h2>
+            <div class="form-group">
+                <label>Chọn Watchlist:</label>
+                <select id="realtimeWatchlistId"></select>
+            </div>
+            <button class="btn btn-info" onclick="getRealtimeUpdates()">🔄 Lấy giá realtime</button>
+            <button class="btn btn-success" onclick="startAutoRefresh()">▶️ Auto-refresh (3s)</button>
+            <button class="btn btn-danger" onclick="stopAutoRefresh()">⏸️ Dừng</button>
+            <div id="realtimeResponse" class="response" style="display:none;"></div>
+        </div>
+
+        <div class="section" style="background: #fff3cd; border: 2px solid #ffc107;">
+            <h2>🔄 Reset Test Data</h2>
+            <button class="btn btn-danger" onclick="clearAll()">🗑️ Xóa tất cả data và reset</button>
+            <p style="margin-top:10px; color: #856404;"><small>⚠️ Sẽ xóa tất cả watchlists và bắt đầu lại từ đầu</small></p>
+        </div>
+    </div>
+
+    <script>
+        const API_URL = 'http://localhost:5000/api/test/TestWatchlist';
+        let autoRefreshInterval = null;
+
+        function showResponse(elementId, data, isError = false) {
+            const element = document.getElementById(elementId);
+            element.style.display = 'block';
+            element.style.borderLeft = isError ? '4px solid #dc3545' : '4px solid #28a745';
+            element.textContent = JSON.stringify(data, null, 2);
+        }
+
+        async function getAllWatchlists() {
+            try {
+                const response = await fetch(`${API_URL}`);
+                const data = await response.json();
+                showResponse('listResponse', data);
+                if (response.ok && Array.isArray(data)) {
+                    displayWatchlists(data);
+                    updateSelects(data);
+                }
+            } catch (error) {
+                showResponse('listResponse', { error: error.message }, true);
+            }
+        }
+
+        function displayWatchlists(watchlists) {
+            const grid = document.getElementById('watchlistsGrid');
+            if (!watchlists.length) {
+                grid.innerHTML = '<p>Chưa có watchlist nào. Tạo mới để bắt đầu!</p>';
+                return;
+            }
+
+            grid.innerHTML = watchlists.map(w => `
+                <div class="card">
+                    <h3>
+                        ${w.name}
+                        ${w.isDefault ? '<span class="badge badge-default">⭐ Default</span>' : ''}
+                    </h3>
+                    <p><strong>ID:</strong> ${w.id}</p>
+                    <p><strong>Coins:</strong> ${w.coinCount} coin(s)</p>
+                    <p><strong>Created:</strong> ${new Date(w.createdAt).toLocaleString('vi-VN')}</p>
+                    <button class="btn btn-primary" onclick="viewWatchlist('${w.id}')">👁️ Xem chi tiết</button>
+                </div>
+            `).join('');
+        }
+
+        function updateSelects(watchlists) {
+            const selects = ['targetWatchlist', 'renameWatchlistId', 'deleteWatchlistId', 'realtimeWatchlistId'];
+            selects.forEach(selectId => {
+                const select = document.getElementById(selectId);
+                select.innerHTML = '<option value="">-- Chọn watchlist --</option>' +
+                    watchlists.map(w => `<option value="${w.id}">${w.name} ${w.isDefault ? '⭐' : ''} (${w.coinCount} coins)</option>`).join('');
+            });
+        }
+
+        async function viewWatchlist(id) {
+            try {
+                const response = await fetch(`${API_URL}/${id}`);
+                const data = await response.json();
+                showResponse('listResponse', data);
+            } catch (error) {
+                showResponse('listResponse', { error: error.message }, true);
+            }
+        }
+
+        async function getDefaultWatchlist() {
+            try {
+                const response = await fetch(`${API_URL}/default`);
+                const data = await response.json();
+                showResponse('listResponse', data);
+            } catch (error) {
+                showResponse('listResponse', { error: error.message }, true);
+            }
+        }
+
+        async function getQuota() {
+            try {
+                const response = await fetch(`${API_URL}/quota`);
+                const data = await response.json();
+                showResponse('listResponse', data);
+            } catch (error) {
+                showResponse('listResponse', { error: error.message }, true);
+            }
+        }
+
+        async function createWatchlist() {
+            const name = document.getElementById('newWatchlistName').value;
+            if (!name) {
+                alert('Vui lòng nhập tên watchlist!');
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_URL}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, isDefault: false })
+                });
+                const data = await response.json();
+                showResponse('createResponse', data, !response.ok);
+                if (response.ok) {
+                    getAllWatchlists();
+                    document.getElementById('newWatchlistName').value = '';
+                }
+            } catch (error) {
+                showResponse('createResponse', { error: error.message }, true);
+            }
+        }
+
+        async function addCoin() {
+            const watchlistId = document.getElementById('targetWatchlist').value;
+            const symbol = document.getElementById('coinSymbol').value.toUpperCase();
+
+            if (!watchlistId || !symbol) {
+                alert('Vui lòng chọn watchlist và nhập coin symbol!');
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_URL}/${watchlistId}/coins`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ coinSymbol: symbol })
+                });
+                const data = await response.json();
+                showResponse('addResponse', data, !response.ok);
+                if (response.ok) {
+                    getAllWatchlists();
+                }
+            } catch (error) {
+                showResponse('addResponse', { error: error.message }, true);
+            }
+        }
+
+        async function renameWatchlist() {
+            const id = document.getElementById('renameWatchlistId').value;
+            const name = document.getElementById('renameNewName').value;
+
+            if (!id || !name) {
+                alert('Vui lòng chọn watchlist và nhập tên mới!');
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_URL}/${id}/rename`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name })
+                });
+                const data = await response.json();
+                showResponse('renameResponse', data, !response.ok);
+                if (response.ok) {
+                    getAllWatchlists();
+                }
+            } catch (error) {
+                showResponse('renameResponse', { error: error.message }, true);
+            }
+        }
+
+        async function deleteWatchlist() {
+            const id = document.getElementById('deleteWatchlistId').value;
+            if (!id) {
+                alert('Vui lòng chọn watchlist!');
+                return;
+            }
+
+            if (!confirm('Bạn có chắc muốn xóa watchlist này?')) return;
+
+            try {
+                const response = await fetch(`${API_URL}/${id}`, {
+                    method: 'DELETE'
+                });
+
+                if (response.status === 204) {
+                    showResponse('deleteResponse', { message: 'Đã xóa thành công!' });
+                    getAllWatchlists();
+                } else {
+                    const data = await response.json();
+                    showResponse('deleteResponse', data, true);
+                }
+            } catch (error) {
+                showResponse('deleteResponse', { error: error.message }, true);
+            }
+        }
+
+        async function getRealtimeUpdates() {
+            const id = document.getElementById('realtimeWatchlistId').value;
+            if (!id) {
+                alert('Vui lòng chọn watchlist!');
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_URL}/${id}/realtime`);
+                const data = await response.json();
+                showResponse('realtimeResponse', data, !response.ok);
+            } catch (error) {
+                showResponse('realtimeResponse', { error: error.message }, true);
+            }
+        }
+
+        function startAutoRefresh() {
+            const id = document.getElementById('realtimeWatchlistId').value;
+            if (!id) {
+                alert('Vui lòng chọn watchlist!');
+                return;
+            }
+
+            stopAutoRefresh();
+            autoRefreshInterval = setInterval(getRealtimeUpdates, 3000);
+            alert('✅ Auto-refresh started! Cập nhật mỗi 3 giây');
+        }
+
+        function stopAutoRefresh() {
+            if (autoRefreshInterval) {
+                clearInterval(autoRefreshInterval);
+                autoRefreshInterval = null;
+                alert('⏸️ Auto-refresh stopped!');
+            }
+        }
+
+        async function clearAll() {
+            if (!confirm('⚠️ Bạn có chắc muốn xóa TẤT CẢ data và reset?')) return;
+
+            try {
+                const response = await fetch(`${API_URL}/clear`, {
+                    method: 'DELETE'
+                });
+                const data = await response.json();
+                alert(data.message);
+                getAllWatchlists();
+            } catch (error) {
+                alert('Error: ' + error.message);
+            }
+        }
+
+        // Auto-load watchlists on page load
+        window.addEventListener('load', () => {
+            getAllWatchlists();
+        });
+    </script>
+</body>
+</html>
