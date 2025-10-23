@@ -13,10 +13,23 @@ namespace CryptoTrading.Repositories
         public UnitOfWork(ApplicationDbContext context)
         {
             _context = context;
+            
+            // Auth
             Users = new Repository<User>(_context);
+            
+            // Market
+            Cryptocurrencies = new CryptocurrencyRepository(_context);
+            CryptoPrices = new CryptoPriceRepository(_context);
+            MarketStats = new Repository<MarketStat>(_context);
         }
 
+        // Auth
         public IRepository<User> Users { get; private set; }
+        
+        // Market
+        public ICryptocurrencyRepository Cryptocurrencies { get; private set; }
+        public ICryptoPriceRepository CryptoPrices { get; private set; }
+        public IRepository<MarketStat> MarketStats { get; private set; }
 
         public async Task<int> SaveChangesAsync()
         {

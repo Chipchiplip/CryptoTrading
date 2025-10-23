@@ -54,7 +54,8 @@ builder.Services.AddSwaggerGen(c =>
 // Database (MySQL)
 var mysqlConnectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
-    options.UseMySql(mysqlConnectionString, new MySqlServerVersion(new Version(8, 0, 21))));
+    options.UseMySql(mysqlConnectionString, new MySqlServerVersion(new Version(8, 0, 21)),
+        mySqlOptions => mySqlOptions.SchemaBehavior(Pomelo.EntityFrameworkCore.MySql.Infrastructure.MySqlSchemaBehavior.Ignore)));
 
 // JWT Settings
 builder.Services.Configure<JwtSettings>(builder.Configuration.GetSection("JwtSettings"));
@@ -120,6 +121,10 @@ builder.Services.AddSignalR();
 
 // Business Services
 builder.Services.AddScoped<IAuthService, AuthService>();
+builder.Services.AddScoped<ICryptoDataSyncService, CryptoDataSyncService>();
+
+// Background Services
+builder.Services.AddHostedService<CryptoSyncBackgroundService>();
 
 var app = builder.Build();
 
