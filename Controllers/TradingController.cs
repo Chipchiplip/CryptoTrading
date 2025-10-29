@@ -10,7 +10,7 @@ public class TradingController : ControllerBase
     /// Get trading info
     /// </summary>
     [HttpGet]
-    public async Task<IActionResult> GetTradingInfo()
+    public IActionResult GetTradingInfo()
     {
         return Ok(new { message = "Trading API - Ready for implementation", endpoints = new[] { "balances", "orders", "history" } });
     }
@@ -19,7 +19,7 @@ public class TradingController : ControllerBase
     /// Get user balances
     /// </summary>
     [HttpGet("balances")]
-    public async Task<IActionResult> GetBalances()
+    public IActionResult GetBalances()
     {
         // TODO: Implement trading service
         return Ok(new { message = "Get balances endpoint - to be implemented by team member" });
@@ -29,7 +29,7 @@ public class TradingController : ControllerBase
     /// Place new order
     /// </summary>
     [HttpPost("orders")]
-    public async Task<IActionResult> PlaceOrder([FromBody] PlaceOrderDto dto)
+    public IActionResult PlaceOrder([FromBody] PlaceOrderDto dto)
     {
         // TODO: Implement trading service
         return Ok(new { message = "Place order endpoint - to be implemented by team member", order = dto });
@@ -39,7 +39,7 @@ public class TradingController : ControllerBase
     /// Get order by ID
     /// </summary>
     [HttpGet("orders/{id}")]
-    public async Task<IActionResult> GetOrder(Guid id)
+    public IActionResult GetOrder(Guid id)
     {
         // TODO: Implement trading service
         return Ok(new { message = $"Get order {id} endpoint - to be implemented by team member" });
@@ -49,7 +49,7 @@ public class TradingController : ControllerBase
     /// Get user orders
     /// </summary>
     [HttpGet("orders")]
-    public async Task<IActionResult> GetOrders()
+    public IActionResult GetOrders()
     {
         // TODO: Implement trading service
         return Ok(new { message = "Get orders endpoint - to be implemented by team member" });

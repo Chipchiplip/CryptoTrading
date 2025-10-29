@@ -31,7 +31,7 @@ public class PortfolioController : ControllerBase
     /// </summary>
     [HttpGet]
     [AllowAnonymous]
-    public async Task<IActionResult> GetPortfolioInfo()
+    public IActionResult GetPortfolioInfo()
     {
         return Ok(new { 
             message = "Portfolio API - Watchlist features implemented", 
@@ -297,7 +297,7 @@ public class PortfolioController : ControllerBase
     /// Get portfolio overview
     /// </summary>
     [HttpGet("overview")]
-    public async Task<IActionResult> GetPortfolioOverview()
+    public IActionResult GetPortfolioOverview()
     {
         return Ok(new { 
             message = "Portfolio overview endpoint - to be implemented", 
