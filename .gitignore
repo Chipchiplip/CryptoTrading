@@ -1444,7 +1444,3 @@ _TeamCity*
 .qoder/rules/byterover-rules.md
 .augment/rules/byterover-rules.md
 
-
-appsettings.Development.json
-appsettings.Production.json
-appsettings.Local.json

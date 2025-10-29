@@ -166,7 +166,7 @@ public class EmailConfirmationController : ControllerBase
     </div>
 
     <script>
-        const API_BASE = 'http://localhost:5000';
+        const API_BASE = '';
         const email = '{email}';
         const token = '{token}';
 
@@ -213,7 +213,7 @@ public class EmailConfirmationController : ControllerBase
                     <strong>✓ Verification Complete</strong><br>
                     Your account is now active
                 </div>
-                <a href='/auth-test.html' class='btn'>Go to Login</a>
+                <a href='/' class='btn'>Go to Login</a>
                 <div class='details'>
                     <h3>📧 Confirmed Email:</h3>
                     <p><code>${{email}}</code></p>
@@ -245,7 +245,7 @@ public class EmailConfirmationController : ControllerBase
                     <p>2. Contact support if the problem persists</p>
                     <p>3. Check if you're using the latest confirmation email</p>
                 </div>
-                <a href='/auth-test.html' class='btn'>Back to Registration</a>
+                <a href='/' class='btn'>Back to Registration</a>
             `;
         }}
     </script>

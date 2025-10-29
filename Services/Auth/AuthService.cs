@@ -17,19 +17,22 @@ namespace CryptoTrading.Services.Auth
         private readonly IEmailSender _emailSender;
         private readonly IDateTimeProvider _dateTimeProvider;
         private readonly ILogger<AuthService> _logger;
+        private readonly IHttpContextAccessor _httpContextAccessor;
 
         public AuthService(
             IUnitOfWork unitOfWork,
             IOptions<JwtSettings> jwtSettings,
             IEmailSender emailSender,
             IDateTimeProvider dateTimeProvider,
-            ILogger<AuthService> logger)
+            ILogger<AuthService> logger,
+            IHttpContextAccessor httpContextAccessor)
         {
             _unitOfWork = unitOfWork;
             _jwtSettings = jwtSettings.Value;
             _emailSender = emailSender;
             _dateTimeProvider = dateTimeProvider;
             _logger = logger;
+            _httpContextAccessor = httpContextAccessor;
         }
 
         public async Task<AuthResponseDto> RegisterAsync(RegisterDto registerDto)
@@ -332,8 +335,13 @@ namespace CryptoTrading.Services.Auth
 
         private async Task SendEmailConfirmationAsync(string email, string token)
         {
-            // Use API endpoint to serve confirmation page
-            var confirmUrl = $"http://localhost:5000/confirm-email?email={Uri.EscapeDataString(email)}&token={Uri.EscapeDataString(token)}";
+            // Use current request base URL if available; fallback to env/config
+            var request = _httpContextAccessor.HttpContext?.Request;
+            var baseUrl = request != null
+                ? $"{request.Scheme}://{request.Host}"
+                : (Environment.GetEnvironmentVariable("BACKEND_BASE_URL") ?? "https://localhost:7154");
+
+            var confirmUrl = $"{baseUrl}/confirm-email?email={Uri.EscapeDataString(email)}&token={Uri.EscapeDataString(token)}";
             
             var subject = "Confirm Your Email - Crypto Trading";
             var body = $@"
@@ -392,8 +400,13 @@ namespace CryptoTrading.Services.Auth
 
         private async Task SendPasswordResetEmailAsync(string email, string token)
         {
-            // Use API endpoint to serve password reset page
-            var resetUrl = $"http://localhost:5000/reset-password?email={Uri.EscapeDataString(email)}&token={Uri.EscapeDataString(token)}";
+            // Use current request base URL if available; fallback to env/config
+            var request = _httpContextAccessor.HttpContext?.Request;
+            var baseUrl = request != null
+                ? $"{request.Scheme}://{request.Host}"
+                : (Environment.GetEnvironmentVariable("BACKEND_BASE_URL") ?? "https://localhost:7154");
+
+            var resetUrl = $"{baseUrl}/reset-password?email={Uri.EscapeDataString(email)}&token={Uri.EscapeDataString(token)}";
             
             var subject = "Reset Your Password - Crypto Trading";
             var body = $@"
