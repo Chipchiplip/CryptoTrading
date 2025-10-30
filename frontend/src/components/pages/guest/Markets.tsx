@@ -22,7 +22,7 @@ export default function Markets({ onNavigate }: MarketsProps) {
     active?: number;
   }>({});
   const [rows, setRows] = useState<any[]>([]);
-  const [binance, setBinance] = useState<Record<string, { price: number; change24h: number; volume24h?: number }>>({});
+  // Realtime data comes from backend API via SignalR; no client-side Binance WS
 
   useEffect(() => {
     let isMounted = true;
@@ -69,7 +69,8 @@ export default function Markets({ onNavigate }: MarketsProps) {
       }
     };
     fetchAll();
-    const interval = setInterval(fetchAll, 2_000);
+    // Fallback poll every 5 seconds in case SignalR is unavailable
+    const interval = setInterval(fetchAll, 5_000);
 
     // SignalR realtime updates
     (async () => {
@@ -114,37 +115,7 @@ export default function Markets({ onNavigate }: MarketsProps) {
       }
     })();
 
-    // Binance realtime (client-side) for top symbols
-    let binanceSocket: WebSocket | null = null;
-    const startBinance = (symbols: string[]) => {
-      if (!symbols.length) return;
-      const streams = symbols.map((s) => `${s.toLowerCase()}usdt@ticker`).join('/');
-      const url = `wss://stream.binance.com:9443/stream?streams=${streams}`;
-      try {
-        if (binanceSocket) {
-          try { binanceSocket.close(); } catch {}
-        }
-        binanceSocket = new WebSocket(url);
-        binanceSocket.onmessage = (ev) => {
-          try {
-            const msg = JSON.parse(ev.data);
-            const d = msg?.data;
-            if (!d || !d.s || !d.c) return;
-            const sym = String(d.s).replace('USDT', '').toUpperCase();
-            const price = Number(d.c);
-            const changePct = Number(d.P);
-            setBinance((prev) => ({ ...prev, [sym]: { price, change24h: changePct } }));
-          } catch {}
-        };
-      } catch {}
-    };
-
-    // start/refresh binance subscription when rows update (top 12)
-    const refreshBinance = () => {
-      const topSymbols = rows.slice(0, 12).map((r) => String(r.symbol || '').toUpperCase());
-      if (topSymbols.length) startBinance(Array.from(new Set(topSymbols)));
-    };
-    const binanceStartTimer = setInterval(refreshBinance, 2000);
+    // No Binance WS; all realtime updates come from SignalR broadcast
     return () => {
       isMounted = false;
       controller.abort();
@@ -152,24 +123,11 @@ export default function Markets({ onNavigate }: MarketsProps) {
       if (connection) {
         try { connection.stop(); } catch {}
       }
-      if (binanceSocket) {
-        try { binanceSocket.close(); } catch {}
-      }
+      // nothing else to clean up
     };
   }, []);
 
-  const marketData = useMemo(() => {
-    if (!rows.length || Object.keys(binance).length === 0) return rows;
-    return rows.map((r) => {
-      const b = binance[r.symbol];
-      if (!b) return r;
-      return {
-        ...r,
-        price: b.price || r.price,
-        change24h: Number.isFinite(b.change24h) ? b.change24h : r.change24h,
-      };
-    });
-  }, [rows, binance]);
+  const marketData = useMemo(() => rows, [rows]);
 
   const toggleFavorite = (symbol: string) => {
     setFavorites(prev => 
