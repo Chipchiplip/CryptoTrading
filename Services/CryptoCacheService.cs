@@ -18,7 +18,7 @@ namespace CryptoTrading.Services
         private readonly ILogger<CryptoCacheService> _logger;
         private const string CRYPTO_DATA_KEY = "crypto_data";
         private const string MARKET_STATS_KEY = "market_stats";
-        private readonly TimeSpan _cacheExpiration = TimeSpan.FromSeconds(5);
+        private readonly TimeSpan _cacheExpiration = TimeSpan.FromSeconds(2);
 
         public CryptoCacheService(IMemoryCache cache, ILogger<CryptoCacheService> logger)
         {

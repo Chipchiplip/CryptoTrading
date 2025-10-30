@@ -2,6 +2,8 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using CryptoTrading.Models;
+using Microsoft.AspNetCore.SignalR;
+using CryptoTrading.Hubs;
 
 namespace CryptoTrading.Services
 {
@@ -18,13 +20,15 @@ namespace CryptoTrading.Services
         private readonly ICryptoCacheService _cacheService;
         private readonly ILogger<CoinGeckoService> _logger;
         private readonly string? _apiKey;
+        private readonly IHubContext<MarketHub>? _hubContext;
 
-        public CoinGeckoService(HttpClient httpClient, ICryptoCacheService cacheService, ILogger<CoinGeckoService> logger, IConfiguration configuration)
+        public CoinGeckoService(HttpClient httpClient, ICryptoCacheService cacheService, ILogger<CoinGeckoService> logger, IConfiguration configuration, IHubContext<MarketHub>? hubContext = null)
         {
             _httpClient = httpClient;
             _cacheService = cacheService;
             _logger = logger;
             _apiKey = configuration["CoinGecko:ApiKey"];
+            _hubContext = hubContext;
         }
 
         public async Task<List<Crypto>> GetMarketDataAsync()
@@ -33,6 +37,11 @@ namespace CryptoTrading.Services
             if (_cacheService.TryGetCryptoData(out var cachedData))
             {
                 _logger.LogInformation($"Using cached crypto data ({cachedData?.Count ?? 0} coins)");
+                // Even when using cache, broadcast so clients keep receiving updates
+                if (_hubContext != null && cachedData != null)
+                {
+                    await _hubContext.Clients.All.SendAsync("ReceivePriceList", cachedData);
+                }
                 return cachedData ?? new List<Crypto>();
             }
 
@@ -43,7 +52,7 @@ namespace CryptoTrading.Services
                 // Add small delay to respect rate limits
                 await Task.Delay(1000);
                 
-                var url = "coins/markets?vs_currency=usd&order=market_cap_desc&per_page=100&page=1&sparkline=false&price_change_percentage=1h,24h,7d";
+                var url = "coins/markets?vs_currency=usd&order=market_cap_desc&per_page=50&page=1&sparkline=false&price_change_percentage=1h,24h,7d";
                 if (!string.IsNullOrEmpty(_apiKey))
                 {
                     url += $"&x_cg_demo_api_key={_apiKey}";
@@ -57,6 +66,11 @@ namespace CryptoTrading.Services
                 {
                     // Cache the successful response
                     _cacheService.SetCryptoData(response);
+                    // Broadcast price list to SignalR clients if hub available
+                    if (_hubContext != null)
+                    {
+                        await _hubContext.Clients.All.SendAsync("ReceivePriceList", response);
+                    }
                     return response;
                 }
                 
@@ -64,7 +78,11 @@ namespace CryptoTrading.Services
             }
             catch (HttpRequestException httpEx) when (httpEx.Message.Contains("403") || httpEx.Message.Contains("429"))
             {
-                _logger.LogWarning("Rate limited by CoinGecko API. Using mock data.");
+                _logger.LogWarning("Rate limited by CoinGecko API. Falling back to cache.");
+                if (_cacheService.TryGetCryptoData(out var last))
+                {
+                    return last ?? new List<Crypto>();
+                }
                 var mockData = GetMockCryptoData();
                 _cacheService.SetCryptoData(mockData);
                 return mockData;
@@ -72,6 +90,10 @@ namespace CryptoTrading.Services
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error fetching market data");
+                if (_cacheService.TryGetCryptoData(out var last))
+                {
+                    return last ?? new List<Crypto>();
+                }
                 return new List<Crypto>();
             }
         }
@@ -220,11 +242,21 @@ namespace CryptoTrading.Services
                     
                     _logger.LogInformation($"Market cap: {stats.TotalMarketCap}, Volume: {stats.TotalVolume}");
                 }
+                // Cache and broadcast stats
+                _cacheService.SetMarketStats(stats);
+                if (_hubContext != null)
+                {
+                    await _hubContext.Clients.All.SendAsync("ReceiveMarketStats", stats);
+                }
                 return stats;
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error fetching market stats");
+                if (_cacheService.TryGetMarketStats(out var last) && last != null)
+                {
+                    return last;
+                }
                 return new MarketStats();
             }
         }
