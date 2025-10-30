@@ -1,3 +1,44 @@
+# .NET build artifacts
+bin/
+obj/
+
+# User-specific files
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Logs
+*.log
+
+# Visual Studio cache/options
+.vs/
+
+# Rider/JetBrains
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Node
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+frontend/.turbo/
+frontend/.eslintcache
+
+# Environment files
+*.env
+*.env.*
+
+# Coverage
+coverage/
+
+# Misc
+*.swp
+*.swp*
+*.orig
 # .NET
 bin/
 obj/

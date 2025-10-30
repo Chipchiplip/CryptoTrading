@@ -1,22 +1,103 @@
+import { useEffect, useState } from 'react';
+import * as signalR from '@microsoft/signalr';
 import { TrendingUp, TrendingDown, DollarSign, Activity } from 'lucide-react';
 import { Card } from '../ui/card';
 import { Badge } from '../ui/badge';
 import { LineChart, Line, AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 
-const marketOverview = [
-  { label: 'Total Market Cap', value: '$2.1T', change: '+3.45%', isPositive: true },
-  { label: '24h Volume', value: '$89.2B', change: '+12.3%', isPositive: true },
-  { label: 'BTC Dominance', value: '47.3%', change: '-0.8%', isPositive: false },
-  { label: 'Active Coins', value: '12,450', change: '+23', isPositive: true },
-];
+export default function MarketStats() {
+  const [overview, setOverview] = useState([
+    { label: 'Total Market Cap', value: '—', change: '24h', isPositive: true },
+    { label: '24h Volume', value: '—', change: '24h', isPositive: true },
+    { label: 'BTC Dominance', value: '—', change: '24h', isPositive: true },
+    { label: 'Active Coins', value: '—', change: 'Live', isPositive: true },
+  ]);
+  const [topCoins, setTopCoins] = useState<Array<{ rank: number; symbol: string; name: string; price: string; change24h: number; volume: string; marketCap: string }>>([]);
 
-const topCoins = [
-  { rank: 1, symbol: 'BTC', name: 'Bitcoin', price: '$50,729', change24h: 2.34, volume: '$28.4B', marketCap: '$994.2B' },
-  { rank: 2, symbol: 'ETH', name: 'Ethereum', price: '$2,041', change24h: -1.23, volume: '$15.2B', marketCap: '$245.3B' },
-  { rank: 3, symbol: 'SOL', name: 'Solana', price: '$103.37', change24h: 5.67, volume: '$2.1B', marketCap: '$47.8B' },
-  { rank: 4, symbol: 'USDT', name: 'Tether', price: '$1.00', change24h: 0.01, volume: '$45.3B', marketCap: '$112.5B' },
-  { rank: 5, symbol: 'BNB', name: 'BNB', price: '$312.45', change24h: 1.89, volume: '$1.8B', marketCap: '$48.2B' },
-];
+  useEffect(() => {
+    let mounted = true;
+    const controller = new AbortController();
+    let connection: signalR.HubConnection | null = null;
+    const load = async () => {
+      try {
+        const [statsRes, listRes] = await Promise.all([
+          fetch('/api/market/stats', { signal: controller.signal }),
+          fetch('/api/market/cryptocurrencies', { signal: controller.signal }),
+        ]);
+        const stats = await statsRes.json().catch(() => ({}));
+        const list = await listRes.json().catch(() => []);
+        if (!statsRes.ok || !listRes.ok) return;
+
+        if (!mounted) return;
+        setOverview([
+          { label: 'Total Market Cap', value: stats?.total_market_cap ? `$${(stats.total_market_cap/1e12).toFixed(2)}T` : `$${(stats?.totalMarketCap/1e12||0).toFixed(2)}T`, change: '24h', isPositive: true },
+          { label: '24h Volume', value: stats?.total_volume ? `$${(stats.total_volume/1e9).toFixed(1)}B` : `$${(stats?.totalVolume/1e9||0).toFixed(1)}B`, change: '24h', isPositive: true },
+          { label: 'BTC Dominance', value: `${(stats?.btc_dominance ?? stats?.btcDominance ?? 0).toFixed(1)}%`, change: '24h', isPositive: true },
+          { label: 'Active Coins', value: `${stats?.active_cryptocurrencies ?? stats?.activeCryptocurrencies ?? 0}`, change: 'Live', isPositive: true },
+        ]);
+
+        const mapped = (list as any[])
+          .sort((a, b) => Number((b.market_cap ?? b.marketCap) || 0) - Number((a.market_cap ?? a.marketCap) || 0))
+          .slice(0, 10)
+          .map((c, idx) => ({
+            rank: idx + 1,
+            symbol: String(c.symbol || '').toUpperCase(),
+            name: c.name,
+            price: `$${Number(c.current_price ?? c.currentPrice ?? 0).toLocaleString('en-US', { maximumFractionDigits: 2 })}`,
+            change24h: Number(c.price_change_percentage_24h ?? c.priceChangePercentage24h ?? 0),
+            volume: `$${Number(c.total_volume ?? c.totalVolume ?? 0).toLocaleString('en-US')}`,
+            marketCap: `$${Number(c.market_cap ?? c.marketCap ?? 0).toLocaleString('en-US')}`,
+          }));
+        setTopCoins(mapped);
+      } catch {
+        // silent for dashboard
+      }
+    };
+    load();
+    const interval = setInterval(load, 5_000);
+
+    (async () => {
+      try {
+        connection = new signalR.HubConnectionBuilder()
+          .withUrl('/marketHub')
+          .withAutomaticReconnect()
+          .configureLogging(signalR.LogLevel.Error)
+          .build();
+
+        connection.on('ReceiveMarketStats', (s: any) => {
+          if (!mounted) return;
+          setOverview([
+            { label: 'Total Market Cap', value: s?.total_market_cap ? `$${(s.total_market_cap/1e12).toFixed(2)}T` : `$${(s?.totalMarketCap/1e12||0).toFixed(2)}T`, change: '24h', isPositive: true },
+            { label: '24h Volume', value: s?.total_volume ? `$${(s.total_volume/1e9).toFixed(1)}B` : `$${(s?.totalVolume/1e9||0).toFixed(1)}B`, change: '24h', isPositive: true },
+            { label: 'BTC Dominance', value: `${(s?.btc_dominance ?? s?.btcDominance ?? 0).toFixed(1)}%`, change: '24h', isPositive: true },
+            { label: 'Active Coins', value: `${s?.active_cryptocurrencies ?? s?.activeCryptocurrencies ?? 0}`, change: 'Live', isPositive: true },
+          ]);
+        });
+
+        connection.on('ReceivePriceList', (list: any[]) => {
+          if (!mounted) return;
+          const mapped = (list || [])
+            .sort((a, b) => Number((b.market_cap ?? b.marketCap) || 0) - Number((a.market_cap ?? a.marketCap) || 0))
+            .slice(0, 10)
+            .map((c: any, idx: number) => ({
+              rank: idx + 1,
+              symbol: String(c.symbol || '').toUpperCase(),
+              name: c.name,
+              price: `$${Number(c.current_price ?? c.currentPrice ?? 0).toLocaleString('en-US', { maximumFractionDigits: 2 })}`,
+              change24h: Number(c.price_change_percentage_24h ?? c.priceChangePercentage24h ?? 0),
+              volume: `$${Number(c.total_volume ?? c.totalVolume ?? 0).toLocaleString('en-US')}`,
+              marketCap: `$${Number(c.market_cap ?? c.marketCap ?? 0).toLocaleString('en-US')}`,
+            }));
+          setTopCoins(mapped);
+        });
+
+        await connection.start();
+        try { await connection.invoke('JoinMarketGroup'); } catch {}
+      } catch {}
+    })();
+
+    return () => { mounted = false; controller.abort(); clearInterval(interval); if (connection) try { connection.stop(); } catch {} };
+  }, []);
 
 const marketCapData = [
   { time: '00:00', cap: 1950 },
@@ -52,12 +133,11 @@ const priceChangeDistribution = [
   { range: '10%+', count: 234 },
 ];
 
-export default function MarketStats() {
   return (
     <>
       {/* Market Overview */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-        {marketOverview.map((stat, index) => (
+        {overview.map((stat, index) => (
           <Card key={index} className="bg-gray-900 border-gray-800 p-6">
             <div className="text-gray-400 text-sm mb-2">{stat.label}</div>
             <div className="text-3xl mb-2">{stat.value}</div>

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, TrendingUp, TrendingDown, Star, ExternalLink, Info } from 'lucide-react';
 import { Button } from '../../ui/button';
 import { Card } from '../../ui/card';
@@ -15,49 +15,62 @@ interface CoinDetailProps {
 export default function CoinDetail({ coinId = 'btc', onBack, onNavigate }: CoinDetailProps) {
   const [timeframe, setTimeframe] = useState('1D');
   const [isFavorite, setIsFavorite] = useState(false);
+  const [coinData, setCoinData] = useState<any | null>(null);
+  const [history, setHistory] = useState<Array<{ time: string; price: number }>>([]);
+  const [error, setError] = useState<string | null>(null);
 
-  // Mock data - would come from API
-  const coinData = {
-    id: 'btc',
-    symbol: 'BTC',
-    name: 'Bitcoin',
-    price: 50234.56,
-    change24h: 2.34,
-    high24h: 51200.00,
-    low24h: 49100.00,
-    volume24h: 28500000000,
-    marketCap: 982000000000,
-    circulatingSupply: 19500000,
-    maxSupply: 21000000,
-    rank: 1,
-    description: 'Bitcoin is the first successful internet money based on peer-to-peer technology; whereby no central bank or authority is involved in the transaction and production of the Bitcoin currency.'
-  };
+  useEffect(() => {
+    let mounted = true;
+    const controller = new AbortController();
+    const load = async () => {
+      try {
+        setError(null);
+        // details
+        const [detailRes, histRes] = await Promise.all([
+          fetch(`/api/market/cryptocurrencies/${coinId}`, { signal: controller.signal }),
+          fetch(`/api/market/cryptocurrencies/${coinId}/history?days=${timeframe === '1D' ? 1 : timeframe === '7D' ? 7 : 30}`,
+            { signal: controller.signal }),
+        ]);
+        const detail = await detailRes.json().catch(() => ({}));
+        const hist = await histRes.json().catch(() => []);
+        if (!detailRes.ok || !histRes.ok) throw new Error('Failed to load');
 
-  const priceData = {
-    '1D': [
-      { time: '00:00', price: 49200 },
-      { time: '04:00', price: 49800 },
-      { time: '08:00', price: 50100 },
-      { time: '12:00', price: 49600 },
-      { time: '16:00', price: 50400 },
-      { time: '20:00', price: 50234 },
-    ],
-    '7D': [
-      { time: 'Mon', price: 48200 },
-      { time: 'Tue', price: 49100 },
-      { time: 'Wed', price: 49800 },
-      { time: 'Thu', price: 48900 },
-      { time: 'Fri', price: 50100 },
-      { time: 'Sat', price: 49600 },
-      { time: 'Sun', price: 50234 },
-    ],
-    '1M': [
-      { time: 'Week 1', price: 45200 },
-      { time: 'Week 2', price: 47100 },
-      { time: 'Week 3', price: 48800 },
-      { time: 'Week 4', price: 50234 },
-    ],
-  };
+        if (!mounted) return;
+        setCoinData({
+          id: detail.id,
+          symbol: String(detail.symbol || '').toUpperCase(),
+          name: detail.name,
+          price: Number(detail.current_price ?? detail.currentPrice ?? 0),
+          change24h: Number(detail.price_change_percentage_24h ?? detail.priceChangePercentage24h ?? 0),
+          high24h: Number(detail.high_24h ?? detail.high24h ?? detail.current_price ?? 0),
+          low24h: Number(detail.low_24h ?? detail.low24h ?? detail.current_price ?? 0),
+          volume24h: Number(detail.total_volume ?? detail.totalVolume ?? 0),
+          marketCap: Number(detail.market_cap ?? detail.marketCap ?? 0),
+          circulatingSupply: Number(detail.circulating_supply ?? detail.circulatingSupply ?? 0),
+          maxSupply: Number(detail.max_supply ?? detail.maxSupply ?? 0),
+          rank: Number(detail.market_cap_rank ?? detail.rank ?? 0),
+          description: detail.description || '—',
+        });
+
+        const mapped: Array<{ time: string; price: number }> = (hist as any[]).map((h) => ({
+          time: new Date(h.timestamp || h.Time || h.time || Date.now()).toLocaleTimeString(),
+          price: Number(h.price ?? h.Price ?? 0),
+        }));
+        setHistory(mapped);
+      } catch (e: any) {
+        if (mounted) setError(e?.message || 'Failed to load');
+      }
+    };
+    load();
+    const interval = setInterval(load, 5_000);
+    return () => { mounted = false; controller.abort(); clearInterval(interval); };
+  }, [coinId, timeframe]);
+
+  const priceData = useMemo(() => ({
+    '1D': history,
+    '7D': history,
+    '1M': history,
+  }), [history]);
 
   const orderBook = {
     bids: [

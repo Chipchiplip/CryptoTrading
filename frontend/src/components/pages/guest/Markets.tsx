@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import * as signalR from '@microsoft/signalr';
 import { TrendingUp, TrendingDown, Star, Search, ArrowUpRight, ArrowDownRight } from 'lucide-react';
 import { Input } from '../../ui/input';
 import { Button } from '../../ui/button';
@@ -12,119 +13,163 @@ interface MarketsProps {
 export default function Markets({ onNavigate }: MarketsProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [favorites, setFavorites] = useState<string[]>(['BTC', 'ETH']);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [stats, setStats] = useState<{
+    marketCap?: number;
+    volume?: number;
+    btcDominance?: number;
+    active?: number;
+  }>({});
+  const [rows, setRows] = useState<any[]>([]);
+  const [binance, setBinance] = useState<Record<string, { price: number; change24h: number; volume24h?: number }>>({});
 
-  const marketData = [
-    { 
-      id: 'btc',
-      rank: 1, 
-      symbol: 'BTC', 
-      name: 'Bitcoin', 
-      price: 50234.56, 
-      change24h: 2.34, 
-      volume24h: 28500000000, 
-      marketCap: 982000000000,
-      chart: [45, 52, 48, 55, 51, 58, 50]
-    },
-    { 
-      id: 'eth',
-      rank: 2, 
-      symbol: 'ETH', 
-      name: 'Ethereum', 
-      price: 2845.32, 
-      change24h: 1.82, 
-      volume24h: 14200000000, 
-      marketCap: 342000000000,
-      chart: [42, 45, 43, 48, 46, 50, 48]
-    },
-    { 
-      id: 'bnb',
-      rank: 3, 
-      symbol: 'BNB', 
-      name: 'BNB', 
-      price: 312.89, 
-      change24h: 3.12, 
-      volume24h: 1200000000, 
-      marketCap: 48200000000,
-      chart: [35, 38, 36, 42, 40, 45, 44]
-    },
-    { 
-      id: 'sol',
-      rank: 4, 
-      symbol: 'SOL', 
-      name: 'Solana', 
-      price: 98.45, 
-      change24h: -0.45, 
-      volume24h: 2100000000, 
-      marketCap: 42800000000,
-      chart: [52, 50, 48, 45, 46, 44, 42]
-    },
-    { 
-      id: 'xrp',
-      rank: 5, 
-      symbol: 'XRP', 
-      name: 'Ripple', 
-      price: 0.5234, 
-      change24h: 4.23, 
-      volume24h: 1800000000, 
-      marketCap: 28400000000,
-      chart: [30, 35, 32, 38, 36, 42, 45]
-    },
-    { 
-      id: 'ada',
-      rank: 6, 
-      symbol: 'ADA', 
-      name: 'Cardano', 
-      price: 0.4523, 
-      change24h: -1.34, 
-      volume24h: 980000000, 
-      marketCap: 15800000000,
-      chart: [48, 45, 42, 40, 38, 36, 35]
-    },
-    { 
-      id: 'doge',
-      rank: 7, 
-      symbol: 'DOGE', 
-      name: 'Dogecoin', 
-      price: 0.0823, 
-      change24h: 5.67, 
-      volume24h: 1200000000, 
-      marketCap: 11600000000,
-      chart: [25, 30, 28, 35, 33, 40, 42]
-    },
-    { 
-      id: 'avax',
-      rank: 8, 
-      symbol: 'AVAX', 
-      name: 'Avalanche', 
-      price: 34.23, 
-      change24h: -2.12, 
-      volume24h: 620000000, 
-      marketCap: 12400000000,
-      chart: [55, 52, 48, 45, 42, 40, 38]
-    },
-    { 
-      id: 'dot',
-      rank: 9, 
-      symbol: 'DOT', 
-      name: 'Polkadot', 
-      price: 6.45, 
-      change24h: 1.23, 
-      volume24h: 340000000, 
-      marketCap: 8200000000,
-      chart: [40, 42, 41, 45, 44, 48, 46]
-    },
-    { 
-      id: 'matic',
-      rank: 10, 
-      symbol: 'MATIC', 
-      name: 'Polygon', 
-      price: 0.7823, 
-      change24h: -0.89, 
-      volume24h: 420000000, 
-      marketCap: 7300000000,
-      chart: [50, 48, 45, 42, 40, 38, 36]
-    },
-  ];
+  useEffect(() => {
+    let isMounted = true;
+    const controller = new AbortController();
+    let connection: signalR.HubConnection | null = null;
+    const fetchAll = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const [statsRes, listRes] = await Promise.all([
+          fetch('/api/market/stats', { signal: controller.signal }),
+          fetch('/api/market/cryptocurrencies', { signal: controller.signal }),
+        ]);
+        const statsJson = await statsRes.json().catch(() => ({}));
+        const listJson = await listRes.json().catch(() => []);
+        if (!statsRes.ok) throw new Error((statsJson as any)?.message || `HTTP ${statsRes.status}`);
+        if (!listRes.ok) throw new Error((listJson as any)?.message || `HTTP ${listRes.status}`);
+
+        if (isMounted) {
+          setStats({
+            marketCap: statsJson?.total_market_cap ?? statsJson?.totalMarketCap,
+            volume: statsJson?.total_volume ?? statsJson?.totalVolume,
+            btcDominance: statsJson?.btc_dominance ?? statsJson?.btcDominance,
+            active: statsJson?.active_cryptocurrencies ?? statsJson?.activeCryptocurrencies,
+          });
+
+          const mapped = (listJson as any[]).map((c, idx) => ({
+            id: c.id,
+            rank: idx + 1,
+            symbol: String(c.symbol || '').toUpperCase(),
+            name: c.name,
+            price: Number(c.current_price ?? c.currentPrice ?? 0),
+            change24h: Number(c.price_change_percentage_24h ?? c.priceChangePercentage24h ?? 0),
+            volume24h: Number(c.total_volume ?? c.totalVolume ?? 0),
+            marketCap: Number(c.market_cap ?? c.marketCap ?? 0),
+            chart: [45, 50, 48, 55, 51, 58, 50], // placeholder small sparkline
+          }));
+          setRows(mapped);
+        }
+      } catch (e: any) {
+        if (isMounted) setError(e?.message || 'Failed to load market data');
+      } finally {
+        if (isMounted) setLoading(false);
+      }
+    };
+    fetchAll();
+    const interval = setInterval(fetchAll, 2_000);
+
+    // SignalR realtime updates
+    (async () => {
+      try {
+        connection = new signalR.HubConnectionBuilder()
+          .withUrl('/marketHub')
+          .withAutomaticReconnect()
+          .configureLogging(signalR.LogLevel.Error)
+          .build();
+
+        connection.on('ReceiveMarketStats', (s: any) => {
+          if (!isMounted) return;
+          setStats({
+            marketCap: s?.total_market_cap ?? s?.totalMarketCap,
+            volume: s?.total_volume ?? s?.totalVolume,
+            btcDominance: s?.btc_dominance ?? s?.btcDominance,
+            active: s?.active_cryptocurrencies ?? s?.activeCryptocurrencies,
+          });
+        });
+
+        connection.on('ReceivePriceList', (list: any[]) => {
+          if (!isMounted) return;
+          const mapped = (list || []).map((c: any, idx: number) => ({
+            id: c.id,
+            rank: idx + 1,
+            symbol: String(c.symbol || '').toUpperCase(),
+            name: c.name,
+            price: Number(c.current_price ?? c.currentPrice ?? 0),
+            change24h: Number(c.price_change_percentage_24h ?? c.priceChangePercentage24h ?? 0),
+            volume24h: Number(c.total_volume ?? c.totalVolume ?? 0),
+            marketCap: Number(c.market_cap ?? c.marketCap ?? 0),
+            chart: [45, 50, 48, 55, 51, 58, 50],
+          }));
+          setRows(mapped);
+        });
+
+        await connection.start();
+        // optional group join
+        try { await connection.invoke('JoinMarketGroup'); } catch {}
+      } catch {
+        // ignore, fallback to polling
+      }
+    })();
+
+    // Binance realtime (client-side) for top symbols
+    let binanceSocket: WebSocket | null = null;
+    const startBinance = (symbols: string[]) => {
+      if (!symbols.length) return;
+      const streams = symbols.map((s) => `${s.toLowerCase()}usdt@ticker`).join('/');
+      const url = `wss://stream.binance.com:9443/stream?streams=${streams}`;
+      try {
+        if (binanceSocket) {
+          try { binanceSocket.close(); } catch {}
+        }
+        binanceSocket = new WebSocket(url);
+        binanceSocket.onmessage = (ev) => {
+          try {
+            const msg = JSON.parse(ev.data);
+            const d = msg?.data;
+            if (!d || !d.s || !d.c) return;
+            const sym = String(d.s).replace('USDT', '').toUpperCase();
+            const price = Number(d.c);
+            const changePct = Number(d.P);
+            setBinance((prev) => ({ ...prev, [sym]: { price, change24h: changePct } }));
+          } catch {}
+        };
+      } catch {}
+    };
+
+    // start/refresh binance subscription when rows update (top 12)
+    const refreshBinance = () => {
+      const topSymbols = rows.slice(0, 12).map((r) => String(r.symbol || '').toUpperCase());
+      if (topSymbols.length) startBinance(Array.from(new Set(topSymbols)));
+    };
+    const binanceStartTimer = setInterval(refreshBinance, 2000);
+    return () => {
+      isMounted = false;
+      controller.abort();
+      clearInterval(interval);
+      if (connection) {
+        try { connection.stop(); } catch {}
+      }
+      if (binanceSocket) {
+        try { binanceSocket.close(); } catch {}
+      }
+    };
+  }, []);
+
+  const marketData = useMemo(() => {
+    if (!rows.length || Object.keys(binance).length === 0) return rows;
+    return rows.map((r) => {
+      const b = binance[r.symbol];
+      if (!b) return r;
+      return {
+        ...r,
+        price: b.price || r.price,
+        change24h: Number.isFinite(b.change24h) ? b.change24h : r.change24h,
+      };
+    });
+  }, [rows, binance]);
 
   const toggleFavorite = (symbol: string) => {
     setFavorites(prev => 
@@ -166,22 +211,22 @@ export default function Markets({ onNavigate }: MarketsProps) {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
           <div className="bg-gray-900 border border-gray-800 rounded-lg p-4">
             <div className="text-gray-400 text-sm mb-1">Market Cap</div>
-            <div className="text-2xl text-white">$1.82T</div>
-            <div className="text-emerald-500 text-sm mt-1">+2.4%</div>
+            <div className="text-2xl text-white">{stats.marketCap ? `$${(stats.marketCap/1e12).toFixed(2)}T` : '—'}</div>
+            <div className="text-emerald-500 text-sm mt-1">{stats.marketCap ? '+24h' : ''}</div>
           </div>
           <div className="bg-gray-900 border border-gray-800 rounded-lg p-4">
             <div className="text-gray-400 text-sm mb-1">24h Volume</div>
-            <div className="text-2xl text-white">$89.4B</div>
+            <div className="text-2xl text-white">{stats.volume ? `$${(stats.volume/1e9).toFixed(1)}B` : '—'}</div>
             <div className="text-emerald-500 text-sm mt-1">+5.2%</div>
           </div>
           <div className="bg-gray-900 border border-gray-800 rounded-lg p-4">
             <div className="text-gray-400 text-sm mb-1">BTC Dominance</div>
-            <div className="text-2xl text-white">53.8%</div>
-            <div className="text-gray-400 text-sm mt-1">-0.3%</div>
+            <div className="text-2xl text-white">{stats.btcDominance ? `${stats.btcDominance.toFixed(1)}%` : '—'}</div>
+            <div className="text-gray-400 text-sm mt-1">24h</div>
           </div>
           <div className="bg-gray-900 border border-gray-800 rounded-lg p-4">
             <div className="text-gray-400 text-sm mb-1">Active Markets</div>
-            <div className="text-2xl text-white">350+</div>
+            <div className="text-2xl text-white">{stats.active ? `${stats.active}+` : '—'}</div>
             <div className="text-emerald-500 text-sm mt-1">Live</div>
           </div>
         </div>
@@ -217,6 +262,12 @@ export default function Markets({ onNavigate }: MarketsProps) {
           </TabsList>
 
           <TabsContent value="all">
+            {error && (
+              <div className="mb-4 text-red-400">{error}</div>
+            )}
+            {loading && rows.length === 0 ? (
+              <div className="text-gray-400">Loading market data...</div>
+            ) : null}
             <MarketTable 
               data={filteredData} 
               favorites={favorites} 

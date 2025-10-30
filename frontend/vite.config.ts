@@ -58,12 +58,12 @@
       open: true,
       proxy: {
         '/api': {
-          target: process.env.VITE_API_TARGET || 'https://localhost:7154',
+          target: process.env.VITE_API_TARGET || 'http://localhost:5299',
           changeOrigin: true,
           secure: false,
         },
         '/marketHub': {
-          target: process.env.VITE_API_TARGET || 'https://localhost:7154',
+          target: process.env.VITE_API_TARGET || 'http://localhost:5299',
           ws: true,
           changeOrigin: true,
           secure: false,

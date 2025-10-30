@@ -1,3 +1,5 @@
+import { useEffect, useState } from 'react';
+import * as signalR from '@microsoft/signalr';
 import { TrendingUp, Shield, Zap, Globe, ArrowRight, CheckCircle2 } from 'lucide-react';
 import { Button } from '../../ui/button';
 import { Card } from '../../ui/card';
@@ -7,6 +9,100 @@ interface HomeProps {
 }
 
 export default function Home({ onNavigate }: HomeProps) {
+  const [overview, setOverview] = useState<{ users?: string; volume?: number; markets?: number; countries?: number } | null>(null);
+  const [popularCoins, setPopularCoins] = useState<Array<{ symbol: string; name: string; price: string; change: string; positive: boolean }>>([]);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let isMounted = true;
+    const controller = new AbortController();
+    let connection: signalR.HubConnection | null = null;
+    const load = async () => {
+      try {
+        setError(null);
+        const [statsRes, listRes] = await Promise.all([
+          fetch('/api/market/stats', { signal: controller.signal }),
+          fetch('/api/market/cryptocurrencies', { signal: controller.signal }),
+        ]);
+        const stats = await statsRes.json().catch(() => ({}));
+        const list = await listRes.json().catch(() => []);
+        if (!statsRes.ok) throw new Error((stats as any)?.message || `HTTP ${statsRes.status}`);
+        if (!listRes.ok) throw new Error((list as any)?.message || `HTTP ${listRes.status}`);
+
+        if (!isMounted) return;
+        setOverview({
+          users: '—',
+          volume: stats?.total_volume ?? stats?.totalVolume,
+          markets: stats?.active_cryptocurrencies ?? stats?.activeCryptocurrencies,
+          countries: 180,
+        });
+
+        const top4 = (list as any[])
+          .sort((a, b) => Number((b.market_cap ?? b.marketCap) || 0) - Number((a.market_cap ?? a.marketCap) || 0))
+          .slice(0, 4)
+          .map((c) => {
+            const price = Number(c.current_price ?? c.currentPrice ?? 0);
+            const change = Number(c.price_change_percentage_24h ?? c.priceChangePercentage24h ?? 0);
+            return {
+              symbol: String(c.symbol || '').toUpperCase(),
+              name: c.name,
+              price: price >= 1000 ? `$${price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : `$${price.toFixed(2)}`,
+              change: `${change >= 0 ? '+' : ''}${change.toFixed(2)}%`,
+              positive: change >= 0,
+            };
+          });
+        setPopularCoins(top4);
+      } catch (e: any) {
+        if (isMounted) setError(e?.message || 'Failed to load');
+      }
+    };
+    load();
+    const interval = setInterval(load, 5_000);
+
+    (async () => {
+      try {
+        connection = new signalR.HubConnectionBuilder()
+          .withUrl('/marketHub')
+          .withAutomaticReconnect()
+          .configureLogging(signalR.LogLevel.Error)
+          .build();
+
+        connection.on('ReceiveMarketStats', (s: any) => {
+          if (!isMounted) return;
+          setOverview((prev) => ({
+            users: prev?.users ?? '—',
+            volume: s?.total_volume ?? s?.totalVolume,
+            markets: s?.active_cryptocurrencies ?? s?.activeCryptocurrencies,
+            countries: prev?.countries ?? 180,
+          }));
+        });
+
+        connection.on('ReceivePriceList', (list: any[]) => {
+          if (!isMounted) return;
+          const top4 = (list || [])
+            .sort((a, b) => Number((b.market_cap ?? b.marketCap) || 0) - Number((a.market_cap ?? a.marketCap) || 0))
+            .slice(0, 4)
+            .map((c: any) => {
+              const price = Number(c.current_price ?? c.currentPrice ?? 0);
+              const change = Number(c.price_change_percentage_24h ?? c.priceChangePercentage24h ?? 0);
+              return {
+                symbol: String(c.symbol || '').toUpperCase(),
+                name: c.name,
+                price: price >= 1000 ? `$${price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : `$${price.toFixed(2)}`,
+                change: `${change >= 0 ? '+' : ''}${change.toFixed(2)}%`,
+                positive: change >= 0,
+              };
+            });
+          setPopularCoins(top4);
+        });
+
+        await connection.start();
+        try { await connection.invoke('JoinMarketGroup'); } catch {}
+      } catch {}
+    })();
+
+    return () => { isMounted = false; controller.abort(); clearInterval(interval); if (connection) try { connection.stop(); } catch {} };
+  }, []);
   const features = [
     {
       icon: Shield,
@@ -31,17 +127,10 @@ export default function Home({ onNavigate }: HomeProps) {
   ];
 
   const cryptoStats = [
-    { label: 'Total Users', value: '2.5M+', change: '+12%' },
-    { label: '24h Volume', value: '$4.2B', change: '+8%' },
-    { label: 'Markets', value: '350+', change: '+5%' },
-    { label: 'Countries', value: '180+', change: 'Stable' }
-  ];
-
-  const popularCoins = [
-    { symbol: 'BTC', name: 'Bitcoin', price: '$50,234', change: '+2.34%', positive: true },
-    { symbol: 'ETH', name: 'Ethereum', price: '$2,845', change: '+1.82%', positive: true },
-    { symbol: 'SOL', name: 'Solana', price: '$98.45', change: '-0.45%', positive: false },
-    { symbol: 'BNB', name: 'BNB', price: '$312.89', change: '+3.12%', positive: true }
+    { label: 'Total Users', value: overview?.users ?? '—', change: '—' },
+    { label: '24h Volume', value: overview?.volume ? `$${(overview.volume/1e9).toFixed(1)}B` : '—', change: '+8%' },
+    { label: 'Markets', value: overview?.markets ? `${overview.markets}+` : '—', change: '+5%' },
+    { label: 'Countries', value: overview?.countries ? `${overview.countries}+` : '—', change: 'Stable' }
   ];
 
   return (
