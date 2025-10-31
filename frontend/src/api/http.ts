@@ -60,6 +60,15 @@ export async function authFetch(input: RequestInfo | URL, init?: RequestInit) {
     if (res.status === 401) {
       console.warn('[http] Unauthorized (401), clearing token');
       setAccessToken(null);
+      // Only redirect if we're not already on a guest page
+      if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/login') && !window.location.pathname.startsWith('/register')) {
+        // Check if we're on a trader route
+        const traderRoutes = ['/trader-dashboard', '/watchlist', '/trade', '/orders', '/portfolio', '/wallets', '/deposit', '/withdraw', '/subscription', '/settings', '/market'];
+        if (traderRoutes.some(route => window.location.pathname.startsWith(route))) {
+          console.warn('[http] Redirecting to login due to 401');
+          window.location.href = '/login';
+        }
+      }
     }
     
     return res;
@@ -68,5 +77,6 @@ export async function authFetch(input: RequestInfo | URL, init?: RequestInit) {
     throw e;
   }
 }
+
 
 

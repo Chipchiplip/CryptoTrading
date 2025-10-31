@@ -49,11 +49,18 @@ export interface WatchlistCoin {
   addedAt: string;
 }
 
+export interface PriceHistoryItem {
+  coinId: string;
+  price: number;
+  timestamp: string;
+}
+
 export const MarketApi = {
   getCryptocurrencies: () => apiGet<Crypto[]>('/api/market/cryptocurrencies'),
   getCryptocurrency: (symbol: string) => apiGet<Crypto>(`/api/market/cryptocurrencies/${symbol}`),
   getPrices: (symbols: string[]) => apiGet<Crypto[]>(`/api/market/prices?${symbols.map(s => `symbols=${s}`).join('&')}`),
   getMarketStats: () => apiGet<any>('/api/market/stats'),
   getWatchlistRealtime: (watchlistId: string) => apiGet<WatchlistRealtimeUpdate>(`/api/portfolio/watchlists/${watchlistId}/realtime`),
+  getPriceHistory: (coinId: string, days: number) => apiGet<PriceHistoryItem[]>(`/api/market/cryptocurrencies/${coinId}/history?days=${days}`),
 };
 

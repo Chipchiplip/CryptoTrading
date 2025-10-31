@@ -1,5 +1,6 @@
-import React from 'react';
-import { BrowserRouter, Routes, Route, useNavigate } from 'react-router-dom';
+import React, { useEffect } from 'react';
+import { BrowserRouter, Routes, Route, useNavigate, useLocation } from 'react-router-dom';
+import { getAccessToken } from './api/http';
 import GuestLayout from './components/GuestLayout';
 import TraderLayout from './components/TraderLayout';
 import Home from './components/pages/guest/Home';
@@ -21,6 +22,7 @@ import Withdraw from './components/pages/trader/Withdraw';
 import Subscription from './components/pages/trader/Subscription';
 import Settings from './components/pages/trader/Settings';
 import OrderDetail from './components/pages/trader/OrderDetail';
+import Market from './components/pages/trader/Market';
 
 const guestPathMap: Record<string, string> = {
   home: '/',
@@ -45,7 +47,9 @@ const traderPathMap: Record<string, string> = {
   'withdraw': '/withdraw',
   'subscription': '/subscription',
   'settings': '/settings',
+  'market': '/market',
 };
+
 
 function GuestPage({ current, children }: { current: string; children: React.ReactNode }) {
   const navigate = useNavigate();
@@ -66,6 +70,27 @@ function GuestPage({ current, children }: { current: string; children: React.Rea
       </GuestLayout>
     </div>
   );
+}
+
+// Protected route wrapper - redirect to login if no token
+function ProtectedRoute({ children }: { children: React.ReactNode }) {
+  const location = useLocation();
+  const navigate = useNavigate();
+  
+  useEffect(() => {
+    const token = getAccessToken();
+    if (!token) {
+      console.warn('[ProtectedRoute] No token found, redirecting to login');
+      navigate('/login', { state: { from: location.pathname } });
+    }
+  }, [navigate, location]);
+  
+  const token = getAccessToken();
+  if (!token) {
+    return null; // Don't render children if no token
+  }
+  
+  return <>{children}</>;
 }
 
 function TraderPage({ current, children }: { current: string; children: React.ReactNode }) {
@@ -102,19 +127,21 @@ export default function App() {
         <Route path="/reset-password" element={<GuestPage current="reset-password"><ResetPassword /></GuestPage>} />
         <Route path="/verify-email" element={<GuestPage current="verify-email"><VerifyEmail /></GuestPage>} />
         
-        {/* Trader Routes */}
-        <Route path="/trader-dashboard" element={<TraderPage current="trader-dashboard"><TraderDashboard /></TraderPage>} />
-        <Route path="/watchlist" element={<TraderPage current="watchlist"><Watchlist /></TraderPage>} />
-        <Route path="/trade" element={<TraderPage current="trade"><Trade /></TraderPage>} />
-        <Route path="/orders" element={<TraderPage current="orders"><Orders /></TraderPage>} />
-        <Route path="/order-detail" element={<TraderPage current="order-detail"><OrderDetail /></TraderPage>} />
-        <Route path="/trades-history" element={<TraderPage current="trades-history"><TradesHistory /></TraderPage>} />
-        <Route path="/portfolio" element={<TraderPage current="portfolio"><Portfolio /></TraderPage>} />
-        <Route path="/wallets" element={<TraderPage current="wallets"><Wallets /></TraderPage>} />
-        <Route path="/deposit" element={<TraderPage current="deposit"><Deposit /></TraderPage>} />
-        <Route path="/withdraw" element={<TraderPage current="withdraw"><Withdraw /></TraderPage>} />
-        <Route path="/subscription" element={<TraderPage current="subscription"><Subscription /></TraderPage>} />
-        <Route path="/settings" element={<TraderPage current="settings"><Settings /></TraderPage>} />
+        {/* Trader Routes - Protected */}
+        <Route path="/trader-dashboard" element={<ProtectedRoute><TraderPage current="trader-dashboard"><TraderDashboard /></TraderPage></ProtectedRoute>} />
+        <Route path="/watchlist" element={<ProtectedRoute><TraderPage current="watchlist"><Watchlist /></TraderPage></ProtectedRoute>} />
+        <Route path="/trade" element={<ProtectedRoute><TraderPage current="trade"><Trade /></TraderPage></ProtectedRoute>} />
+        <Route path="/orders" element={<ProtectedRoute><TraderPage current="orders"><Orders /></TraderPage></ProtectedRoute>} />
+        <Route path="/order-detail" element={<ProtectedRoute><TraderPage current="order-detail"><OrderDetail /></TraderPage></ProtectedRoute>} />
+        <Route path="/trades-history" element={<ProtectedRoute><TraderPage current="trades-history"><TradesHistory /></TraderPage></ProtectedRoute>} />
+        <Route path="/portfolio" element={<ProtectedRoute><TraderPage current="portfolio"><Portfolio /></TraderPage></ProtectedRoute>} />
+        <Route path="/wallets" element={<ProtectedRoute><TraderPage current="wallets"><Wallets /></TraderPage></ProtectedRoute>} />
+        <Route path="/deposit" element={<ProtectedRoute><TraderPage current="deposit"><Deposit /></TraderPage></ProtectedRoute>} />
+        <Route path="/withdraw" element={<ProtectedRoute><TraderPage current="withdraw"><Withdraw /></TraderPage></ProtectedRoute>} />
+        <Route path="/subscription" element={<ProtectedRoute><TraderPage current="subscription"><Subscription /></TraderPage></ProtectedRoute>} />
+        <Route path="/settings" element={<ProtectedRoute><TraderPage current="settings"><Settings /></TraderPage></ProtectedRoute>} />
+        <Route path="/market" element={<ProtectedRoute><TraderPage current="market"><Market /></TraderPage></ProtectedRoute>} />
+        
       </Routes>
     </BrowserRouter>
   );

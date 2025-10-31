@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Star, Plus, TrendingUp, TrendingDown, Trash2, Search, Loader2, AlertCircle } from 'lucide-react';
 import { Card } from '../../ui/card';
 import { Button } from '../../ui/button';
@@ -16,6 +16,34 @@ interface WatchlistProps {
 interface WatchlistCoinWithPrice extends WatchlistCoin {
   volume24h?: number;
   chart?: number[];
+}
+
+// Component to display coin icon with fallback
+function CoinIcon({ coin, size = 'sm' }: { coin: { image?: string; iconUrl?: string; symbol: string }; size?: 'sm' | 'md' }) {
+  const [imageError, setImageError] = React.useState(false);
+  const sizeClasses = size === 'md' ? 'w-10 h-10' : 'w-6 h-6';
+  const textSizeClasses = size === 'md' ? 'text-sm' : 'text-xs';
+  const imageUrl = coin.image || coin.iconUrl || null;
+  
+  return (
+    <>
+      {imageUrl && !imageError ? (
+        <img
+          src={imageUrl}
+          alt={coin.symbol}
+          className={`${sizeClasses} object-fill flex-shrink-0 rounded-full`}
+          loading="lazy"
+          onError={() => setImageError(true)}
+        />
+      ) : (
+        <div className={`${sizeClasses} bg-emerald-500/10 rounded-full flex items-center justify-center flex-shrink-0`}>
+          <span className={`text-emerald-500 ${textSizeClasses} font-semibold`}>
+            {(coin.symbol || '').charAt(0).toUpperCase()}
+          </span>
+        </div>
+      )}
+    </>
+  );
 }
 
 export default function Watchlist({ onNavigate }: WatchlistProps) {
@@ -44,7 +72,8 @@ export default function Watchlist({ onNavigate }: WatchlistProps) {
         setWatchlistCoins(res.data.coins.map(c => ({
           ...c,
           volume24h: 0, // Will be filled from market data
-          chart: Array.from({ length: 7 }, () => Math.random() * 50 + 40) // Mock chart data
+          chart: Array.from({ length: 7 }, () => Math.random() * 50 + 40), // Mock chart data
+          // iconUrl is already in WatchlistCoin from API
         })));
         setLoading(false);
       } catch (e: any) {
@@ -71,12 +100,16 @@ export default function Watchlist({ onNavigate }: WatchlistProps) {
       // Update prices for coins in watchlist
       setWatchlistCoins(prev => prev.map(coin => {
         const update = res.data.updates.find(u => u.symbol.toUpperCase() === coin.symbol.toUpperCase());
-        if (update) {
+        // Also try to get image from allCryptos if available
+        const cryptoData = allCryptos.length > 0 ? allCryptos.find(c => c.symbol.toUpperCase() === coin.symbol.toUpperCase()) : null;
+        if (update || cryptoData) {
           return {
             ...coin,
-            currentPrice: update.currentPrice,
-            priceChange24h: update.priceChange24h,
-            priceChangePercent24h: update.priceChangePercentage24h,
+            currentPrice: update?.currentPrice ?? coin.currentPrice,
+            priceChange24h: update?.priceChange24h ?? coin.priceChange24h,
+            priceChangePercent24h: update?.priceChangePercentage24h ?? coin.priceChangePercent24h,
+            // Add image from crypto data if available (only if not already set)
+            iconUrl: cryptoData?.image || coin.iconUrl || '',
           };
         }
         return coin;
@@ -98,18 +131,40 @@ export default function Watchlist({ onNavigate }: WatchlistProps) {
     return () => clearInterval(interval);
   }, [watchlistId]);
 
-  // Fetch all cryptocurrencies for add coin dialog
+  // Fetch all cryptocurrencies for add coin dialog and image mapping
   useEffect(() => {
-    if (addCoinDialogOpen && allCryptos.length === 0) {
+    // Fetch once on mount to have image data available for watchlist coins
+    if (allCryptos.length === 0) {
       const fetchCryptos = async () => {
         const res = await MarketApi.getCryptocurrencies();
         if (res.ok) {
-          setAllCryptos(res.data);
+          // Normalize data - handle both snake_case from backend JsonPropertyName and camelCase
+          const normalized = res.data.map((coin: any) => ({
+            id: coin.id || coin.Id || '',
+            symbol: String(coin.symbol || coin.Symbol || '').toUpperCase(),
+            name: coin.name || coin.Name || '',
+            currentPrice: Number(coin.current_price ?? coin.currentPrice ?? coin.CurrentPrice ?? 0),
+            priceChange24h: Number(coin.price_change_24h ?? coin.priceChange24h ?? coin.PriceChange24h ?? 0),
+            priceChangePercentage24h: Number(coin.price_change_percentage_24h ?? coin.priceChangePercentage24h ?? coin.PriceChangePercentage24h ?? 0),
+            marketCap: Number(coin.market_cap ?? coin.marketCap ?? coin.MarketCap ?? 0),
+            totalVolume: Number(coin.total_volume ?? coin.totalVolume ?? coin.TotalVolume ?? 0),
+            image: coin.image || coin.Image || coin.image_url || coin.imageUrl || null,
+          }));
+          setAllCryptos(normalized);
+          
+          // Update watchlist coins with images if available
+          setWatchlistCoins(prev => prev.map(coin => {
+            const cryptoData = normalized.find(c => c.symbol.toUpperCase() === coin.symbol.toUpperCase());
+            if (cryptoData?.image && !coin.iconUrl) {
+              return { ...coin, iconUrl: cryptoData.image };
+            }
+            return coin;
+          }));
         }
       };
       fetchCryptos();
     }
-  }, [addCoinDialogOpen]);
+  }, []);
 
   const removeFromWatchlist = async (symbol: string) => {
     if (!watchlistId) return;
@@ -140,10 +195,11 @@ export default function Watchlist({ onNavigate }: WatchlistProps) {
     }
   };
 
-  const formatPrice = (price: number) => {
-    if (price >= 1000) return `$${price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-    if (price >= 1) return `$${price.toFixed(2)}`;
-    return `$${price.toFixed(4)}`;
+  const formatPrice = (price: number | undefined | null) => {
+    const numPrice = Number(price) || 0;
+    if (numPrice >= 1000) return `$${numPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    if (numPrice >= 1) return `$${numPrice.toFixed(2)}`;
+    return `$${numPrice.toFixed(4)}`;
   };
 
   const formatVolume = (volume: number) => {
@@ -195,9 +251,7 @@ export default function Watchlist({ onNavigate }: WatchlistProps) {
                         className="flex items-center justify-between p-3 rounded-lg hover:bg-gray-800 transition-colors"
                       >
                         <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 bg-emerald-500/10 rounded-full flex items-center justify-center">
-                            <span className="text-emerald-500 text-sm">{coin.symbol.toUpperCase()}</span>
-                          </div>
+                          <CoinIcon coin={coin} size="md" />
                           <div>
                             <div className="text-white">{coin.name}</div>
                             <div className="text-sm text-gray-400">{coin.symbol.toUpperCase()}</div>
@@ -206,8 +260,8 @@ export default function Watchlist({ onNavigate }: WatchlistProps) {
                         <div className="flex items-center gap-4">
                           <div className="text-right">
                             <div className="text-white">{formatPrice(coin.currentPrice)}</div>
-                            <div className={coin.priceChangePercentage24h >= 0 ? 'text-emerald-500 text-sm' : 'text-red-500 text-sm'}>
-                              {coin.priceChangePercentage24h >= 0 ? '+' : ''}{coin.priceChangePercentage24h.toFixed(2)}%
+                            <div className={(coin.priceChangePercentage24h || 0) >= 0 ? 'text-emerald-500 text-sm' : 'text-red-500 text-sm'}>
+                              {(coin.priceChangePercentage24h || 0) >= 0 ? '+' : ''}{Math.abs(coin.priceChangePercentage24h || 0).toFixed(2)}%
                             </div>
                           </div>
                           <Button
@@ -281,9 +335,7 @@ export default function Watchlist({ onNavigate }: WatchlistProps) {
                           className="flex items-center justify-between p-3 rounded-lg hover:bg-gray-800 transition-colors"
                         >
                           <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 bg-emerald-500/10 rounded-full flex items-center justify-center">
-                              <span className="text-emerald-500 text-sm">{coin.symbol.toUpperCase()}</span>
-                            </div>
+                            <CoinIcon coin={coin} size="md" />
                             <div>
                               <div className="text-white">{coin.name}</div>
                               <div className="text-sm text-gray-400">{coin.symbol.toUpperCase()}</div>
@@ -311,9 +363,7 @@ export default function Watchlist({ onNavigate }: WatchlistProps) {
             <Card key={coin.symbol} className="bg-gray-900 border-gray-800 p-6 hover:border-emerald-500/50 transition-colors">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-4 flex-1">
-                  <div className="w-12 h-12 bg-emerald-500/10 rounded-full flex items-center justify-center">
-                    <span className="text-emerald-500">{coin.symbol}</span>
-                  </div>
+                  <CoinIcon coin={coin} size="md" />
                   <div className="flex-1">
                     <div className="flex items-center gap-2 mb-1">
                       <h3>{coin.name}</h3>
@@ -330,7 +380,7 @@ export default function Watchlist({ onNavigate }: WatchlistProps) {
                       {coin.chart.map((value, index) => (
                         <div
                           key={index}
-                          className={`w-2 rounded-sm ${coin.priceChangePercent24h >= 0 ? 'bg-emerald-500/50' : 'bg-red-500/50'}`}
+                          className={`w-2 rounded-sm ${(coin.priceChangePercent24h || 0) >= 0 ? 'bg-emerald-500/50' : 'bg-red-500/50'}`}
                           style={{ height: `${value}%` }}
                         ></div>
                       ))}
@@ -340,9 +390,9 @@ export default function Watchlist({ onNavigate }: WatchlistProps) {
                   {/* Price */}
                   <div className="text-right min-w-[120px]">
                     <div className="text-2xl text-white mb-1">{formatPrice(coin.currentPrice)}</div>
-                    <div className={`flex items-center justify-end gap-1 ${coin.priceChangePercent24h >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
-                      {coin.priceChangePercent24h >= 0 ? <TrendingUp className="w-4 h-4" /> : <TrendingDown className="w-4 h-4" />}
-                      {Math.abs(coin.priceChangePercent24h).toFixed(2)}%
+                    <div className={`flex items-center justify-end gap-1 ${(coin.priceChangePercent24h || 0) >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
+                      {(coin.priceChangePercent24h || 0) >= 0 ? <TrendingUp className="w-4 h-4" /> : <TrendingDown className="w-4 h-4" />}
+                      {Math.abs(coin.priceChangePercent24h || 0).toFixed(2)}%
                     </div>
                   </div>
 

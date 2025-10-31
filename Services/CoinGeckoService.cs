@@ -58,12 +58,53 @@ namespace CryptoTrading.Services
                     url += $"&x_cg_demo_api_key={_apiKey}";
                 }
                 
-                var response = await _httpClient.GetFromJsonAsync<List<Crypto>>(url);
+                // Get raw JSON to log and ensure proper deserialization
+                var httpResponse = await _httpClient.GetAsync(url);
+                httpResponse.EnsureSuccessStatusCode();
+                
+                var jsonString = await httpResponse.Content.ReadAsStringAsync();
+                
+                // Log first coin to debug image field
+                if (!string.IsNullOrEmpty(jsonString))
+                {
+                    var jsonDoc = JsonDocument.Parse(jsonString);
+                    if (jsonDoc.RootElement.ValueKind == JsonValueKind.Array && jsonDoc.RootElement.GetArrayLength() > 0)
+                    {
+                        var firstCoin = jsonDoc.RootElement[0];
+                        _logger.LogInformation($"Sample coin from API - Has 'image' field: {firstCoin.TryGetProperty("image", out var img)}, Image value: {img.GetString() ?? "null"}");
+                    }
+                }
+                
+                // Deserialize with case-insensitive matching
+                // Model uses [JsonPropertyName("image")] which should map correctly
+                var jsonOptions = new JsonSerializerOptions
+                {
+                    PropertyNameCaseInsensitive = true
+                };
+                
+                var response = JsonSerializer.Deserialize<List<Crypto>>(jsonString, jsonOptions);
                 
                 _logger.LogInformation($"Received {response?.Count ?? 0} coins from API");
                 
                 if (response != null && response.Count > 0)
                 {
+                    // Ensure image URLs are populated - CoinGecko API should return "image" field
+                    // If missing, we can construct from coin ID (fallback)
+                    foreach (var crypto in response)
+                    {
+                        if (string.IsNullOrEmpty(crypto.Image) && !string.IsNullOrEmpty(crypto.Id))
+                        {
+                            // Fallback: Construct CoinGecko image URL from coin ID
+                            // Format: https://assets.coingecko.com/coins/images/{coin_id_number}/standard/{coin_id}.png
+                            // But we don't have coin_id_number, so we'll leave it null and let frontend handle fallback
+                            // CoinGecko markets endpoint should include image field, so this is just a safety check
+                        }
+                    }
+                    
+                    // Log first coin to verify image field is populated
+                    var firstCoin = response[0];
+                    _logger.LogInformation($"First coin - Id: {firstCoin.Id}, Name: {firstCoin.Name}, Image: {firstCoin.Image ?? "NULL"}");
+                    
                     // Cache the successful response
                     _cacheService.SetCryptoData(response);
                     // Broadcast price list to SignalR clients if hub available

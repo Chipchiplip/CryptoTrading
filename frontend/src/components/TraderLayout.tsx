@@ -15,7 +15,8 @@ import {
   Search,
   ChevronDown,
   Menu,
-  X
+  X,
+  BarChart3 
 } from 'lucide-react';
 import { Input } from './ui/input';
 import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar';
@@ -34,6 +35,7 @@ export default function TraderLayout({ children, currentPage, onNavigate }: Trad
   const menuItems = [
     { id: 'trader-dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'watchlist', label: 'Watchlist', icon: Star },
+    { id: 'market', label: 'Market', icon: BarChart3 },
     { id: 'trade', label: 'Trade', icon: TrendingUp },
     { id: 'orders', label: 'Orders', icon: ListOrdered },
     { id: 'trades-history', label: 'Trades', icon: History },
@@ -43,6 +45,7 @@ export default function TraderLayout({ children, currentPage, onNavigate }: Trad
     { id: 'withdraw', label: 'Withdraw', icon: ArrowUpFromLine },
     { id: 'subscription', label: 'Subscription', icon: CreditCard },
     { id: 'settings', label: 'Settings', icon: Settings },
+
   ];
 
   const SidebarContent = () => (

@@ -37,6 +37,9 @@ namespace CryptoTrading.Models
         [JsonPropertyName("circulating_supply")]
         public decimal? CirculatingSupply { get; set; }
         
+        [JsonPropertyName("image")]
+        public string? Image { get; set; }
+        
         [JsonPropertyName("last_updated")]
         public DateTime? LastUpdated { get; set; }
     }
