@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Alert, AlertDescription } from '../../ui/alert';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '../../ui/dialog';
 import { Badge } from '../../ui/badge';
+import { CoinIcon } from '../../ui/CoinIcon';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { TradingApi, OrderBook, TradingBalances } from '../../../api/trading';
 import { MarketApi, Crypto, PriceHistoryItem } from '../../../api/market';
@@ -302,9 +303,7 @@ export default function Trade({ onNavigate }: TradeProps) {
           <Card className="bg-[#1a1d24] border-gray-800 p-6">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-4">
-                {selectedCoin?.image && (
-                  <img src={selectedCoin.image} alt={selectedCoin.symbol} className="w-12 h-12 rounded-full" />
-                )}
+                <CoinIcon symbol={selectedCoin?.symbol || 'BTC'} image={selectedCoin?.image} size="lg" />
                 <div>
                   <div className="flex items-center gap-2">
                     <h2 className="text-2xl font-bold text-white">
@@ -410,8 +409,8 @@ export default function Trade({ onNavigate }: TradeProps) {
                 <div className="flex items-center justify-center h-full text-gray-400">
                   No chart data available
                 </div>
-              )}
-            </div>
+                )}
+              </div>
 
             <div className="mt-4 text-xs text-gray-500">
               Lần gần nhất cập nhật trang: {new Date().toLocaleString('vi-VN', { 
@@ -424,35 +423,35 @@ export default function Trade({ onNavigate }: TradeProps) {
               })} (UTC+0)
             </div>
           </Card>
-        </div>
+            </div>
 
         {/* Right: Trading Form */}
         <div className="space-y-6">
           {/* Trading Form */}
           <Card className="bg-[#1a1d24] border-gray-800 p-6">
             <div className="flex gap-2 mb-4 border-b border-gray-800 pb-2">
-              <Button
-                type="button"
+                <Button
+                  type="button"
                 variant="ghost"
-                onClick={() => setSide('buy')}
+                  onClick={() => setSide('buy')}
                 className={`flex-1 ${side === 'buy' 
                   ? 'border-b-2 border-[#f2c94c] text-[#f2c94c]' 
                   : 'text-gray-400 hover:text-gray-300'
                 }`}
-              >
+                >
                 Mua {selectedPair.split('/')[0]}
-              </Button>
-              <Button
-                type="button"
+                </Button>
+                <Button
+                  type="button"
                 variant="ghost"
-                onClick={() => setSide('sell')}
+                  onClick={() => setSide('sell')}
                 className={`flex-1 ${side === 'sell' 
                   ? 'border-b-2 border-[#f2c94c] text-[#f2c94c]' 
                   : 'text-gray-400 hover:text-gray-300'
                 }`}
-              >
+                >
                 Giao dịch {selectedPair.split('/')[0]}
-              </Button>
+                </Button>
             </div>
 
             {side === 'buy' ? (
@@ -461,8 +460,8 @@ export default function Trade({ onNavigate }: TradeProps) {
                 <div>
                   <Label className="text-gray-400 mb-2 block">Bạn mua</Label>
                   <div className="flex gap-2">
-                    <Input
-                      type="number"
+                  <Input
+                    type="number"
                       placeholder="0"
                       value={buyAmount}
                       onChange={(e) => handleBuyAmountChange(e.target.value)}
@@ -478,11 +477,11 @@ export default function Trade({ onNavigate }: TradeProps) {
                 </div>
 
                 {/* You Use */}
-                <div>
+            <div>
                   <Label className="text-gray-400 mb-2 block">Bạn sử dụng</Label>
                   <div className="flex gap-2">
-                    <Input
-                      type="number"
+              <Input
+                type="number"
                       placeholder="10 - 50,000"
                       value={useAmount}
                       onChange={(e) => handleUseAmountChange(e.target.value)}
@@ -490,19 +489,19 @@ export default function Trade({ onNavigate }: TradeProps) {
                     />
                     <Button variant="outline" className="border-gray-700 text-gray-400 w-20">
                       {selectedPair.split('/')[1]}
-                    </Button>
-                  </div>
-                </div>
+                  </Button>
+              </div>
+            </div>
 
                 {/* Buy Button */}
-                <Button
-                  onClick={handleSubmit}
+            <Button
+              onClick={handleSubmit}
                   disabled={!buyAmount || !useAmount}
                   className="w-full bg-[#f2c94c] text-black hover:bg-[#e5b73d] font-bold py-6 text-lg"
                 >
                   Mua {selectedPair.split('/')[0]}
-                </Button>
-              </div>
+            </Button>
+          </div>
             ) : (
               <div className="space-y-4">
                 <Alert className="bg-blue-500/10 border-blue-500/50">
@@ -513,7 +512,7 @@ export default function Trade({ onNavigate }: TradeProps) {
                 </Alert>
               </div>
             )}
-          </Card>
+        </Card>
 
           {/* Order Book Preview */}
           <Card className="bg-[#1a1d24] border-gray-800 p-6">

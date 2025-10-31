@@ -1,10 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Mail, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
+import { CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
 import { Button } from '../../ui/button';
 import { Card } from '../../ui/card';
-import { Alert, AlertDescription } from '../../ui/alert';
-import { Input } from '../../ui/input';
-import { Label } from '../../ui/label';
 import { AuthApi } from '../../../api/auth';
 
 interface VerifyEmailProps {
@@ -15,7 +12,6 @@ export default function VerifyEmail({ onNavigate }: VerifyEmailProps) {
   const [status, setStatus] = useState<'sending' | 'sent' | 'verified' | 'error'>('sending');
   const [resendCooldown, setResendCooldown] = useState(0);
   const [email, setEmail] = useState('');
-  const [token, setToken] = useState('');
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -44,26 +40,19 @@ export default function VerifyEmail({ onNavigate }: VerifyEmailProps) {
     }
   }, [resendCooldown]);
 
-  const handleResend = () => {
+  const handleResend = async () => {
+    if (!email) {
+      setError('Please enter your email address');
+      return;
+    }
+    
+    setError('');
     setStatus('sending');
+    // Call resend email API here if available
     setTimeout(() => {
       setStatus('sent');
       setResendCooldown(60);
     }, 2000);
-  };
-
-  const handleVerify = async () => {
-    setError('');
-    if (!email || !token) {
-      setError('Please provide email and token');
-      return;
-    }
-    const res = await AuthApi.confirmEmail({ email, token });
-    if (!res.ok) {
-      setError(res.error);
-      return;
-    }
-    setStatus('verified');
   };
 
   return (
@@ -72,15 +61,15 @@ export default function VerifyEmail({ onNavigate }: VerifyEmailProps) {
         {/* Logo */}
         <div className="text-center mb-8">
           <div className="inline-flex items-center gap-2 mb-4">
-            <div className="w-12 h-12 bg-emerald-500 rounded-lg flex items-center justify-center">
-              <span className="text-black text-xl">CT</span>
+            <div className="w-16 h-16 bg-emerald-500 rounded-full flex items-center justify-center">
+              <span className="text-black text-xl font-bold">CT</span>
             </div>
           </div>
-          <h1 className="text-3xl mb-2">
-            {status === 'verified' ? 'Email Verified!' : 'Verify Your Email'}
-          </h1>
+          <h1 className="text-3xl font-bold mb-2">Verify Your Email</h1>
           <p className="text-gray-400">
-            {status === 'verified' 
+            {status === 'sent' 
+              ? 'Check your email for verification instructions'
+              : status === 'verified'
               ? 'Your account is ready to use'
               : 'We need to verify your email address'
             }
@@ -101,82 +90,58 @@ export default function VerifyEmail({ onNavigate }: VerifyEmailProps) {
           )}
 
           {status === 'sent' && (
-            <div className="space-y-6">
-              <div className="text-center">
-                <div className="w-16 h-16 bg-emerald-500/10 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <Mail className="w-8 h-8 text-emerald-500" />
-                </div>
-                <h3 className="mb-2">Check Your Email</h3>
-                <p className="text-gray-400 mb-2">
-                  We've sent a verification link to
+            <div className="text-center space-y-6">
+              {/* Success Checkmark */}
+              <div className="w-16 h-16 bg-emerald-500/10 rounded-full flex items-center justify-center mx-auto">
+                <CheckCircle2 className="w-8 h-8 text-emerald-500" />
+              </div>
+              
+              {/* Email Sent Message */}
+              <div>
+                <h3 className="text-xl font-bold mb-2">Email Sent!</h3>
+                <p className="text-gray-400">
+                  We've sent a verification link to <strong className="text-emerald-500">{email || 'your email'}</strong>
                 </p>
-                <p className="text-white">{email || 'your email'}</p>
               </div>
 
-              <div className="bg-gray-800 border border-gray-700 rounded-lg p-4 space-y-3">
-                <p className="text-sm text-gray-300">To complete your registration:</p>
-                <ol className="text-sm text-gray-400 space-y-2 list-decimal list-inside">
-                  <li>Open the email we sent you</li>
-                  <li>Click on the verification link</li>
-                  <li>You'll be redirected to login</li>
-                </ol>
+              {/* Troubleshooting Section */}
+              <div className="bg-gray-800 border border-gray-700 rounded-lg p-4 text-left">
+                <p className="text-sm text-gray-300 mb-3">Didn't receive the email?</p>
+                <ul className="text-sm text-gray-400 space-y-1 list-disc list-inside">
+                  <li>Check your spam folder</li>
+                  <li>Make sure the email address is correct</li>
+                  <li>Wait a few minutes and check again</li>
+                </ul>
               </div>
-
-              <Alert className="bg-yellow-500/10 border-yellow-500/50">
-                <AlertCircle className="h-4 w-4 text-yellow-500" />
-                <AlertDescription className="text-yellow-500">
-                  The verification link will expire in 24 hours
-                </AlertDescription>
-              </Alert>
 
               {error && (
-                <Alert className="bg-red-500/10 border-red-500/50">
-                  <AlertCircle className="h-4 w-4 text-red-500" />
-                  <AlertDescription className="text-red-500">{error}</AlertDescription>
-                </Alert>
+                <div className="bg-red-500/10 border border-red-500/50 rounded-lg p-4 text-left">
+                  <div className="flex items-center gap-2 text-red-400">
+                    <AlertCircle className="w-4 h-4" />
+                    <p className="text-sm">{error}</p>
+                  </div>
+                </div>
               )}
 
-              <div className="grid gap-3">
-                <div className="space-y-2">
-                  <Label htmlFor="email">Email</Label>
-                  <Input id="email" value={email} onChange={(e) => setEmail(e.target.value)} className="bg-gray-800 border-gray-700 text-white" placeholder="your.email@example.com" />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="token">Verification Token</Label>
-                  <Input id="token" value={token} onChange={(e) => setToken(e.target.value)} className="bg-gray-800 border-gray-700 text-white" placeholder="Paste token here" />
-                </div>
-              </div>
-
-              {/* Demo Verify Button - for testing */}
-              <Button
-                className="w-full bg-emerald-500 text-black hover:bg-emerald-600"
-                onClick={handleVerify}
-              >
-                Verify Email (Demo)
-              </Button>
-
-              <div className="text-center space-y-3">
-                <p className="text-sm text-gray-400">Didn't receive the email?</p>
+              {/* Action Buttons */}
+              <div className="space-y-3">
+                <Button
+                  className="w-full bg-emerald-500 text-black hover:bg-emerald-600 font-medium py-6"
+                  onClick={() => onNavigate?.('login')}
+                >
+                  Back to Login
+                </Button>
                 <Button
                   variant="outline"
-                  className="w-full border-gray-700 hover:bg-gray-800"
+                  className="w-full border-gray-700 hover:bg-gray-800 text-white font-medium py-6"
                   onClick={handleResend}
                   disabled={resendCooldown > 0}
                 >
                   {resendCooldown > 0 
-                    ? `Resend in ${resendCooldown}s` 
-                    : 'Resend Verification Email'
+                    ? `Resend Email (${resendCooldown}s)`
+                    : 'Resend Email'
                   }
                 </Button>
-              </div>
-
-              <div className="bg-gray-800 border border-gray-700 rounded-lg p-4">
-                <p className="text-sm text-gray-300 mb-2">Email not in inbox?</p>
-                <ul className="text-sm text-gray-400 space-y-1 list-disc list-inside">
-                  <li>Check your spam or junk folder</li>
-                  <li>Add noreply@cryptotrade.com to contacts</li>
-                  <li>Make sure the email address is correct</li>
-                </ul>
               </div>
             </div>
           )}
@@ -187,7 +152,7 @@ export default function VerifyEmail({ onNavigate }: VerifyEmailProps) {
                 <CheckCircle2 className="w-8 h-8 text-emerald-500" />
               </div>
               <div>
-                <h3 className="mb-2">Email Verified Successfully!</h3>
+                <h3 className="text-xl font-bold mb-2">Email Verified Successfully!</h3>
                 <p className="text-gray-400">
                   Your account is now active. You can start trading right away.
                 </p>
@@ -201,7 +166,7 @@ export default function VerifyEmail({ onNavigate }: VerifyEmailProps) {
 
               <div className="space-y-3">
                 <Button
-                  className="w-full bg-emerald-500 text-black hover:bg-emerald-600"
+                  className="w-full bg-emerald-500 text-black hover:bg-emerald-600 font-medium py-6"
                   onClick={() => onNavigate?.('login')}
                 >
                   Go to Login
@@ -219,13 +184,13 @@ export default function VerifyEmail({ onNavigate }: VerifyEmailProps) {
                 <AlertCircle className="w-8 h-8 text-red-500" />
               </div>
               <div>
-                <h3 className="mb-2">Verification Failed</h3>
+                <h3 className="text-xl font-bold mb-2">Verification Failed</h3>
                 <p className="text-gray-400">
                   We couldn't send the verification email. Please try again.
                 </p>
               </div>
               <Button
-                className="w-full bg-emerald-500 text-black hover:bg-emerald-600"
+                className="w-full bg-emerald-500 text-black hover:bg-emerald-600 font-medium py-6"
                 onClick={handleResend}
               >
                 Try Again
@@ -235,7 +200,7 @@ export default function VerifyEmail({ onNavigate }: VerifyEmailProps) {
         </Card>
 
         {/* Help Text */}
-        {status !== 'verified' && (
+        {status !== 'verified' && status !== 'error' && (
           <div className="text-center mt-6">
             <p className="text-gray-400 text-sm">
               Need help?{' '}
@@ -243,18 +208,6 @@ export default function VerifyEmail({ onNavigate }: VerifyEmailProps) {
                 Contact Support
               </a>
             </p>
-          </div>
-        )}
-
-        {/* Back to Login */}
-        {status === 'sent' && (
-          <div className="text-center mt-4">
-            <button
-              onClick={() => onNavigate?.('login')}
-              className="text-gray-400 hover:text-white text-sm"
-            >
-              I'll verify later, take me to login
-            </button>
           </div>
         )}
       </div>

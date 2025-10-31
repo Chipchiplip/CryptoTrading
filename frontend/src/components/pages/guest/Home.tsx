@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import * as signalR from '@microsoft/signalr';
 import { TrendingUp, Shield, Zap, Globe, ArrowRight, CheckCircle2 } from 'lucide-react';
 import { Button } from '../../ui/button';
 import { Card } from '../../ui/card';
+import { CoinIcon } from '../../ui/CoinIcon';
 
 interface HomeProps {
   onNavigate?: (page: string) => void;
@@ -10,7 +11,7 @@ interface HomeProps {
 
 export default function Home({ onNavigate }: HomeProps) {
   const [overview, setOverview] = useState<{ users?: string; volume?: number; markets?: number; countries?: number } | null>(null);
-  const [popularCoins, setPopularCoins] = useState<Array<{ symbol: string; name: string; price: string; change: string; positive: boolean }>>([]);
+  const [popularCoins, setPopularCoins] = useState<Array<{ symbol: string; name: string; image?: string | null; price: string; change: string; positive: boolean }>>([]);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -46,6 +47,7 @@ export default function Home({ onNavigate }: HomeProps) {
             return {
               symbol: String(c.symbol || '').toUpperCase(),
               name: c.name,
+              image: c.image || c.Image || c.image_url || c.imageUrl || null,
               price: price >= 1000 ? `$${price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : `$${price.toFixed(2)}`,
               change: `${change >= 0 ? '+' : ''}${change.toFixed(2)}%`,
               positive: change >= 0,
@@ -88,6 +90,7 @@ export default function Home({ onNavigate }: HomeProps) {
               return {
                 symbol: String(c.symbol || '').toUpperCase(),
                 name: c.name,
+                image: c.image || c.Image || c.image_url || c.imageUrl || null,
                 price: price >= 1000 ? `$${price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : `$${price.toFixed(2)}`,
                 change: `${change >= 0 ? '+' : ''}${change.toFixed(2)}%`,
                 positive: change >= 0,
@@ -169,14 +172,7 @@ export default function Home({ onNavigate }: HomeProps) {
                 >
                   Explore Markets
                 </Button>
-                <Button
-                  size="lg"
-                  variant="outline"
-                  className="border-emerald-500 text-emerald-500 hover:bg-emerald-500/10"
-                  onClick={() => onNavigate?.('trader-dashboard')}
-                >
-                  Demo Trader
-                </Button>
+ 
               </div>
             </div>
             <div className="relative">
@@ -189,9 +185,7 @@ export default function Home({ onNavigate }: HomeProps) {
                   {popularCoins.map((coin) => (
                     <div key={coin.symbol} className="flex items-center justify-between p-3 rounded-lg hover:bg-gray-800 transition-colors">
                       <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 bg-emerald-500/10 rounded-full flex items-center justify-center">
-                          <span className="text-emerald-500">{coin.symbol}</span>
-                        </div>
+                        <CoinIcon symbol={coin.symbol} image={(coin as any).image} size="lg" />
                         <div>
                           <div className="text-white">{coin.name}</div>
                           <div className="text-sm text-gray-400">{coin.symbol}</div>

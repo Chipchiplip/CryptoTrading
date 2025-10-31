@@ -5,6 +5,7 @@ import { TrendingUp, TrendingDown, ArrowUpRight, ArrowDownRight, Search, ArrowUp
 import { Input } from '../../ui/input';
 import { Button } from '../../ui/button';
 import { Card } from '../../ui/card';
+import { CoinIcon } from '../../ui/CoinIcon';
 import { MarketApi, Crypto } from '../../../api/market';
 
 interface MarketProps {
@@ -45,7 +46,6 @@ const formatVolume = (volume: number | undefined | null) => {
 
 // Component for coin row with image error handling
 function CoinRow({ coin, index, onNavigate }: { coin: Crypto; index: number; onNavigate?: (page: string, coinId?: string) => void }) {
-  const [imageError, setImageError] = useState(false);
   const navigate = useNavigate();
   const change24h = Number(coin.priceChangePercentage24h) || 0;
   const isPositive = change24h >= 0;
@@ -60,21 +60,9 @@ function CoinRow({ coin, index, onNavigate }: { coin: Crypto; index: number; onN
       <td className="p-4 text-gray-400">{index + 1}</td>
       <td className="p-4">
         <div className="flex items-center w-full">
-          {coin.image && !imageError ? (
-            <img
-              src={coin.image}
-              alt={coin.symbol}
-              className="mr-2 h-6 w-6 object-fill flex-shrink-0"
-              loading="lazy"
-              onError={() => setImageError(true)}
-            />
-          ) : (
-            <div className="mr-2 h-6 w-6 bg-emerald-500/10 rounded-full flex items-center justify-center flex-shrink-0">
-              <span className="text-emerald-500 text-xs font-semibold">
-                {(coin.symbol || '').charAt(0).toUpperCase()}
-              </span>
-            </div>
-          )}
+          <div className="mr-2">
+            <CoinIcon symbol={coin.symbol} image={coin.image} size="sm" />
+          </div>
           <div className="flex flex-col items-start">
             <div className="text-white dark:text-gray-100 font-semibold text-sm leading-5">
               {coin.name || 'N/A'}

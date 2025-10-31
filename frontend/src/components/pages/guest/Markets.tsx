@@ -5,6 +5,7 @@ import { Input } from '../../ui/input';
 import { Button } from '../../ui/button';
 import { Badge } from '../../ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../ui/tabs';
+import { CoinIcon } from '../../ui/CoinIcon';
 
 interface MarketsProps {
   onNavigate?: (page: string, coinId?: string) => void;
@@ -54,6 +55,7 @@ export default function Markets({ onNavigate }: MarketsProps) {
             rank: idx + 1,
             symbol: String(c.symbol || '').toUpperCase(),
             name: c.name,
+            image: c.image || c.Image || c.image_url || c.imageUrl || null,
             price: Number(c.current_price ?? c.currentPrice ?? 0),
             change24h: Number(c.price_change_percentage_24h ?? c.priceChangePercentage24h ?? 0),
             volume24h: Number(c.total_volume ?? c.totalVolume ?? 0),
@@ -98,6 +100,7 @@ export default function Markets({ onNavigate }: MarketsProps) {
             rank: idx + 1,
             symbol: String(c.symbol || '').toUpperCase(),
             name: c.name,
+            image: c.image || c.Image || c.image_url || c.imageUrl || null,
             price: Number(c.current_price ?? c.currentPrice ?? 0),
             change24h: Number(c.price_change_percentage_24h ?? c.priceChangePercentage24h ?? 0),
             volume24h: Number(c.total_volume ?? c.totalVolume ?? 0),
@@ -331,9 +334,7 @@ function MarketTable({ data, favorites, onToggleFavorite, onSelectCoin, formatPr
                 <td className="p-4 text-gray-400">{coin.rank}</td>
                 <td className="p-4">
                   <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 bg-emerald-500/10 rounded-full flex items-center justify-center flex-shrink-0">
-                      <span className="text-emerald-500 text-xs">{coin.symbol}</span>
-                    </div>
+                    <CoinIcon symbol={coin.symbol} image={coin.image} size="md" />
                     <div>
                       <div className="text-white">{coin.name}</div>
                       <div className="text-sm text-gray-400">{coin.symbol}</div>
