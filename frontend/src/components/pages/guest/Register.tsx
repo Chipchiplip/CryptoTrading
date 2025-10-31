@@ -65,13 +65,24 @@ export default function Register({ onNavigate }: RegisterProps) {
 
     setLoading(true);
 
-    const res = await AuthApi.register({ email: formData.email, password: formData.password, confirmPassword: formData.confirmPassword });
+    const res = await AuthApi.register({ 
+      email: formData.email, 
+      password: formData.password, 
+      confirmPassword: formData.confirmPassword,
+      fullName: formData.fullName 
+    });
     if (!res.ok) {
       setError(res.error);
       setLoading(false);
       return;
     }
-    setAccessToken(res.data.accessToken);
+    
+    // Store email for VerifyEmail page
+    localStorage.setItem('pendingVerificationEmail', formData.email);
+    
+    if (res.data.accessToken) {
+      setAccessToken(res.data.accessToken);
+    }
     onNavigate?.('verify-email');
     setLoading(false);
   };

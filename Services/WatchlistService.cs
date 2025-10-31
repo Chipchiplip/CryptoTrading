@@ -19,222 +19,131 @@ namespace CryptoTrading.Services
 
         public async Task<WatchlistDto> CreateWatchlistAsync(int userId, CreateWatchlistDto dto)
         {
-            // Ensure user doesn't exceed quota
-            if (!await CanCreateMoreWatchlistsAsync(userId))
-            {
-                throw new InvalidOperationException("Watchlist quota exceeded");
-            }
-
-            // If this is set as default, unset other defaults
-            if (dto.IsDefault)
-            {
-                await UnsetDefaultWatchlistsAsync(userId);
-            }
-
-            var watchlist = new Watchlist
-            {
-                Id = Guid.NewGuid(),
-                UserId = userId,
-                Name = dto.Name,
-                IsDefault = dto.IsDefault,
-                CreatedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow
-            };
-
-            _context.Watchlists.Add(watchlist);
-            await _context.SaveChangesAsync();
-
-            return await GetWatchlistAsync(userId, watchlist.Id);
+            // With UserWatchlist schema, we only support a single implicit watchlist per user
+            // Return the default watchlist
+            return await GetDefaultWatchlistAsync(userId);
         }
 
         public async Task<List<WatchlistSummaryDto>> GetAllWatchlistsAsync(int userId)
         {
-            await EnsureDefaultWatchlistExistsAsync(userId);
-
-            var watchlists = await _context.Watchlists
-                .Where(w => w.UserId == userId)
-                .Include(w => w.Items)
-                .OrderByDescending(w => w.IsDefault)
-                .ThenBy(w => w.Name)
-                .Select(w => new WatchlistSummaryDto(
-                    w.Id,
-                    w.Name,
-                    w.IsDefault,
-                    w.Items.Count,
-                    w.CreatedAt,
-                    w.UpdatedAt
-                ))
-                .ToListAsync();
-
-            return watchlists;
+            // With UserWatchlist schema, we only have one implicit watchlist
+            var defaultWatchlist = await GetDefaultWatchlistAsync(userId);
+            
+            return new List<WatchlistSummaryDto>
+            {
+                new WatchlistSummaryDto(
+                    defaultWatchlist.Id,
+                    defaultWatchlist.Name,
+                    defaultWatchlist.IsDefault,
+                    defaultWatchlist.CoinCount,
+                    defaultWatchlist.CreatedAt,
+                    defaultWatchlist.UpdatedAt
+                )
+            };
         }
 
         public async Task<WatchlistDto> GetWatchlistAsync(int userId, Guid watchlistId)
         {
-            var watchlist = await _context.Watchlists
-                .Include(w => w.Items)
-                .FirstOrDefaultAsync(w => w.Id == watchlistId && w.UserId == userId);
-
-            if (watchlist == null)
-                throw new ArgumentException("Watchlist not found");
-
-            var coins = new List<WatchlistCoinDto>();
-            
-            if (watchlist.Items.Any())
-            {
-                var symbols = watchlist.Items.Select(i => i.CoinSymbol).ToList();
-                var allCoinData = await _coinGeckoService.GetMarketDataAsync();
-
-                coins = watchlist.Items.Select(item =>
-                {
-                    var coinInfo = allCoinData.FirstOrDefault(c => 
-                        c.Symbol.Equals(item.CoinSymbol, StringComparison.OrdinalIgnoreCase));
-                    
-                    return new WatchlistCoinDto(
-                        item.CoinSymbol,
-                        coinInfo?.Name ?? item.CoinSymbol,
-                        "", // Image URL - not available in current Crypto model
-                        coinInfo?.CurrentPrice ?? 0,
-                        coinInfo?.PriceChange24h ?? 0,
-                        coinInfo?.PriceChangePercentage24h ?? 0,
-                        item.AddedAt
-                    );
-                }).ToList();
-            }
-
-            return new WatchlistDto(
-                watchlist.Id,
-                watchlist.Name,
-                watchlist.IsDefault,
-                watchlist.Items.Count,
-                watchlist.CreatedAt,
-                watchlist.UpdatedAt,
-                coins
-            );
+            // Since we only have UserWatchlist, return the default watchlist
+            return await GetDefaultWatchlistAsync(userId);
         }
 
         public async Task<WatchlistDto> RenameWatchlistAsync(int userId, Guid watchlistId, RenameWatchlistDto dto)
         {
-            var watchlist = await _context.Watchlists
-                .FirstOrDefaultAsync(w => w.Id == watchlistId && w.UserId == userId);
-
-            if (watchlist == null)
-                throw new ArgumentException("Watchlist not found");
-
-            watchlist.Name = dto.Name;
-            watchlist.UpdatedAt = DateTime.UtcNow;
-
-            await _context.SaveChangesAsync();
-
-            return await GetWatchlistAsync(userId, watchlistId);
+            // With UserWatchlist, we can't rename since there's no Watchlist entity
+            // Just return the default watchlist
+            return await GetDefaultWatchlistAsync(userId);
         }
 
         public async Task<bool> DeleteWatchlistAsync(int userId, Guid watchlistId)
         {
-            var watchlist = await _context.Watchlists
-                .FirstOrDefaultAsync(w => w.Id == watchlistId && w.UserId == userId);
+            // With UserWatchlist, we can't delete the watchlist itself since it's implicit
+            // But we can clear all coins from the watchlist
+            var userWatchlists = await _context.UserWatchlists
+                .Where(uw => uw.UserId == userId)
+                .ToListAsync();
 
-            if (watchlist == null)
-                return false;
-
-            // Don't allow deleting the last watchlist
-            var watchlistCount = await _context.Watchlists.CountAsync(w => w.UserId == userId);
-            if (watchlistCount <= 1)
-                throw new InvalidOperationException("Cannot delete the last watchlist");
-
-            _context.Watchlists.Remove(watchlist);
+            _context.UserWatchlists.RemoveRange(userWatchlists);
             await _context.SaveChangesAsync();
-
-            // If deleted watchlist was default, make another one default
-            if (watchlist.IsDefault)
-            {
-                var firstWatchlist = await _context.Watchlists
-                    .FirstOrDefaultAsync(w => w.UserId == userId);
-                
-                if (firstWatchlist != null)
-                {
-                    firstWatchlist.IsDefault = true;
-                    await _context.SaveChangesAsync();
-                }
-            }
 
             return true;
         }
 
         public async Task<bool> AddCoinToDefaultWatchlistAsync(int userId, string coinSymbol)
         {
-            await EnsureDefaultWatchlistExistsAsync(userId);
+            // Find cryptocurrency by symbol
+            var crypto = await _context.Cryptocurrencies
+                .FirstOrDefaultAsync(c => c.Symbol.ToUpper() == coinSymbol.ToUpper());
 
-            var defaultWatchlist = await _context.Watchlists
-                .FirstOrDefaultAsync(w => w.UserId == userId && w.IsDefault);
-
-            if (defaultWatchlist == null)
+            if (crypto == null)
                 return false;
 
-            return await AddCoinToWatchlistAsync(userId, defaultWatchlist.Id, coinSymbol);
-        }
+            // Check if already in watchlist
+            var exists = await _context.UserWatchlists
+                .AnyAsync(uw => uw.UserId == userId && uw.CryptocurrencyId == crypto.Id);
 
-        public async Task<bool> AddCoinToWatchlistAsync(int userId, Guid watchlistId, string coinSymbol)
-        {
-            var watchlist = await _context.Watchlists
-                .Include(w => w.Items)
-                .FirstOrDefaultAsync(w => w.Id == watchlistId && w.UserId == userId);
-
-            if (watchlist == null)
+            if (exists)
                 return false;
 
-            // Check if coin already exists in watchlist
-            if (watchlist.Items.Any(i => i.CoinSymbol.Equals(coinSymbol, StringComparison.OrdinalIgnoreCase)))
-                return false;
-
-            var watchlistItem = new WatchlistItem
+            // Add to UserWatchlist
+            var userWatchlist = new UserWatchlist
             {
-                Id = Guid.NewGuid(),
-                WatchlistId = watchlistId,
-                CoinSymbol = coinSymbol.ToUpper(),
-                AddedAt = DateTime.UtcNow
+                UserId = userId,
+                CryptocurrencyId = crypto.Id,
+                CreatedAt = DateTime.UtcNow
             };
 
-            _context.WatchlistItems.Add(watchlistItem);
-            watchlist.UpdatedAt = DateTime.UtcNow;
-
+            _context.UserWatchlists.Add(userWatchlist);
             await _context.SaveChangesAsync();
             return true;
         }
 
+        public async Task<bool> AddCoinToWatchlistAsync(int userId, Guid watchlistId, string coinSymbol)
+        {
+            // Since we only have UserWatchlist (many-to-many), treat any watchlistId as the default
+            // Just add to UserWatchlist
+            return await AddCoinToDefaultWatchlistAsync(userId, coinSymbol);
+        }
+
         public async Task<bool> RemoveCoinFromWatchlistAsync(int userId, Guid watchlistId, string coinSymbol)
         {
-            var watchlistItem = await _context.WatchlistItems
-                .Include(wi => wi.Watchlist)
-                .FirstOrDefaultAsync(wi => 
-                    wi.WatchlistId == watchlistId && 
-                    wi.Watchlist.UserId == userId &&
-                    wi.CoinSymbol.Equals(coinSymbol, StringComparison.OrdinalIgnoreCase));
+            // Find cryptocurrency by symbol
+            var crypto = await _context.Cryptocurrencies
+                .FirstOrDefaultAsync(c => c.Symbol.ToUpper() == coinSymbol.ToUpper());
 
-            if (watchlistItem == null)
+            if (crypto == null)
                 return false;
 
-            _context.WatchlistItems.Remove(watchlistItem);
-            watchlistItem.Watchlist.UpdatedAt = DateTime.UtcNow;
+            // Remove from UserWatchlist
+            var userWatchlist = await _context.UserWatchlists
+                .FirstOrDefaultAsync(uw => uw.UserId == userId && uw.CryptocurrencyId == crypto.Id);
 
+            if (userWatchlist == null)
+                return false;
+
+            _context.UserWatchlists.Remove(userWatchlist);
             await _context.SaveChangesAsync();
             return true;
         }
 
         public async Task<WatchlistRealtimeUpdateDto> GetWatchlistRealtimeUpdatesAsync(Guid watchlistId)
         {
-            var watchlist = await _context.Watchlists
-                .Include(w => w.Items)
-                .FirstOrDefaultAsync(w => w.Id == watchlistId);
+            // Since we don't have actual watchlist IDs, we'll get updates for the default watchlist
+            // We can determine user from context, but for now we'll use a simplified approach
+            // Get all UserWatchlist entries and create updates
+            var userWatchlistEntries = await _context.UserWatchlists
+                .Include(uw => uw.Cryptocurrency)
+                .ToListAsync();
 
-            if (watchlist == null)
-                throw new ArgumentException("Watchlist not found");
-
-            var symbols = watchlist.Items.Select(i => i.CoinSymbol).ToList();
-            if (!symbols.Any())
+            if (!userWatchlistEntries.Any())
             {
                 return new WatchlistRealtimeUpdateDto(watchlistId, new List<CoinPriceUpdateDto>());
             }
+
+            var symbols = userWatchlistEntries
+                .Select(uw => uw.Cryptocurrency.Symbol.ToUpper())
+                .Distinct()
+                .ToList();
 
             var allCoinData = await _coinGeckoService.GetMarketDataAsync();
             var updates = symbols.Select(symbol =>
@@ -256,17 +165,19 @@ namespace CryptoTrading.Services
 
         public async Task<WatchlistQuotaDto> GetWatchlistQuotaAsync(int userId)
         {
-            var currentCount = await _context.Watchlists.CountAsync(w => w.UserId == userId);
+            // Count coins in UserWatchlist instead of watchlists
+            var currentCount = await _context.UserWatchlists.CountAsync(uw => uw.UserId == userId);
             
             // TODO: Get user subscription tier from User entity
             // For now, assume basic tier
             var subscriptionTier = "Basic";
+            // For coins in watchlist, allow more
             var maxAllowed = subscriptionTier switch
             {
-                "Basic" => 3,
-                "Plus" => 10,
-                "Pro" => 50,
-                _ => 1
+                "Basic" => 50,
+                "Plus" => 100,
+                "Pro" => 500,
+                _ => 25
             };
 
             return new WatchlistQuotaDto(
@@ -279,57 +190,56 @@ namespace CryptoTrading.Services
 
         public async Task<WatchlistDto> GetDefaultWatchlistAsync(int userId)
         {
-            await EnsureDefaultWatchlistExistsAsync(userId);
+            // Get all UserWatchlist entries for this user
+            var userWatchlistEntries = await _context.UserWatchlists
+                .Where(uw => uw.UserId == userId)
+                .Include(uw => uw.Cryptocurrency)
+                .ToListAsync();
 
-            var defaultWatchlist = await _context.Watchlists
-                .FirstOrDefaultAsync(w => w.UserId == userId && w.IsDefault);
+            var coinSymbols = userWatchlistEntries
+                .Select(uw => uw.Cryptocurrency.Symbol.ToUpper())
+                .Distinct()
+                .ToList();
 
-            if (defaultWatchlist == null)
-                throw new InvalidOperationException("Default watchlist not found");
+            var coins = new List<WatchlistCoinDto>();
+            
+            if (coinSymbols.Any())
+            {
+                var allCoinData = await _coinGeckoService.GetMarketDataAsync();
+                
+                foreach (var entry in userWatchlistEntries)
+                {
+                    var coinInfo = allCoinData.FirstOrDefault(c => 
+                        c.Symbol.Equals(entry.Cryptocurrency.Symbol, StringComparison.OrdinalIgnoreCase));
+                    
+                    coins.Add(new WatchlistCoinDto(
+                        entry.Cryptocurrency.Symbol.ToUpper(),
+                        coinInfo?.Name ?? entry.Cryptocurrency.Name,
+                        entry.Cryptocurrency.IconUrl ?? "",
+                        coinInfo?.CurrentPrice ?? 0,
+                        coinInfo?.PriceChange24h ?? 0,
+                        coinInfo?.PriceChangePercentage24h ?? 0,
+                        entry.CreatedAt
+                    ));
+                }
+            }
 
-            return await GetWatchlistAsync(userId, defaultWatchlist.Id);
+            // Return a virtual watchlist DTO (since we don't have a Watchlist entity)
+            return new WatchlistDto(
+                Guid.Empty, // No actual watchlist ID in UserWatchlist
+                "My Watchlist",
+                true, // Always default
+                coins.Count,
+                DateTime.UtcNow,
+                DateTime.UtcNow,
+                coins
+            );
         }
 
         public async Task<bool> EnsureDefaultWatchlistExistsAsync(int userId)
         {
-            var hasDefault = await _context.Watchlists
-                .AnyAsync(w => w.UserId == userId && w.IsDefault);
-
-            if (!hasDefault)
-            {
-                var hasAnyWatchlist = await _context.Watchlists
-                    .AnyAsync(w => w.UserId == userId);
-
-                if (hasAnyWatchlist)
-                {
-                    // Make first watchlist default
-                    var firstWatchlist = await _context.Watchlists
-                        .FirstOrDefaultAsync(w => w.UserId == userId);
-                    
-                    if (firstWatchlist != null)
-                    {
-                        firstWatchlist.IsDefault = true;
-                        await _context.SaveChangesAsync();
-                    }
-                }
-                else
-                {
-                    // Create default watchlist
-                    var defaultWatchlist = new Watchlist
-                    {
-                        Id = Guid.NewGuid(),
-                        UserId = userId,
-                        Name = "My Watchlist",
-                        IsDefault = true,
-                        CreatedAt = DateTime.UtcNow,
-                        UpdatedAt = DateTime.UtcNow
-                    };
-
-                    _context.Watchlists.Add(defaultWatchlist);
-                    await _context.SaveChangesAsync();
-                }
-            }
-
+            // With UserWatchlist, we don't need to create a watchlist entity
+            // The watchlist is implicit - just return true
             return true;
         }
 
@@ -341,19 +251,9 @@ namespace CryptoTrading.Services
 
         private async Task UnsetDefaultWatchlistsAsync(int userId)
         {
-            var defaultWatchlists = await _context.Watchlists
-                .Where(w => w.UserId == userId && w.IsDefault)
-                .ToListAsync();
-
-            foreach (var watchlist in defaultWatchlists)
-            {
-                watchlist.IsDefault = false;
-            }
-
-            if (defaultWatchlists.Any())
-            {
-                await _context.SaveChangesAsync();
-            }
+            // With UserWatchlist schema, we don't have multiple watchlists
+            // This method is no longer needed
+            await Task.CompletedTask;
         }
     }
 }

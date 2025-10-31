@@ -19,6 +19,13 @@ export default function VerifyEmail({ onNavigate }: VerifyEmailProps) {
   const [error, setError] = useState('');
 
   useEffect(() => {
+    // Get email from localStorage if available (from registration)
+    const savedEmail = localStorage.getItem('pendingVerificationEmail');
+    if (savedEmail) {
+      setEmail(savedEmail);
+      localStorage.removeItem('pendingVerificationEmail'); // Clear after reading
+    }
+    
     // Simulate sending verification email
     const timer = setTimeout(() => {
       setStatus('sent');

@@ -6,10 +6,10 @@ import { Separator } from '../../ui/separator';
 
 interface OrderDetailProps {
   orderId?: string;
-  onBack?: () => void;
+  onNavigate?: (page: string) => void;
 }
 
-export default function OrderDetail({ orderId = 'ORD-003', onBack }: OrderDetailProps) {
+export default function OrderDetail({ orderId = 'ORD-003', onNavigate }: OrderDetailProps) {
   const order = {
     id: 'ORD-003',
     createdAt: '2025-01-15 13:45:10',
@@ -57,7 +57,7 @@ export default function OrderDetail({ orderId = 'ORD-003', onBack }: OrderDetail
     <div className="p-4 lg:p-8">
       <Button
         variant="ghost"
-        onClick={onBack}
+        onClick={() => onNavigate?.('orders')}
         className="mb-6 text-gray-400 hover:text-white"
       >
         <ArrowLeft className="w-4 h-4 mr-2" />

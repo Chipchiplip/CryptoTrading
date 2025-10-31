@@ -3,7 +3,6 @@ using System.ComponentModel.DataAnnotations.Schema;
 
 namespace CryptoTrading.Models
 {
-    [Table("Cryptocurrencies", Schema = "market")]
     public class Cryptocurrency
     {
         [Key]

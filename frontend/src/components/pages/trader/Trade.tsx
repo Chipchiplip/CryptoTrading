@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { TrendingUp, TrendingDown, Info, AlertCircle } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { TrendingUp, TrendingDown, Info, AlertCircle, Loader2 } from 'lucide-react';
 import { Card } from '../../ui/card';
 import { Button } from '../../ui/button';
 import { Input } from '../../ui/input';
@@ -10,9 +10,17 @@ import { Slider } from '../../ui/slider';
 import { Alert, AlertDescription } from '../../ui/alert';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '../../ui/dialog';
 import { Badge } from '../../ui/badge';
+import { TradingApi, OrderBook, TradingBalances } from '../../../api/trading';
+import { MarketApi, Crypto } from '../../../api/market';
 
 interface TradeProps {
   onNavigate?: (page: string) => void;
+}
+
+interface TradingPair {
+  symbol: string;
+  price: number;
+  change: number;
 }
 
 export default function Trade({ onNavigate }: TradeProps) {
@@ -23,16 +31,102 @@ export default function Trade({ onNavigate }: TradeProps) {
   const [price, setPrice] = useState('');
   const [percentage, setPercentage] = useState([0]);
   const [showPreview, setShowPreview] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [loadingOrderBook, setLoadingOrderBook] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  
+  const [pairs, setPairs] = useState<TradingPair[]>([]);
+  const [orderBook, setOrderBook] = useState<OrderBook | null>(null);
+  const [balances, setBalances] = useState<TradingBalances | null>(null);
+  const [cryptos, setCryptos] = useState<Crypto[]>([]);
 
-  const pairs = [
-    { symbol: 'BTC/USDT', price: 50234.56, change: 2.34 },
-    { symbol: 'ETH/USDT', price: 2845.32, change: 1.82 },
-    { symbol: 'SOL/USDT', price: 98.45, change: -0.45 },
-    { symbol: 'BNB/USDT', price: 312.89, change: 3.12 },
-  ];
+  // Fetch cryptocurrencies and create trading pairs
+  useEffect(() => {
+    const fetchData = async () => {
+      setLoading(true);
+      setError(null);
+      
+      try {
+        // Fetch top cryptocurrencies for trading pairs
+        const cryptosRes = await MarketApi.getCryptocurrencies();
+        if (!cryptosRes.ok) {
+          setError(cryptosRes.error);
+          setLoading(false);
+          return;
+        }
+        
+        const topCryptos = cryptosRes.data.slice(0, 10);
+        setCryptos(topCryptos);
+        
+        // Create trading pairs (symbol/USDT)
+        const tradingPairs: TradingPair[] = topCryptos.map(crypto => ({
+          symbol: `${crypto.symbol.toUpperCase()}/USDT`,
+          price: crypto.currentPrice,
+          change: crypto.priceChangePercentage24h,
+        }));
+        
+        setPairs(tradingPairs);
+        
+        // Fetch balances
+        const balancesRes = await TradingApi.getBalances();
+        if (balancesRes.ok) {
+          setBalances(balancesRes.data);
+        }
+        
+        setLoading(false);
+      } catch (e: any) {
+        setError(e?.message || 'Failed to load trading data');
+        setLoading(false);
+      }
+    };
+    
+    fetchData();
+  }, []);
+
+  // Fetch order book when pair changes
+  useEffect(() => {
+    const fetchOrderBook = async () => {
+      if (!selectedPair) return;
+      setLoadingOrderBook(true);
+      try {
+        const res = await TradingApi.getOrderBook(selectedPair);
+        if (res.ok) {
+          setOrderBook(res.data);
+        } else {
+          console.error('Failed to fetch order book:', res.error);
+        }
+      } catch (e: any) {
+        console.error('Error fetching order book:', e);
+      } finally {
+        setLoadingOrderBook(false);
+      }
+    };
+    
+    fetchOrderBook();
+    
+    // Refresh order book every 3 seconds
+    const interval = setInterval(fetchOrderBook, 3000);
+    return () => clearInterval(interval);
+  }, [selectedPair]);
 
   const currentPair = pairs.find(p => p.symbol === selectedPair) || pairs[0];
-  const availableBalance = side === 'buy' ? 5234.56 : 0.2341;
+  
+  // Get available balance from API
+  const getAvailableBalance = () => {
+    if (!balances) return side === 'buy' ? 0 : 0;
+    const baseSymbol = selectedPair.split('/')[0].toUpperCase();
+    if (side === 'buy') {
+      // Use USDT balance for buying
+      const usdtWallet = balances.wallets.find(w => w.symbol.toUpperCase() === 'USDT');
+      return usdtWallet?.available || 0;
+    } else {
+      // Use crypto balance for selling
+      const cryptoWallet = balances.wallets.find(w => w.symbol.toUpperCase() === baseSymbol);
+      return cryptoWallet?.available || 0;
+    }
+  };
+  
+  const availableBalance = getAvailableBalance();
   const currency = side === 'buy' ? 'USDT' : selectedPair.split('/')[0];
 
   const handlePercentageChange = (value: number[]) => {
@@ -43,7 +137,9 @@ export default function Trade({ onNavigate }: TradeProps) {
 
   const calculateTotal = () => {
     if (!amount) return '0.00';
-    const priceToUse = orderType === 'market' ? currentPair.price : parseFloat(price) || 0;
+    const priceToUse = orderType === 'market' 
+      ? (orderBook?.currentPrice || currentPair?.price || 0)
+      : parseFloat(price) || 0;
     const amountNum = parseFloat(amount) || 0;
     
     if (side === 'buy') {
@@ -54,15 +150,58 @@ export default function Trade({ onNavigate }: TradeProps) {
       return (amountNum * priceToUse).toFixed(2);
     }
   };
+  
+  const formatPrice = (value: number) => {
+    if (value >= 1000) return `$${value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    if (value >= 1) return `$${value.toFixed(2)}`;
+    return `$${value.toFixed(4)}`;
+  };
+  
+  if (loading) {
+    return (
+      <div className="p-4 lg:p-8 flex items-center justify-center min-h-[400px]">
+        <div className="text-center">
+          <Loader2 className="w-8 h-8 text-emerald-500 animate-spin mx-auto mb-4" />
+          <p className="text-gray-400">Loading trading data...</p>
+        </div>
+      </div>
+    );
+  }
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     setShowPreview(true);
   };
 
-  const confirmOrder = () => {
-    setShowPreview(false);
-    // Navigate to orders page
-    onNavigate?.('orders');
+  const confirmOrder = async () => {
+    if (!amount || (orderType === 'limit' && !price)) return;
+    
+    setError(null);
+    try {
+      const res = await TradingApi.placeOrder({
+        symbol: selectedPair,
+        side: side === 'buy' ? 'Buy' : 'Sell',
+        type: orderType === 'market' ? 'Market' : 'Limit',
+        quantity: parseFloat(amount),
+        price: orderType === 'limit' ? parseFloat(price) : undefined,
+      });
+      
+      if (!res.ok) {
+        setError(res.error);
+        setShowPreview(false);
+        return;
+      }
+      
+      setShowPreview(false);
+      // Clear form
+      setAmount('');
+      setPrice('');
+      setPercentage([0]);
+      // Navigate to orders page
+      onNavigate?.('orders');
+    } catch (e: any) {
+      setError(e?.message || 'Failed to place order');
+      setShowPreview(false);
+    }
   };
 
   return (
@@ -70,6 +209,12 @@ export default function Trade({ onNavigate }: TradeProps) {
       <div className="mb-6">
         <h1 className="text-3xl mb-2">Trade</h1>
         <p className="text-gray-400">Execute market or limit orders</p>
+        {error && (
+          <Alert className="bg-red-500/10 border-red-500/50 text-red-500 mt-4">
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
       </div>
 
       <div className="grid lg:grid-cols-3 gap-6">
@@ -97,11 +242,17 @@ export default function Trade({ onNavigate }: TradeProps) {
                 </SelectContent>
               </Select>
               <div className="mt-2 flex items-center gap-2">
-                <span className="text-2xl text-white">${currentPair.price.toLocaleString()}</span>
-                <Badge className={currentPair.change >= 0 ? 'bg-emerald-500/10 text-emerald-500' : 'bg-red-500/10 text-red-500'}>
-                  {currentPair.change >= 0 ? <TrendingUp className="w-3 h-3 mr-1" /> : <TrendingDown className="w-3 h-3 mr-1" />}
-                  {Math.abs(currentPair.change)}%
-                </Badge>
+                {currentPair && (
+                  <>
+                    <span className="text-2xl text-white">
+                      {formatPrice(orderBook?.currentPrice || currentPair.price)}
+                    </span>
+                    <Badge className={(orderBook?.priceChangePercentage24h ?? currentPair.change) >= 0 ? 'bg-emerald-500/10 text-emerald-500' : 'bg-red-500/10 text-red-500'}>
+                      {(orderBook?.priceChangePercentage24h ?? currentPair.change) >= 0 ? <TrendingUp className="w-3 h-3 mr-1" /> : <TrendingDown className="w-3 h-3 mr-1" />}
+                      {Math.abs(orderBook?.priceChangePercentage24h ?? currentPair.change).toFixed(2)}%
+                    </Badge>
+                  </>
+                )}
               </div>
             </div>
 
@@ -157,7 +308,9 @@ export default function Trade({ onNavigate }: TradeProps) {
                     onChange={(e) => setPrice(e.target.value)}
                     className="bg-gray-800 border-gray-700"
                   />
-                  <p className="text-sm text-gray-400 mt-1">Current price: ${currentPair.price.toLocaleString()}</p>
+                  <p className="text-sm text-gray-400 mt-1">
+                    Current price: {formatPrice(orderBook?.currentPrice || currentPair?.price || 0)}
+                  </p>
                 </div>
               </TabsContent>
             </Tabs>
@@ -167,7 +320,10 @@ export default function Trade({ onNavigate }: TradeProps) {
               <div className="flex items-center justify-between mb-2">
                 <Label htmlFor="amount">Amount ({side === 'buy' ? selectedPair.split('/')[0] : selectedPair.split('/')[0]})</Label>
                 <span className="text-sm text-gray-400">
-                  Available: {availableBalance.toFixed(side === 'buy' ? 2 : 8)} {currency}
+                  Available: {availableBalance.toLocaleString('en-US', { 
+                    minimumFractionDigits: side === 'buy' ? 2 : 8, 
+                    maximumFractionDigits: side === 'buy' ? 2 : 8 
+                  })} {currency}
                 </span>
               </div>
               <Input
@@ -256,44 +412,88 @@ export default function Trade({ onNavigate }: TradeProps) {
               {/* Asks */}
               <div>
                 <div className="text-sm text-gray-400 mb-2">Sell Orders</div>
-                {[50236.50, 50236.00, 50235.50].map((askPrice, i) => (
-                  <div key={i} className="flex justify-between text-sm py-1">
-                    <span className="text-red-500">${askPrice.toLocaleString()}</span>
-                    <span className="text-gray-400">{(0.2 + i * 0.1).toFixed(4)}</span>
+                {loadingOrderBook ? (
+                  <div className="text-center py-4">
+                    <Loader2 className="w-4 h-4 text-emerald-500 animate-spin mx-auto" />
                   </div>
-                ))}
+                ) : orderBook?.asks.length ? (
+                  orderBook.asks.slice(0, 5).map((ask, i) => (
+                    <div key={i} className="flex justify-between text-sm py-1">
+                      <span className="text-red-500">{formatPrice(ask.price)}</span>
+                      <span className="text-gray-400">{ask.amount.toFixed(4)}</span>
+                    </div>
+                  ))
+                ) : (
+                  <div className="text-gray-400 text-sm py-2">No orders</div>
+                )}
               </div>
 
               {/* Current Price */}
               <div className="py-2 text-center border-y border-gray-800">
-                <div className="text-xl text-emerald-500">${currentPair.price.toLocaleString()}</div>
+                {orderBook ? (
+                  <>
+                    <div className="text-xl text-emerald-500">{formatPrice(orderBook.currentPrice)}</div>
+                    <div className="text-xs text-gray-400 mt-1">
+                      {orderBook.priceChangePercentage24h >= 0 ? '+' : ''}
+                      {orderBook.priceChangePercentage24h.toFixed(2)}%
+                    </div>
+                  </>
+                ) : (
+                  <Loader2 className="w-5 h-5 text-emerald-500 animate-spin mx-auto" />
+                )}
               </div>
 
               {/* Bids */}
               <div>
                 <div className="text-sm text-gray-400 mb-2">Buy Orders</div>
-                {[50233.50, 50233.00, 50232.50].map((bidPrice, i) => (
-                  <div key={i} className="flex justify-between text-sm py-1">
-                    <span className="text-emerald-500">${bidPrice.toLocaleString()}</span>
-                    <span className="text-gray-400">{(0.3 + i * 0.1).toFixed(4)}</span>
+                {loadingOrderBook ? (
+                  <div className="text-center py-4">
+                    <Loader2 className="w-4 h-4 text-emerald-500 animate-spin mx-auto" />
                   </div>
-                ))}
+                ) : orderBook?.bids.length ? (
+                  orderBook.bids.slice(0, 5).map((bid, i) => (
+                    <div key={i} className="flex justify-between text-sm py-1">
+                      <span className="text-emerald-500">{formatPrice(bid.price)}</span>
+                      <span className="text-gray-400">{bid.amount.toFixed(4)}</span>
+                    </div>
+                  ))
+                ) : (
+                  <div className="text-gray-400 text-sm py-2">No orders</div>
+                )}
               </div>
             </div>
           </Card>
 
           <Card className="bg-gray-900 border-gray-800 p-6">
             <h3 className="mb-4">Account Balance</h3>
-            <div className="space-y-3">
-              <div>
-                <div className="text-sm text-gray-400">USDT</div>
-                <div className="text-xl text-white">5,234.56</div>
+            {balances ? (
+              <div className="space-y-3">
+                <div className="flex justify-between">
+                  <span className="text-gray-400">Total Balance</span>
+                  <span className="text-white">${balances.totalBalance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-400">Available</span>
+                  <span className="text-emerald-500">${balances.availableBalance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-400">Locked</span>
+                  <span className="text-yellow-500">${balances.lockedBalance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                </div>
+                <div className="pt-3 border-t border-gray-800 mt-3 space-y-2">
+                  {balances.wallets.slice(0, 3).map((wallet) => (
+                    <div key={wallet.symbol} className="flex justify-between text-sm">
+                      <span className="text-gray-400">{wallet.symbol}</span>
+                      <span className="text-white">{wallet.available.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 8 })}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
-              <div>
-                <div className="text-sm text-gray-400">{selectedPair.split('/')[0]}</div>
-                <div className="text-xl text-white">0.2341</div>
+            ) : (
+              <div className="text-center py-4">
+                <Loader2 className="w-5 h-5 text-emerald-500 animate-spin mx-auto" />
               </div>
-            </div>
+            )}
           </Card>
         </div>
       </div>

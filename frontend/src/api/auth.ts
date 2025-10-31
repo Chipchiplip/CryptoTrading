@@ -17,7 +17,7 @@ async function postJson<T>(url: string, body: unknown): Promise<ApiResult<T>> {
 }
 
 export interface LoginDto { email: string; password: string; }
-export interface RegisterDto { email: string; password: string; confirmPassword: string; }
+export interface RegisterDto { email: string; password: string; confirmPassword: string; fullName?: string; }
 export interface TwoFactorDto { email: string; code: string; }
 export interface ConfirmEmailDto { email: string; token: string; }
 export interface ForgotPasswordDto { email: string; }

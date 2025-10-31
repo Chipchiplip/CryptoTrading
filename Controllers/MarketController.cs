@@ -10,16 +10,19 @@ public class MarketController : ControllerBase
 {
     private readonly ICoinGeckoService _coinGeckoService;
     private readonly ICryptoCacheService _cacheService;
+    private readonly ICryptoDataSyncService _syncService;
     private readonly ILogger<MarketController> _logger;
 
     public MarketController(
         ICoinGeckoService coinGeckoService, 
         ICryptoCacheService cacheService,
-        ILogger<MarketController> logger)
+        ILogger<MarketController> logger,
+        ICryptoDataSyncService syncService)
     {
         _coinGeckoService = coinGeckoService;
         _cacheService = cacheService;
         _logger = logger;
+        _syncService = syncService;
     }
 
     /// <summary>
@@ -140,6 +143,29 @@ public class MarketController : ControllerBase
         {
             _logger.LogError(ex, "Error clearing cache");
             return StatusCode(500, new { message = "Error clearing cache" });
+        }
+    }
+
+    /// <summary>
+    /// Force synchronize market data into database (cryptocurrencies, prices, stats)
+    /// </summary>
+    [HttpPost("sync-now")]
+    public async Task<IActionResult> SyncNow()
+    {
+        try
+        {
+            await _syncService.SyncCryptocurrenciesAsync();
+            await _syncService.SyncPricesAsync();
+            await _syncService.SyncMarketStatsAsync();
+            // refresh cache immediately for API/UI
+            var latest = await _coinGeckoService.GetMarketDataAsync();
+            var stats = await _coinGeckoService.GetMarketStatsAsync();
+            return Ok(new { message = "Synchronization completed", coins = latest?.Count ?? 0, statsUpdated = stats != null });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error forcing market sync");
+            return StatusCode(500, new { message = "Error forcing market sync" });
         }
     }
 }

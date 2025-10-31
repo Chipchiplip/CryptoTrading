@@ -39,6 +39,12 @@ export default function Login({ onNavigate }: LoginProps) {
       setLoading(false);
       return;
     }
+    if (!res.data.accessToken || res.data.accessToken === '') {
+      setError('Login failed: No access token received');
+      setLoading(false);
+      return;
+    }
+    console.log('[Login] Setting access token:', res.data.accessToken.substring(0, 20) + '...');
     setAccessToken(res.data.accessToken);
     onNavigate?.('trader-dashboard');
     setLoading(false);

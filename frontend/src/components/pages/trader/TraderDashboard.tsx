@@ -1,47 +1,123 @@
-import { TrendingUp, TrendingDown, ArrowUpRight, ArrowDownRight, DollarSign, Wallet, Activity, Clock } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { TrendingUp, TrendingDown, ArrowUpRight, ArrowDownRight, DollarSign, Wallet, Activity, Clock, Loader2 } from 'lucide-react';
 import { Card } from '../../ui/card';
 import { Button } from '../../ui/button';
 import { Badge } from '../../ui/badge';
+import { Alert, AlertDescription } from '../../ui/alert';
 import { AreaChart, Area, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { DashboardApi, DashboardSummary, NavHistory, PnlHistory } from '../../../services/dashboard';
 
 interface TraderDashboardProps {
   onNavigate?: (page: string) => void;
 }
 
 export default function TraderDashboard({ onNavigate }: TraderDashboardProps) {
-  const navData = [
-    { date: 'Jan 1', value: 10000 },
-    { date: 'Jan 8', value: 10500 },
-    { date: 'Jan 15', value: 10200 },
-    { date: 'Jan 22', value: 11000 },
-    { date: 'Jan 29', value: 11800 },
-    { date: 'Feb 5', value: 12100 },
-    { date: 'Feb 12', value: 12458 },
-  ];
+  const [summary, setSummary] = useState<DashboardSummary | null>(null);
+  const [navHistory, setNavHistory] = useState<NavHistory | null>(null);
+  const [pnlHistory, setPnlHistory] = useState<PnlHistory | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const pnlData = [
-    { time: '00:00', pnl: 0 },
-    { time: '04:00', pnl: 45 },
-    { time: '08:00', pnl: 120 },
-    { time: '12:00', pnl: 89 },
-    { time: '16:00', pnl: 234 },
-    { time: '20:00', pnl: 198 },
-    { time: '24:00', pnl: 234 },
-  ];
+  const fetchDashboardData = async () => {
+    setError(null);
+    
+    try {
+      console.log('[Dashboard] Fetching dashboard data...');
+      
+      // Fetch summary, NAV history, and PnL history in parallel
+      const [summaryRes, navRes, pnlRes] = await Promise.all([
+        DashboardApi.getSummary(),
+        DashboardApi.getNavHistory(),
+        DashboardApi.getPnlHistory('hourly')
+      ]);
+      
+      if (!summaryRes.ok) {
+        console.error('[Dashboard] Summary error:', summaryRes.error);
+        setError(summaryRes.error || 'Failed to load dashboard summary');
+        return;
+      }
+      
+      if (!navRes.ok) {
+        console.error('[Dashboard] NAV history error:', navRes.error);
+        setError(navRes.error || 'Failed to load NAV history');
+        return;
+      }
+      
+      if (!pnlRes.ok) {
+        console.error('[Dashboard] PnL history error:', pnlRes.error);
+        setError(pnlRes.error || 'Failed to load PnL history');
+        return;
+      }
+      
+      console.log('[Dashboard] Data loaded:', { summary: summaryRes.data, nav: navRes.data, pnl: pnlRes.data });
+      
+      setSummary(summaryRes.data);
+      setNavHistory(navRes.data);
+      setPnlHistory(pnlRes.data);
+    } catch (e: any) {
+      console.error('[Dashboard] Fetch error:', e);
+      setError(e?.message || 'Failed to load dashboard data');
+    } finally {
+      setLoading(false);
+    }
+  };
 
-  const recentOrders = [
-    { id: '1', time: '2m ago', pair: 'BTC/USDT', type: 'Buy', side: 'Market', amount: '0.0234 BTC', price: '$50,234', status: 'Filled', pnl: '+$45' },
-    { id: '2', time: '15m ago', pair: 'ETH/USDT', type: 'Sell', side: 'Limit', amount: '1.2 ETH', price: '$2,845', status: 'Filled', pnl: '+$89' },
-    { id: '3', time: '1h ago', pair: 'SOL/USDT', type: 'Buy', side: 'Limit', amount: '45 SOL', price: '$98.45', status: 'Partial', pnl: '+$23' },
-    { id: '4', time: '2h ago', pair: 'BNB/USDT', type: 'Sell', side: 'Market', amount: '3.5 BNB', price: '$312.89', status: 'Filled', pnl: '+$67' },
-  ];
+  useEffect(() => {
+    fetchDashboardData();
+    
+    // Refresh every 30 seconds (as recommended: 30-60s)
+    const interval = setInterval(fetchDashboardData, 30000);
+    return () => clearInterval(interval);
+  }, []);
 
-  const holdings = [
-    { symbol: 'BTC', name: 'Bitcoin', amount: '0.2341', value: '$11,759.82', change: '+2.34%', positive: true },
-    { symbol: 'ETH', name: 'Ethereum', amount: '4.5678', value: '$12,993.50', change: '+1.82%', positive: true },
-    { symbol: 'SOL', name: 'Solana', amount: '125.34', value: '$12,339.73', change: '-0.45%', positive: false },
-    { symbol: 'USDT', name: 'Tether', amount: '5234.56', value: '$5,234.56', change: '0.00%', positive: true },
-  ];
+  const formatTimeAgo = (date: string) => {
+    const now = new Date();
+    const orderDate = new Date(date);
+    const diffMs = now.getTime() - orderDate.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+    
+    if (diffMins < 1) return 'Just now';
+    if (diffMins < 60) return `${diffMins}m ago`;
+    if (diffHours < 24) return `${diffHours}h ago`;
+    return `${Math.floor(diffHours / 24)}d ago`;
+  };
+
+  const formatCurrency = (value: number) => {
+    return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value);
+  };
+
+  const formatAmount = (value: number, decimals: number = 8) => {
+    return new Intl.NumberFormat('en-US', { minimumFractionDigits: 0, maximumFractionDigits: decimals }).format(value);
+  };
+
+  if (loading && !summary) {
+    return (
+      <div className="p-4 lg:p-8 flex items-center justify-center min-h-[400px]">
+        <div className="text-center">
+          <Loader2 className="w-8 h-8 text-emerald-500 animate-spin mx-auto mb-4" />
+          <p className="text-gray-400">Loading dashboard...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="p-4 lg:p-8">
+        <Alert className="bg-red-500/10 border-red-500/50 text-red-500">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      </div>
+    );
+  }
+
+  if (!summary || !navHistory || !pnlHistory) {
+    return null;
+  }
+
+  const navData = navHistory.data.map(h => ({ date: h.date, value: h.value }));
+  const pnlData = pnlHistory.data.map(h => ({ time: h.time, pnl: h.pnl }));
 
   return (
     <div className="p-4 lg:p-8 space-y-6">
@@ -54,10 +130,10 @@ export default function TraderDashboard({ onNavigate }: TraderDashboardProps) {
               <Wallet className="w-5 h-5 text-emerald-500" />
             </div>
           </div>
-          <div className="text-3xl text-white mb-1">$12,458.32</div>
-          <div className="flex items-center gap-1 text-emerald-500 text-sm">
-            <ArrowUpRight className="w-4 h-4" />
-            +$234.12 (1.9%)
+          <div className="text-3xl text-white mb-1">{formatCurrency(summary.totalBalance)}</div>
+          <div className={`flex items-center gap-1 text-sm ${summary.totalBalanceChange >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
+            {summary.totalBalanceChange >= 0 ? <ArrowUpRight className="w-4 h-4" /> : <ArrowDownRight className="w-4 h-4" />}
+            {summary.totalBalanceChange >= 0 ? '+' : ''}{formatCurrency(summary.totalBalanceChange)} ({summary.totalBalanceChangePercent >= 0 ? '+' : ''}{summary.totalBalanceChangePercent.toFixed(2)}%)
           </div>
         </Card>
 
@@ -68,10 +144,12 @@ export default function TraderDashboard({ onNavigate }: TraderDashboardProps) {
               <TrendingUp className="w-5 h-5 text-emerald-500" />
             </div>
           </div>
-          <div className="text-3xl text-white mb-1">+$234.12</div>
-          <div className="flex items-center gap-1 text-emerald-500 text-sm">
-            <ArrowUpRight className="w-4 h-4" />
-            +3.45%
+          <div className={`text-3xl mb-1 ${summary.todayPnl >= 0 ? 'text-white' : 'text-red-500'}`}>
+            {summary.todayPnl >= 0 ? '+' : ''}{formatCurrency(summary.todayPnl)}
+          </div>
+          <div className={`flex items-center gap-1 text-sm ${summary.todayPnlPercent >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
+            {summary.todayPnlPercent >= 0 ? <ArrowUpRight className="w-4 h-4" /> : <ArrowDownRight className="w-4 h-4" />}
+            {summary.todayPnlPercent >= 0 ? '+' : ''}{summary.todayPnlPercent.toFixed(2)}%
           </div>
         </Card>
 
@@ -82,8 +160,8 @@ export default function TraderDashboard({ onNavigate }: TraderDashboardProps) {
               <DollarSign className="w-5 h-5 text-blue-500" />
             </div>
           </div>
-          <div className="text-3xl text-white mb-1">$8,234.56</div>
-          <div className="text-gray-400 text-sm">66.1% of total</div>
+          <div className="text-3xl text-white mb-1">{formatCurrency(summary.availableBalance)}</div>
+          <div className="text-gray-400 text-sm">{summary.availableBalancePercent.toFixed(1)}% of total</div>
         </Card>
 
         <Card className="bg-gray-900 border-gray-800 p-6">
@@ -93,8 +171,8 @@ export default function TraderDashboard({ onNavigate }: TraderDashboardProps) {
               <Activity className="w-5 h-5 text-yellow-500" />
             </div>
           </div>
-          <div className="text-3xl text-white mb-1">3</div>
-          <div className="text-gray-400 text-sm">2 Buy, 1 Sell</div>
+          <div className="text-3xl text-white mb-1">{summary.openOrdersCount}</div>
+          <div className="text-gray-400 text-sm">{summary.openOrdersBuy} Buy, {summary.openOrdersSell} Sell</div>
         </Card>
       </div>
 
@@ -156,7 +234,7 @@ export default function TraderDashboard({ onNavigate }: TraderDashboardProps) {
       </div>
 
       <div className="grid lg:grid-cols-2 gap-6">
-        {/* Holdings */}
+        {/* Holdings - Placeholder (can be added later with separate API) */}
         <Card className="bg-gray-900 border-gray-800 p-6">
           <div className="flex items-center justify-between mb-6">
             <h2 className="text-xl">Top Holdings</h2>
@@ -170,29 +248,13 @@ export default function TraderDashboard({ onNavigate }: TraderDashboardProps) {
             </Button>
           </div>
           <div className="space-y-4">
-            {holdings.map((holding) => (
-              <div key={holding.symbol} className="flex items-center justify-between p-3 rounded-lg hover:bg-gray-800 transition-colors">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-emerald-500/10 rounded-full flex items-center justify-center">
-                    <span className="text-emerald-500 text-sm">{holding.symbol}</span>
-                  </div>
-                  <div>
-                    <div className="text-white">{holding.name}</div>
-                    <div className="text-sm text-gray-400">{holding.amount} {holding.symbol}</div>
-                  </div>
-                </div>
-                <div className="text-right">
-                  <div className="text-white">{holding.value}</div>
-                  <div className={holding.positive ? 'text-emerald-500 text-sm' : 'text-red-500 text-sm'}>
-                    {holding.change}
-                  </div>
-                </div>
-              </div>
-            ))}
+            <div className="text-gray-400 text-sm text-center py-8">
+              Holdings data will be available soon
+            </div>
           </div>
         </Card>
 
-        {/* Recent Orders */}
+        {/* Recent Orders - Placeholder (can be added later with separate API) */}
         <Card className="bg-gray-900 border-gray-800 p-6">
           <div className="flex items-center justify-between mb-6">
             <h2 className="text-xl">Recent Orders</h2>
@@ -206,44 +268,9 @@ export default function TraderDashboard({ onNavigate }: TraderDashboardProps) {
             </Button>
           </div>
           <div className="space-y-3">
-            {recentOrders.map((order) => (
-              <div
-                key={order.id}
-                className="p-4 rounded-lg border border-gray-800 hover:border-gray-700 transition-colors cursor-pointer"
-                onClick={() => onNavigate?.('order-detail')}
-              >
-                <div className="flex items-center justify-between mb-2">
-                  <div className="flex items-center gap-2">
-                    <span className="text-white">{order.pair}</span>
-                    <Badge className={order.type === 'Buy' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-red-500/10 text-red-500'}>
-                      {order.type}
-                    </Badge>
-                    <Badge variant="outline" className="border-gray-700">
-                      {order.side}
-                    </Badge>
-                  </div>
-                  <div className="flex items-center gap-2 text-sm text-gray-400">
-                    <Clock className="w-4 h-4" />
-                    {order.time}
-                  </div>
-                </div>
-                <div className="flex items-center justify-between text-sm">
-                  <div className="text-gray-400">
-                    {order.amount} @ {order.price}
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <Badge className={
-                      order.status === 'Filled' ? 'bg-emerald-500/10 text-emerald-500' :
-                      order.status === 'Partial' ? 'bg-yellow-500/10 text-yellow-500' :
-                      'bg-gray-500/10 text-gray-500'
-                    }>
-                      {order.status}
-                    </Badge>
-                    <span className="text-emerald-500">{order.pnl}</span>
-                  </div>
-                </div>
-              </div>
-            ))}
+            <div className="text-gray-400 text-sm text-center py-8">
+              Recent orders data will be available soon
+            </div>
           </div>
         </Card>
       </div>

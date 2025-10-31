@@ -13,7 +13,12 @@ using System.Text;
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
-builder.Services.AddControllers();
+builder.Services.AddControllers()
+    .AddJsonOptions(options =>
+    {
+        options.JsonSerializerOptions.PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase;
+        options.JsonSerializerOptions.PropertyNameCaseInsensitive = true;
+    });
 builder.Services.AddEndpointsApiExplorer();
 
 // Configure Swagger with JWT
@@ -113,7 +118,9 @@ builder.Services.AddHttpClient<ICoinGeckoService, CoinGeckoService>(client =>
     client.BaseAddress = new Uri("https://api.coingecko.com/api/v3/");
     client.DefaultRequestHeaders.Add("User-Agent", "CryptoTrading/1.0");
 });
-builder.Services.AddScoped<ICryptoCacheService, CryptoCacheService>();
+// Cache service must be usable from singleton hosted services (e.g., typed HttpClient in background services),
+// so register it as a singleton to avoid "scoped service from root provider" errors.
+builder.Services.AddSingleton<ICryptoCacheService, CryptoCacheService>();
 builder.Services.AddMemoryCache();
 
 // SignalR
@@ -126,6 +133,7 @@ builder.Services.AddScoped<ICryptoDataSyncService, CryptoDataSyncService>();
 
 // Background Services
 builder.Services.AddHostedService<CryptoSyncBackgroundService>();
+builder.Services.AddHostedService<CryptoTrading.Services.RealtimeBroadcastService>();
 
 var app = builder.Build();
 
@@ -191,6 +199,29 @@ app.MapGet("/weatherforecast", () =>
     return forecast;
 })
 .WithName("GetWeatherForecast");
+
+// Ensure database baseline and apply migrations
+using (var scope = app.Services.CreateScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+    try
+    {
+        // Ensure history table exists and mark existing schema as migrated
+        db.Database.ExecuteSqlRaw(@"CREATE TABLE IF NOT EXISTS `__EFMigrationsHistory` (
+            `MigrationId` varchar(150) NOT NULL,
+            `ProductVersion` varchar(32) NOT NULL,
+            PRIMARY KEY (`MigrationId`)
+        ) CHARACTER SET=utf8mb4;");
+
+        db.Database.ExecuteSqlRaw(@"INSERT IGNORE INTO `__EFMigrationsHistory` (`MigrationId`,`ProductVersion`) VALUES
+            ('20251023032323_InitialCreate','9.0.10'),
+            ('20251023070130_AddCryptoMarketTables','9.0.10');");
+
+        // Apply any future migrations automatically
+        db.Database.Migrate();
+    }
+    catch { }
+}
 
 app.Run();
 
