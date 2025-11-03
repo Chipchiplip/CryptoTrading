@@ -21,15 +21,18 @@ public class TradingController : ControllerBase
     private readonly ICoinGeckoService _coinGeckoService;
     private readonly ITradingService _tradingService;
     private readonly ApplicationDbContext _db;
+    private readonly ILogger<TradingController> _logger;
     
     public TradingController(
         ICoinGeckoService coinGeckoService,
         ITradingService tradingService,
-        ApplicationDbContext db)
+        ApplicationDbContext db,
+        ILogger<TradingController> logger)
     {
         _coinGeckoService = coinGeckoService;
         _tradingService = tradingService;
         _db = db;
+        _logger = logger;
     }
     
     private int GetUserId() 
@@ -56,37 +59,32 @@ public class TradingController : ControllerBase
     [HttpGet("dashboard")]
     public async Task<IActionResult> GetDashboard()
     {
-        try
+        var userId = GetUserId();
+        _logger.LogDebug("Fetching dashboard for user {UserId}", userId);
+        
+        var summary = await GetDashboardSummaryData(userId);
+        var navHistory = await GetDashboardNavHistoryData(userId, null);
+        var pnlHistory = await GetDashboardPnlHistoryData(userId, "hourly", null);
+        
+        var dashboardData = new DashboardDto
         {
-            var userId = GetUserId();
-            var summary = await GetDashboardSummaryData(userId);
-            var navHistory = await GetDashboardNavHistoryData(userId, null);
-            var pnlHistory = await GetDashboardPnlHistoryData(userId, "hourly", null);
-            
-            var dashboardData = new DashboardDto
-            {
-                TotalBalance = summary.TotalBalance,
-                TotalBalanceChange = summary.TotalBalanceChange,
-                TotalBalanceChangePercent = summary.TotalBalanceChangePercent,
-                TodayPnl = summary.TodayPnl,
-                TodayPnlPercent = summary.TodayPnlPercent,
-                AvailableBalance = summary.AvailableBalance,
-                AvailableBalancePercent = summary.AvailableBalancePercent,
-                OpenOrders = summary.OpenOrdersCount,
-                OpenOrdersBuy = summary.OpenOrdersBuy,
-                OpenOrdersSell = summary.OpenOrdersSell,
-                RecentOrders = new List<OrderDto>(),
-                TopHoldings = new List<HoldingDto>(),
-                NavHistory = navHistory.Data.Select(d => new NavHistoryDto { Date = d.Date, Value = d.Value }).ToList(),
-                PnlHistory = pnlHistory.Data.Select(d => new PnlHistoryDto { Time = d.Time, Pnl = d.Pnl }).ToList()
-            };
+            TotalBalance = summary.TotalBalance,
+            TotalBalanceChange = summary.TotalBalanceChange,
+            TotalBalanceChangePercent = summary.TotalBalanceChangePercent,
+            TodayPnl = summary.TodayPnl,
+            TodayPnlPercent = summary.TodayPnlPercent,
+            AvailableBalance = summary.AvailableBalance,
+            AvailableBalancePercent = summary.AvailableBalancePercent,
+            OpenOrders = summary.OpenOrdersCount,
+            OpenOrdersBuy = summary.OpenOrdersBuy,
+            OpenOrdersSell = summary.OpenOrdersSell,
+            RecentOrders = new List<OrderDto>(),
+            TopHoldings = new List<HoldingDto>(),
+            NavHistory = navHistory.Data.Select(d => new NavHistoryDto { Date = d.Date, Value = d.Value }).ToList(),
+            PnlHistory = pnlHistory.Data.Select(d => new PnlHistoryDto { Time = d.Time, Pnl = d.Pnl }).ToList()
+        };
 
-            return Ok(dashboardData);
-        }
-        catch (Exception ex)
-        {
-            return BadRequest(new { message = ex.Message });
-        }
+        return Ok(dashboardData);
     }
 
     /// <summary>
@@ -95,16 +93,11 @@ public class TradingController : ControllerBase
     [HttpGet("dashboard/summary")]
     public async Task<IActionResult> GetDashboardSummaryEndpoint()
     {
-        try
-        {
-            var userId = GetUserId();
-            var summary = await GetDashboardSummaryData(userId);
-            return Ok(summary);
-        }
-        catch (Exception ex)
-        {
-            return BadRequest(new { message = ex.Message });
-        }
+        var userId = GetUserId();
+        _logger.LogDebug("Fetching dashboard summary for user {UserId}", userId);
+        
+        var summary = await GetDashboardSummaryData(userId);
+        return Ok(summary);
     }
 
     /// <summary>
@@ -113,16 +106,11 @@ public class TradingController : ControllerBase
     [HttpGet("dashboard/nav")]
     public async Task<IActionResult> GetDashboardNav([FromQuery] string? from)
     {
-        try
-        {
-            var userId = GetUserId();
-            var navHistory = await GetDashboardNavHistoryData(userId, from);
-            return Ok(navHistory);
-        }
-        catch (Exception ex)
-        {
-            return BadRequest(new { message = ex.Message });
-        }
+        var userId = GetUserId();
+        _logger.LogDebug("Fetching NAV history for user {UserId}", userId);
+        
+        var navHistory = await GetDashboardNavHistoryData(userId, from);
+        return Ok(navHistory);
     }
 
     /// <summary>
@@ -131,16 +119,11 @@ public class TradingController : ControllerBase
     [HttpGet("dashboard/pnl")]
     public async Task<IActionResult> GetDashboardPnl([FromQuery] string granularity = "hourly", [FromQuery] string? date = null)
     {
-        try
-        {
-            var userId = GetUserId();
-            var pnlHistory = await GetDashboardPnlHistoryData(userId, granularity, date);
-            return Ok(pnlHistory);
-        }
-        catch (Exception ex)
-        {
-            return BadRequest(new { message = ex.Message });
-        }
+        var userId = GetUserId();
+        _logger.LogDebug("Fetching PnL history for user {UserId}", userId);
+        
+        var pnlHistory = await GetDashboardPnlHistoryData(userId, granularity, date);
+        return Ok(pnlHistory);
     }
 
     // Helper methods
@@ -214,18 +197,25 @@ public class TradingController : ControllerBase
             .Where(p => p.QtyCoin != 0)
             .ToList();
 
-        // Add crypto values as of yesterday
-        foreach (var pos in positions)
+        // Add crypto values as of yesterday - optimized to fetch all prices in one query
+        if (positions.Any())
         {
-            var crypto = await _db.Cryptocurrencies.FindAsync(pos.CryptocurrencyId);
-            if (crypto != null)
+            var cryptoIds = positions.Select(p => p.CryptocurrencyId).Distinct().ToList();
+            
+            // Fetch all relevant prices at once
+            var yesterdayPrices = await _db.CryptoPrices
+                .Where(p => cryptoIds.Contains(p.CryptocurrencyId) && p.CollectedAtUtc.Date <= yesterday)
+                .GroupBy(p => p.CryptocurrencyId)
+                .Select(g => new
+                {
+                    CryptocurrencyId = g.Key,
+                    Price = g.OrderByDescending(p => p.CollectedAtUtc).Select(p => p.PriceUsd).FirstOrDefault()
+                })
+                .ToDictionaryAsync(x => x.CryptocurrencyId, x => x.Price);
+            
+            foreach (var pos in positions)
             {
-                var latestPrice = await _db.CryptoPrices
-                    .Where(p => p.CryptocurrencyId == pos.CryptocurrencyId && p.CollectedAtUtc.Date <= yesterday)
-                    .OrderByDescending(p => p.CollectedAtUtc)
-                    .Select(p => p.PriceUsd)
-                    .FirstOrDefaultAsync();
-
+                var latestPrice = yesterdayPrices.GetValueOrDefault(pos.CryptocurrencyId, 0m);
                 previousTotalBalance += pos.QtyCoin * (latestPrice > 0 ? latestPrice : 0);
             }
         }
@@ -302,7 +292,36 @@ public class TradingController : ControllerBase
             .Where(p => p.QtyCoin != 0)
             .ToList();
 
-        // For each day in the range, calculate NAV using latest price on or before that date
+        // Preload all price data for the date range and cryptocurrencies to avoid N+1 queries
+        var cryptoIds = positions.Select(p => p.CryptocurrencyId).Distinct().ToList();
+        var allPrices = new Dictionary<(int CryptoId, DateTime Date), decimal>();
+        
+        if (cryptoIds.Any())
+        {
+            var priceData = await _db.CryptoPrices
+                .Where(p => cryptoIds.Contains(p.CryptocurrencyId) && 
+                           p.CollectedAtUtc.Date >= fromDate && 
+                           p.CollectedAtUtc.Date <= DateTime.UtcNow.Date)
+                .Select(p => new { p.CryptocurrencyId, Date = p.CollectedAtUtc.Date, p.PriceUsd, p.CollectedAtUtc })
+                .ToListAsync();
+            
+            // Group by crypto and date, taking the latest price for each day
+            var groupedPrices = priceData
+                .GroupBy(p => new { p.CryptocurrencyId, p.Date })
+                .Select(g => new
+                {
+                    g.Key.CryptocurrencyId,
+                    g.Key.Date,
+                    Price = g.OrderByDescending(p => p.CollectedAtUtc).First().PriceUsd
+                });
+            
+            foreach (var price in groupedPrices)
+            {
+                allPrices[(price.CryptocurrencyId, price.Date)] = price.Price;
+            }
+        }
+
+        // For each day in the range, calculate NAV using preloaded prices
         for (int i = 29; i >= 0; i--)
         {
             var date = fromDate.AddDays(i);
@@ -310,14 +329,18 @@ public class TradingController : ControllerBase
 
             foreach (var pos in positions)
             {
-                // Get latest price on or before this date
-                var latestPrice = await _db.CryptoPrices
-                    .Where(p => p.CryptocurrencyId == pos.CryptocurrencyId && p.CollectedAtUtc.Date <= date)
-                    .OrderByDescending(p => p.CollectedAtUtc)
-                    .Select(p => p.PriceUsd)
-                    .FirstOrDefaultAsync();
+                // Find the latest available price on or before this date
+                decimal latestPrice = 0m;
+                for (var checkDate = date; checkDate >= fromDate; checkDate = checkDate.AddDays(-1))
+                {
+                    if (allPrices.TryGetValue((pos.CryptocurrencyId, checkDate), out var price))
+                    {
+                        latestPrice = price;
+                        break;
+                    }
+                }
 
-                nav += pos.QtyCoin * (latestPrice > 0 ? latestPrice : 0);
+                nav += pos.QtyCoin * latestPrice;
             }
 
             // Add USD balance (FIAT wallets)
@@ -406,27 +429,28 @@ public class TradingController : ControllerBase
     /// <summary>
     /// Get order book for a trading pair with real bid/ask aggregation
     /// </summary>
-    /// <param name="symbol">Trading pair symbol (e.g., "BTC/USDT")</param>
+    /// <param name="symbol">Trading pair symbol (e.g., "BTC/USDT"). Can be provided as route parameter or query string.</param>
     /// <param name="depth">Number of price levels to return (default 20)</param>
-    [HttpGet("orderbook/{symbol}")]
-    public async Task<IActionResult> GetOrderBook(string symbol, [FromQuery] int depth = 20)
+    [HttpGet("orderbook/{symbol?}")]
+    public async Task<IActionResult> GetOrderBook([FromRoute] string? symbol = null, [FromQuery] string? symbolQuery = null, [FromQuery] int depth = 20)
     {
-        try
+        // Support both route parameter and query string for backward compatibility
+        var tradingSymbol = symbol ?? symbolQuery;
+        if (string.IsNullOrEmpty(tradingSymbol))
         {
-            var orderBook = await _tradingService.GetOrderBookAsync(symbol, depth);
-            return Ok(orderBook);
+            throw new ArgumentException("Symbol is required. Provide it as route parameter (/orderbook/BTC-USD) or query string (?symbol=BTC/USD)");
         }
-        catch (Exception ex)
-        {
-            return BadRequest(new { message = ex.Message });
-        }
+        
+        _logger.LogDebug("Fetching order book for symbol {Symbol}", tradingSymbol);
+        var orderBook = await _tradingService.GetOrderBookAsync(tradingSymbol, depth);
+        return Ok(orderBook);
     }
 
     /// <summary>
-    /// Get user balances
+    /// Get user holdings (portfolio positions)
     /// </summary>
-    [HttpGet("balances")]
-    public async Task<IActionResult> GetBalances()
+    [HttpGet("holdings")]
+    public async Task<IActionResult> GetHoldings()
     {
         try
         {
@@ -446,6 +470,74 @@ public class TradingController : ControllerBase
                 .Select(g => new { WalletId = g.Key, Balance = g.Sum(m => m.Amount) })
                 .ToDictionaryAsync(x => x.WalletId, x => x.Balance);
             
+            // Get current crypto prices
+            var marketData = await _coinGeckoService.GetMarketDataAsync();
+            
+            var holdings = new List<HoldingDto>();
+            
+            foreach (var wallet in wallets.Where(w => w.AssetType == "COIN" && w.Cryptocurrency != null))
+            {
+                var balance = movements.GetValueOrDefault(wallet.Id, 0m);
+                if (balance <= 0) continue; // Skip empty holdings
+                
+                var symbol = wallet.Cryptocurrency.Symbol.ToUpper();
+                var crypto = marketData.FirstOrDefault(c => c.Symbol.Equals(symbol, StringComparison.OrdinalIgnoreCase));
+                var price = crypto?.CurrentPrice ?? 0m;
+                var valueUsd = balance * price;
+                var change24h = crypto?.PriceChangePercentage24h ?? 0m;
+                
+                holdings.Add(new HoldingDto
+                {
+                    Symbol = symbol,
+                    Name = wallet.Cryptocurrency.Name ?? symbol,
+                    Amount = balance,
+                    ValueUsd = valueUsd,
+                    Change24h = change24h
+                });
+            }
+            
+            // Sort by value descending
+            holdings = holdings.OrderByDescending(h => h.ValueUsd).ToList();
+            
+            return Ok(holdings);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error retrieving holdings for user");
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Get user balances
+    /// </summary>
+    [HttpGet("balances")]
+    public async Task<IActionResult> GetBalances()
+    {
+        var userId = GetUserId();
+        _logger.LogDebug("Fetching balances for user {UserId}", userId);
+            
+            // Get all wallets for the user
+            var wallets = await _db.Wallets
+                .Where(w => w.UserId == userId)
+                .Include(w => w.Cryptocurrency)
+                .ToListAsync();
+            
+            // Get wallet movements to calculate balances
+            var walletIds = wallets.Select(w => w.Id).ToList();
+            var movements = await _db.WalletMovements
+                .Where(m => walletIds.Contains(m.WalletId))
+                .GroupBy(m => m.WalletId)
+                .Select(g => new { WalletId = g.Key, Balance = g.Sum(m => m.Amount) })
+                .ToDictionaryAsync(x => x.WalletId, x => x.Balance);
+            
+            // Get locked balances from active order holds
+            var orderHolds = await _db.OrderHolds
+                .Where(h => walletIds.Contains(h.WalletId) && h.ReleasedAt == null)
+                .GroupBy(h => h.WalletId)
+                .Select(g => new { WalletId = g.Key, LockedAmount = g.Sum(h => h.Amount) })
+                .ToDictionaryAsync(x => x.WalletId, x => x.LockedAmount);
+            
             // Get current crypto prices for calculation
             var marketData = await _coinGeckoService.GetMarketDataAsync();
             
@@ -457,7 +549,7 @@ public class TradingController : ControllerBase
             foreach (var wallet in wallets)
             {
                 var balance = movements.GetValueOrDefault(wallet.Id, 0m);
-                var locked = 0m; // TODO: Calculate locked from OrderHolds
+                var locked = orderHolds.GetValueOrDefault(wallet.Id, 0m);
                 
                 decimal valueUsd = 0m;
                 string symbol = "";
@@ -502,11 +594,6 @@ public class TradingController : ControllerBase
             };
             
             return Ok(balances);
-        }
-        catch (Exception ex)
-        {
-            return BadRequest(new { message = ex.Message });
-        }
     }
 
     /// <summary>
@@ -516,20 +603,17 @@ public class TradingController : ControllerBase
     [HttpPost("orders")]
     public async Task<IActionResult> PlaceOrder([FromBody] PlaceOrderRequest request)
     {
-        try
+        if (!ModelState.IsValid)
         {
-            var userId = GetUserId();
-            var order = await _tradingService.PlaceOrderAsync(userId, request);
-            return Ok(order);
+            _logger.LogWarning("Invalid order request: {Errors}", ModelState.Values.SelectMany(v => v.Errors).Select(e => e.ErrorMessage));
+            return BadRequest(ModelState);
         }
-        catch (InvalidOperationException ex)
-        {
-            return BadRequest(new { message = ex.Message });
-        }
-        catch (Exception)
-        {
-            return StatusCode(500, new { message = "An error occurred while placing the order" });
-        }
+        
+        var userId = GetUserId();
+        _logger.LogInformation("User {UserId} placing order: {Side} {Quantity} {Symbol}", userId, request.Side, request.Quantity, request.Symbol);
+        
+        var order = await _tradingService.PlaceOrderAsync(userId, request);
+        return Ok(order);
     }
 
     /// <summary>
@@ -539,19 +623,18 @@ public class TradingController : ControllerBase
     [HttpGet("orders/{id}")]
     public async Task<IActionResult> GetOrder(ulong id)
     {
+        var userId = GetUserId();
+        _logger.LogDebug("Fetching order {OrderId} for user {UserId}", id, userId);
+        
         try
         {
-            var userId = GetUserId();
             var order = await _tradingService.GetOrderAsync(userId, id);
             return Ok(order);
         }
-        catch (InvalidOperationException ex)
+        catch (KeyNotFoundException ex)
         {
+            _logger.LogWarning(ex, "Order {OrderId} not found for user {UserId}", id, userId);
             return NotFound(new { message = ex.Message });
-        }
-        catch (Exception)
-        {
-            return StatusCode(500, new { message = "An error occurred while retrieving the order" });
         }
     }
 
@@ -561,16 +644,17 @@ public class TradingController : ControllerBase
     [HttpGet("orders")]
     public async Task<IActionResult> GetOrders([FromQuery] OrdersQuery query)
     {
-        try
+        if (!ModelState.IsValid)
         {
-            var userId = GetUserId();
-            var orders = await _tradingService.GetOrdersAsync(userId, query);
-            return Ok(orders);
+            _logger.LogWarning("Invalid orders query: {Errors}", ModelState.Values.SelectMany(v => v.Errors).Select(e => e.ErrorMessage));
+            return BadRequest(ModelState);
         }
-        catch (Exception)
-        {
-            return StatusCode(500, new { message = "An error occurred while retrieving orders" });
-        }
+        
+        var userId = GetUserId();
+        _logger.LogDebug("Fetching orders for user {UserId} with query {Query}", userId, query);
+        
+        var orders = await _tradingService.GetOrdersAsync(userId, query);
+        return Ok(orders);
     }
 
     /// <summary>
@@ -586,17 +670,25 @@ public class TradingController : ControllerBase
             var order = await _tradingService.CancelOrderAsync(userId, id);
             return Ok(order);
         }
+        catch (KeyNotFoundException ex)
+        {
+            _logger.LogWarning(ex, "Order {OrderId} not found for user {UserId}", id, GetUserId());
+            return NotFound(new { message = ex.Message });
+        }
         catch (UnauthorizedAccessException ex)
         {
+            _logger.LogWarning(ex, "Unauthorized cancellation attempt for order {OrderId}", id);
             return Forbid(ex.Message);
         }
         catch (InvalidOperationException ex)
         {
+            _logger.LogWarning(ex, "Invalid operation while canceling order {OrderId}", id);
             return BadRequest(new { message = ex.Message });
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            return StatusCode(500, new { message = "An error occurred while canceling the order" });
+            _logger.LogError(ex, "Error canceling order {OrderId}", id);
+            throw;
         }
     }
 
@@ -606,16 +698,26 @@ public class TradingController : ControllerBase
     [HttpGet("trades")]
     public async Task<IActionResult> GetTrades([FromQuery] TradesQuery query)
     {
-        try
+        if (!ModelState.IsValid)
         {
-            var userId = GetUserId();
-            var trades = await _tradingService.GetTradesAsync(userId, query);
-            return Ok(trades);
+            _logger.LogWarning("Invalid trades query: {Errors}", ModelState.Values.SelectMany(v => v.Errors).Select(e => e.ErrorMessage));
+            return BadRequest(ModelState);
         }
-        catch (Exception)
-        {
-            return StatusCode(500, new { message = "An error occurred while retrieving trades" });
-        }
+        
+        var userId = GetUserId();
+        _logger.LogDebug("Fetching trades for user {UserId} with query {Query}", userId, query);
+        
+        var trades = await _tradingService.GetTradesAsync(userId, query);
+        return Ok(trades);
+    }
+
+    /// <summary>
+    /// Get trade history (alias for /trades endpoint for backward compatibility)
+    /// </summary>
+    [HttpGet("history")]
+    public async Task<IActionResult> GetHistory([FromQuery] TradesQuery query)
+    {
+        return await GetTrades(query);
     }
 }
 

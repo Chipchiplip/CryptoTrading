@@ -185,9 +185,9 @@ namespace CryptoTrading.Models.DTOs
         public string? Type { get; set; }
 
         /// <summary>
-        /// Filter by order status: NEW, PARTIAL, FILLED, CANCELED, REJECTED
+        /// Filter by order status: NEW, PARTIAL, FILLED, CANCELED, REJECTED. Supports multiple values.
         /// </summary>
-        public string? Status { get; set; }
+        public List<string>? Status { get; set; }
 
         /// <summary>
         /// Filter orders created after this date

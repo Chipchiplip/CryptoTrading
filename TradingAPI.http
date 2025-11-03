@@ -103,8 +103,12 @@ Content-Type: application/json
 GET {{baseUrl}}/api/trading/orders
 Authorization: Bearer {{token}}
 
-### Get Open Orders Only
+### Get Open Orders Only (multiple status values)
 GET {{baseUrl}}/api/trading/orders?status=NEW&status=PARTIAL
+Authorization: Bearer {{token}}
+
+### Get Orders with Pagination
+GET {{baseUrl}}/api/trading/orders?page=1&pageSize=20
 Authorization: Bearer {{token}}
 
 ### Get Order by ID (thay {orderId} bằng ID thực tế)
@@ -119,24 +123,32 @@ Authorization: Bearer {{token}}
 ### 5. ORDER BOOK
 ### ============================================
 
-### Get Order Book for BTC
+### Get Order Book for BTC (query string format)
 GET {{baseUrl}}/api/trading/orderbook?symbol=BTC/USD
 Authorization: Bearer {{token}}
 
-### Get Order Book for ETH
-GET {{baseUrl}}/api/trading/orderbook?symbol=ETH/USD
+### Get Order Book for BTC (path parameter format)
+GET {{baseUrl}}/api/trading/orderbook/BTC-USD
+Authorization: Bearer {{token}}
+
+### Get Order Book for ETH with custom depth
+GET {{baseUrl}}/api/trading/orderbook?symbol=ETH/USD&depth=50
 Authorization: Bearer {{token}}
 
 ### ============================================
 ### 6. TRADE HISTORY
 ### ============================================
 
-### Get Trade History
+### Get Trade History (uses same query params as /trades)
 GET {{baseUrl}}/api/trading/history
 Authorization: Bearer {{token}}
 
-### Get Trade History với Pagination
-GET {{baseUrl}}/api/trading/history?limit=10&offset=0
+### Get Trade History with Pagination
+GET {{baseUrl}}/api/trading/history?page=1&pageSize=10
+Authorization: Bearer {{token}}
+
+### Get Trade History with Filters
+GET {{baseUrl}}/api/trading/history?symbol=BTC/USD&page=1&pageSize=20
 Authorization: Bearer {{token}}
 
 ### ============================================

@@ -59,8 +59,9 @@ namespace CryptoTrading.Services.Trading
         /// Executes a market order immediately using internal matching and virtual counterparty
         /// </summary>
         /// <param name="order">Market order to execute</param>
+        /// <param name="cachedPrice">Optional cached price to avoid refetching market data</param>
         /// <returns>Task representing the execution operation</returns>
-        Task ExecuteMarketOrderAsync(Models.Order order);
+        Task ExecuteMarketOrderAsync(Models.Order order, decimal? cachedPrice = null);
 
         /// <summary>
         /// Matches pending limit orders based on price-time priority

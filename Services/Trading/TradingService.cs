@@ -138,14 +138,14 @@ namespace CryptoTrading.Services.Trading
                     "Order {OrderId} placed: {Side} {Quantity} {Symbol} @ {Price}",
                     order.Id, order.Side, order.QuantityCoin, coinSymbol, orderPrice);
 
-                // If market order, execute immediately
+                // If market order, execute immediately with cached market data
                 if (request.Type.ToUpper() == "MARKET")
                 {
-                    await ExecuteMarketOrderAsync(order);
+                    await ExecuteMarketOrderAsync(order, currentPrice);
                 }
 
-                // Return DTO
-                return MapToOrderDto(order, crypto.Symbol);
+                // Return DTO with preserved quote symbol
+                return MapToOrderDto(order, coinSymbol, quoteSymbol);
             }
             catch (Exception ex)
             {
@@ -274,7 +274,9 @@ namespace CryptoTrading.Services.Trading
         /// <summary>
         /// Executes a market order immediately with internal matching and virtual counterparty
         /// </summary>
-        public async Task ExecuteMarketOrderAsync(Order order)
+        /// <param name="order">The order to execute</param>
+        /// <param name="cachedPrice">Optional cached price to avoid refetching market data</param>
+        public async Task ExecuteMarketOrderAsync(Order order, decimal? cachedPrice = null)
         {
             using var transaction = await _context.Database.BeginTransactionAsync();
             try
@@ -285,11 +287,21 @@ namespace CryptoTrading.Services.Trading
                     .FirstOrDefaultAsync(o => o.Id == order.Id)
                     ?? throw new InvalidOperationException($"Order {order.Id} not found");
 
-                // Get current market price
-                var marketData = await _coinGeckoService.GetMarketDataAsync();
-                var executionPrice = marketData
-                    .FirstOrDefault(c => c.Symbol.Equals(order.Cryptocurrency.Symbol, StringComparison.OrdinalIgnoreCase))
-                    ?.CurrentPrice ?? 0m;
+                // Use cached price if available, otherwise fetch from CoinGecko
+                decimal executionPrice;
+                if (cachedPrice.HasValue && cachedPrice.Value > 0)
+                {
+                    executionPrice = cachedPrice.Value;
+                    _logger.LogDebug("Using cached market price {Price} for order {OrderId}", executionPrice, order.Id);
+                }
+                else
+                {
+                    var marketData = await _coinGeckoService.GetMarketDataAsync();
+                    executionPrice = marketData
+                        .FirstOrDefault(c => c.Symbol.Equals(order.Cryptocurrency.Symbol, StringComparison.OrdinalIgnoreCase))
+                        ?.CurrentPrice ?? 0m;
+                    _logger.LogDebug("Fetched fresh market price {Price} for order {OrderId}", executionPrice, order.Id);
+                }
 
                 if (executionPrice <= 0)
                 {
@@ -666,7 +678,7 @@ namespace CryptoTrading.Services.Trading
 
                 if (order == null)
                 {
-                    throw new InvalidOperationException($"Order {orderId} not found");
+                    throw new KeyNotFoundException($"Order {orderId} not found");
                 }
 
                 // Verify ownership
@@ -698,7 +710,8 @@ namespace CryptoTrading.Services.Trading
 
                 _logger.LogInformation("Order {OrderId} canceled by user {UserId}", orderId, userId);
 
-                return MapToOrderDto(order, order.Cryptocurrency.Symbol);
+                // Default to USD for canceled orders since we don't store quote symbol
+                return MapToOrderDto(order, order.Cryptocurrency.Symbol, "USD");
             }
             catch (Exception ex)
             {
@@ -723,7 +736,7 @@ namespace CryptoTrading.Services.Trading
 
             if (order == null)
             {
-                throw new InvalidOperationException($"Order {orderId} not found");
+                throw new KeyNotFoundException($"Order {orderId} not found");
             }
 
             // Get trades for this order
@@ -732,7 +745,8 @@ namespace CryptoTrading.Services.Trading
                 .Include(t => t.Cryptocurrency)
                 .ToListAsync();
 
-            var orderDto = MapToOrderDetailDto(order, order.Cryptocurrency.Symbol, trades);
+            // Default to USD for order details since we don't store quote symbol
+            var orderDto = MapToOrderDetailDto(order, order.Cryptocurrency.Symbol, trades, "USD");
             return orderDto;
         }
 
@@ -762,9 +776,10 @@ namespace CryptoTrading.Services.Trading
                 ordersQuery = ordersQuery.Where(o => o.Type == query.Type.ToUpper());
             }
 
-            if (!string.IsNullOrEmpty(query.Status))
+            if (query.Status != null && query.Status.Any())
             {
-                ordersQuery = ordersQuery.Where(o => o.Status == query.Status.ToUpper());
+                var upperStatuses = query.Status.Select(s => s.ToUpper()).ToList();
+                ordersQuery = ordersQuery.Where(o => upperStatuses.Contains(o.Status));
             }
 
             if (query.FromDate.HasValue)
@@ -787,7 +802,8 @@ namespace CryptoTrading.Services.Trading
                 .Take(query.PageSize)
                 .ToListAsync();
 
-            var orderDtos = orders.Select(o => MapToOrderDto(o, o.Cryptocurrency.Symbol)).ToList();
+            // Default to USD for order list since we don't store quote symbol
+            var orderDtos = orders.Select(o => MapToOrderDto(o, o.Cryptocurrency.Symbol, "USD")).ToList();
 
             return new PaginatedResponse<OrderDto>
             {
@@ -841,7 +857,8 @@ namespace CryptoTrading.Services.Trading
                 .Take(query.PageSize)
                 .ToListAsync();
 
-            var tradeDtos = trades.Select(t => MapToTradeDto(t, t.Cryptocurrency.Symbol)).ToList();
+            // Default to USD for trade list since we don't store quote symbol
+            var tradeDtos = trades.Select(t => MapToTradeDto(t, t.Cryptocurrency.Symbol, "USD")).ToList();
 
             return new PaginatedResponse<TradeDto>
             {
@@ -934,27 +951,62 @@ namespace CryptoTrading.Services.Trading
 
         /// <summary>
         /// Parses trading pair symbol (e.g., "BTC/USDT" -> ("BTC", "USDT"))
+        /// Handles edge cases: whitespace, lowercase, missing delimiter
         /// </summary>
         private (string CoinSymbol, string QuoteSymbol) ParseSymbol(string symbol)
         {
-            var parts = symbol.Split('/');
-            if (parts.Length != 2)
+            if (string.IsNullOrWhiteSpace(symbol))
             {
-                throw new ArgumentException($"Invalid symbol format: {symbol}. Expected format: COIN/QUOTE");
+                throw new ArgumentException("Symbol cannot be empty");
             }
 
-            return (parts[0].ToUpper(), parts[1].ToUpper());
+            // Trim whitespace and convert to uppercase
+            symbol = symbol.Trim().ToUpper();
+
+            // Try to split by common delimiters
+            string[] parts;
+            if (symbol.Contains('/'))
+            {
+                parts = symbol.Split('/');
+            }
+            else if (symbol.Contains('-'))
+            {
+                parts = symbol.Split('-');
+            }
+            else
+            {
+                // Try to parse common patterns like BTCUSDT, BTCUSD, ETHUSDT
+                // Common quote currencies to check
+                var quotes = new[] { "USDT", "USD", "USDC", "EUR", "GBP", "BTC", "ETH" };
+                foreach (var quote in quotes)
+                {
+                    if (symbol.EndsWith(quote) && symbol.Length > quote.Length)
+                    {
+                        var coin = symbol.Substring(0, symbol.Length - quote.Length);
+                        return (coin.Trim().ToUpper(), quote.ToUpper());
+                    }
+                }
+                
+                throw new ArgumentException($"Invalid symbol format: {symbol}. Expected format: COIN/QUOTE, COIN-QUOTE, or COINQUOTE");
+            }
+
+            if (parts.Length != 2 || string.IsNullOrWhiteSpace(parts[0]) || string.IsNullOrWhiteSpace(parts[1]))
+            {
+                throw new ArgumentException($"Invalid symbol format: {symbol}. Expected format: COIN/QUOTE or COIN-QUOTE");
+            }
+
+            return (parts[0].Trim().ToUpper(), parts[1].Trim().ToUpper());
         }
 
         /// <summary>
         /// Maps Order entity to OrderDto
         /// </summary>
-        private OrderDto MapToOrderDto(Order order, string coinSymbol)
+        private OrderDto MapToOrderDto(Order order, string coinSymbol, string quoteSymbol = "USD")
         {
             return new OrderDto
             {
                 Id = order.Id.ToString(),
-                Symbol = $"{coinSymbol.ToUpper()}/USDT",
+                Symbol = $"{coinSymbol.ToUpper()}/{quoteSymbol.ToUpper()}",
                 Side = order.Side,
                 Type = order.Type,
                 Quantity = order.QuantityCoin,
@@ -970,7 +1022,7 @@ namespace CryptoTrading.Services.Trading
         /// <summary>
         /// Maps Order entity to OrderDetailDto with trades
         /// </summary>
-        private OrderDetailDto MapToOrderDetailDto(Order order, string coinSymbol, List<Trade> trades)
+        private OrderDetailDto MapToOrderDetailDto(Order order, string coinSymbol, List<Trade> trades, string quoteSymbol = "USD")
         {
             var totalFees = trades.Sum(t => t.FeeUsd);
             var avgPrice = trades.Any()
@@ -980,7 +1032,7 @@ namespace CryptoTrading.Services.Trading
             return new OrderDetailDto
             {
                 Id = order.Id.ToString(),
-                Symbol = $"{coinSymbol.ToUpper()}/USDT",
+                Symbol = $"{coinSymbol.ToUpper()}/{quoteSymbol.ToUpper()}",
                 Side = order.Side,
                 Type = order.Type,
                 Quantity = order.QuantityCoin,
@@ -992,20 +1044,20 @@ namespace CryptoTrading.Services.Trading
                 UpdatedAt = order.UpdatedAt ?? order.CreatedAt,
                 AvgPrice = avgPrice,
                 TotalFees = totalFees,
-                Trades = trades.Select(t => MapToTradeDto(t, coinSymbol)).ToList()
+                Trades = trades.Select(t => MapToTradeDto(t, coinSymbol, quoteSymbol)).ToList()
             };
         }
 
         /// <summary>
         /// Maps Trade entity to TradeDto
         /// </summary>
-        private TradeDto MapToTradeDto(Trade trade, string coinSymbol)
+        private TradeDto MapToTradeDto(Trade trade, string coinSymbol, string quoteSymbol = "USD")
         {
             return new TradeDto
             {
                 Id = trade.Id.ToString(),
                 OrderId = trade.OrderId.ToString(),
-                Symbol = $"{coinSymbol.ToUpper()}/USDT",
+                Symbol = $"{coinSymbol.ToUpper()}/{quoteSymbol.ToUpper()}",
                 Price = trade.PriceUsd,
                 Quantity = trade.QuantityCoin,
                 Fee = trade.FeeUsd,
