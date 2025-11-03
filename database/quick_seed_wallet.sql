@@ -14,7 +14,7 @@ USE crypto_trading;
 -- =====================================================================
 -- CÁCH 1: Tìm User theo Email (Khuyến nghị)
 -- =====================================================================
-SET @userEmail = 'your-email@example.com';  -- ⚠️ THAY ĐỔI EMAIL Ở ĐÂY
+SET @userEmail = 'hoangvyfa@gmail.com';  -- ⚠️ THAY ĐỔI EMAIL Ở ĐÂY
 SET @userId = (SELECT Id FROM Users WHERE Email = @userEmail LIMIT 1);
 
 -- =====================================================================
