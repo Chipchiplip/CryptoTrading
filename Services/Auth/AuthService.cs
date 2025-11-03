@@ -132,11 +132,28 @@ namespace CryptoTrading.Services.Auth
                     throw new Exception("Please confirm your email before logging in");
                 }
 
+                // Only check 2FA if user has enabled it
+                // If TwoFactorCode is provided but 2FA is not enabled, it will be ignored
                 if (user.TwoFactorEnabled)
                 {
                     if (string.IsNullOrEmpty(loginDto.TwoFactorCode))
                     {
-                        throw new Exception("Two-factor authentication code required");
+                        // Return response indicating 2FA is required
+                        _logger.LogInformation("2FA required for user: {Email}", loginDto.Email);
+                        return new AuthResponseDto
+                        {
+                            RequiresTwoFactor = true,
+                            AccessToken = string.Empty,
+                            RefreshToken = string.Empty,
+                            ExpiresAt = DateTime.MinValue,
+                            User = new UserDto
+                            {
+                                Id = user.Id,
+                                Email = user.Email,
+                                FullName = user.FullName,
+                                TwoFactorEnabled = user.TwoFactorEnabled
+                            }
+                        };
                     }
 
                     if (!VerifyTwoFactorCode(user.TwoFactorSecret!, loginDto.TwoFactorCode))
@@ -144,6 +161,11 @@ namespace CryptoTrading.Services.Auth
                         _logger.LogWarning("Invalid 2FA code for user: {Email}", loginDto.Email);
                         throw new Exception("Invalid two-factor authentication code");
                     }
+                }
+                else if (!string.IsNullOrEmpty(loginDto.TwoFactorCode))
+                {
+                    // User provided 2FA code but 2FA is not enabled - ignore it
+                    _logger.LogDebug("2FA code provided but 2FA not enabled for user: {Email}, ignoring code", loginDto.Email);
                 }
 
                 user.LastLoginAt = _dateTimeProvider.UtcNow;

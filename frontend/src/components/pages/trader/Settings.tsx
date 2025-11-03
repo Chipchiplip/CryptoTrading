@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { User, Shield, Key, Activity, Camera, Copy, CheckCircle2 } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { User, Shield, Key, Activity, Camera, Copy, CheckCircle2, QrCode, AlertTriangle } from 'lucide-react';
 import { Card } from '../../ui/card';
 import { Button } from '../../ui/button';
 import { Input } from '../../ui/input';
@@ -8,11 +8,18 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../ui/tabs';
 import { Avatar, AvatarFallback, AvatarImage } from '../../ui/avatar';
 import { Badge } from '../../ui/badge';
 import { Switch } from '../../ui/switch';
+import { QRCodeComponent } from '../../ui/qr-code';
+import { AuthApi, Enable2FAResponse } from '../../../api/auth';
 
 export default function Settings() {
-  const [twoFAEnabled, setTwoFAEnabled] = useState(true);
+  const [twoFAEnabled, setTwoFAEnabled] = useState(false);
   const [emailNotifications, setEmailNotifications] = useState(true);
   const [copied, setCopied] = useState(false);
+  const [twoFASetup, setTwoFASetup] = useState<Enable2FAResponse | null>(null);
+  const [verificationCode, setVerificationCode] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
 
   const apiKeys = [
     { id: 'API-001', name: 'Trading Bot', key: 'sk_live_...abc123', created: '2025-01-01', lastUsed: '2 hours ago', status: 'Active' },
@@ -29,6 +36,66 @@ export default function Settings() {
     navigator.clipboard.writeText(key);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleEnable2FA = async () => {
+    if (twoFAEnabled) {
+      // TODO: Implement disable 2FA
+      setTwoFAEnabled(false);
+      setTwoFASetup(null);
+      return;
+    }
+
+    setLoading(true);
+    setError('');
+    
+    try {
+      const result = await AuthApi.enable2FA();
+      if (result.ok) {
+        setTwoFASetup(result.data);
+        setSuccess('');
+      } else {
+        setError(result.error);
+      }
+    } catch (err) {
+      setError('Failed to enable 2FA');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleVerify2FA = async () => {
+    if (!verificationCode.trim()) {
+      setError('Please enter verification code');
+      return;
+    }
+
+    setLoading(true);
+    setError('');
+    
+    try {
+      const result = await AuthApi.verify2FA({ code: verificationCode });
+      if (result.ok) {
+        setTwoFAEnabled(true);
+        setTwoFASetup(null);
+        setVerificationCode('');
+        setSuccess('2FA has been enabled successfully!');
+      } else {
+        setError(result.error);
+      }
+    } catch (err) {
+      setError('Failed to verify 2FA code');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCopySecret = () => {
+    if (twoFASetup?.secret) {
+      navigator.clipboard.writeText(twoFASetup.secret);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
   };
 
   return (
@@ -136,6 +203,22 @@ export default function Settings() {
           <div className="space-y-6">
             <Card className="bg-gray-900 border-gray-800 p-6">
               <h2 className="text-xl mb-6">Two-Factor Authentication (2FA)</h2>
+              
+              {/* Error/Success Messages */}
+              {error && (
+                <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-lg mb-4 flex items-center gap-2">
+                  <AlertTriangle className="w-5 h-5 text-red-500" />
+                  <span className="text-red-500">{error}</span>
+                </div>
+              )}
+              
+              {success && (
+                <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-lg mb-4 flex items-center gap-2">
+                  <CheckCircle2 className="w-5 h-5 text-emerald-500" />
+                  <span className="text-emerald-500">{success}</span>
+                </div>
+              )}
+
               <div className="flex items-center justify-between p-4 bg-gray-800 rounded-lg mb-4">
                 <div>
                   <div className="text-white mb-1 flex items-center gap-2">
@@ -148,13 +231,89 @@ export default function Settings() {
                 </div>
                 <Switch
                   checked={twoFAEnabled}
-                  onCheckedChange={setTwoFAEnabled}
+                  onCheckedChange={handleEnable2FA}
+                  disabled={loading}
                 />
               </div>
+
+              {/* 2FA Setup Process */}
+              {twoFASetup && !twoFAEnabled && (
+                <div className="space-y-6">
+                  <div className="p-4 bg-blue-500/10 border border-blue-500/20 rounded-lg">
+                    <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                      <QrCode className="w-5 h-5" />
+                      Setup Two-Factor Authentication
+                    </h3>
+                    
+                    <div className="grid md:grid-cols-2 gap-6">
+                      {/* QR Code */}
+                      <div className="text-center">
+                        <p className="text-sm text-gray-400 mb-4">
+                          Scan this QR code with your authenticator app:
+                        </p>
+                        <QRCodeComponent 
+                          value={twoFASetup.qrCodeUrl} 
+                          size={200}
+                          className="mb-4"
+                        />
+                      </div>
+                      
+                      {/* Manual Entry */}
+                      <div>
+                        <p className="text-sm text-gray-400 mb-4">
+                          Or enter this secret key manually:
+                        </p>
+                        <div className="flex items-center gap-2 mb-4">
+                          <code className="flex-1 px-3 py-2 bg-gray-800 rounded text-gray-300 text-sm break-all">
+                            {twoFASetup.secret}
+                          </code>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="border-gray-700"
+                            onClick={handleCopySecret}
+                          >
+                            {copied ? <CheckCircle2 className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                          </Button>
+                        </div>
+                        
+                        <div className="space-y-4">
+                          <div>
+                            <Label htmlFor="verificationCode">Enter verification code from your app:</Label>
+                            <Input
+                              id="verificationCode"
+                              value={verificationCode}
+                              onChange={(e) => setVerificationCode(e.target.value)}
+                              placeholder="000000"
+                              className="bg-gray-800 border-gray-700"
+                              maxLength={6}
+                            />
+                          </div>
+                          
+                          <Button 
+                            onClick={handleVerify2FA}
+                            disabled={loading || !verificationCode.trim()}
+                            className="w-full bg-emerald-500 text-black hover:bg-emerald-600"
+                          >
+                            {loading ? 'Verifying...' : 'Verify & Enable 2FA'}
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* 2FA Enabled State */}
               {twoFAEnabled && (
                 <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-lg">
-                  <div className="text-emerald-500 mb-2">✓ Your account is protected with 2FA</div>
-                  <p className="text-sm text-gray-400">Scan the QR code with your authenticator app</p>
+                  <div className="text-emerald-500 mb-2 flex items-center gap-2">
+                    <CheckCircle2 className="w-5 h-5" />
+                    Your account is protected with 2FA
+                  </div>
+                  <p className="text-sm text-gray-400">
+                    Two-factor authentication is active. You'll need to enter a code from your authenticator app when logging in.
+                  </p>
                 </div>
               )}
             </Card>
