@@ -2,23 +2,33 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System.Security.Claims;
 using CryptoTrading.Services;
+using CryptoTrading.Services.Trading;
 using CryptoTrading.Data;
 using CryptoTrading.Models;
+using CryptoTrading.Models.DTOs;
 using Microsoft.EntityFrameworkCore;
 
 namespace CryptoTrading.Controllers;
 
+/// <summary>
+/// Controller for trading operations including orders, balances, and dashboard
+/// </summary>
 [ApiController]
 [Route("api/[controller]")]
 [Authorize]
 public class TradingController : ControllerBase
 {
     private readonly ICoinGeckoService _coinGeckoService;
+    private readonly ITradingService _tradingService;
     private readonly ApplicationDbContext _db;
     
-    public TradingController(ICoinGeckoService coinGeckoService, ApplicationDbContext db)
+    public TradingController(
+        ICoinGeckoService coinGeckoService,
+        ITradingService tradingService,
+        ApplicationDbContext db)
     {
         _coinGeckoService = coinGeckoService;
+        _tradingService = tradingService;
         _db = db;
     }
     
@@ -394,68 +404,16 @@ public class TradingController : ControllerBase
     }
 
     /// <summary>
-    /// Get order book for a trading pair
+    /// Get order book for a trading pair with real bid/ask aggregation
     /// </summary>
+    /// <param name="symbol">Trading pair symbol (e.g., "BTC/USDT")</param>
+    /// <param name="depth">Number of price levels to return (default 20)</param>
     [HttpGet("orderbook/{symbol}")]
-    public async Task<IActionResult> GetOrderBook(string symbol)
+    public async Task<IActionResult> GetOrderBook(string symbol, [FromQuery] int depth = 20)
     {
         try
         {
-            var userId = GetUserId();
-            
-            // Get current market price from CoinGecko
-            var marketData = await _coinGeckoService.GetMarketDataAsync();
-            var baseSymbol = symbol.Split('/')[0].ToUpper();
-            var crypto = marketData.FirstOrDefault(c => c.Symbol.Equals(baseSymbol, StringComparison.OrdinalIgnoreCase));
-            
-            if (crypto == null)
-            {
-                return NotFound(new { message = $"Cryptocurrency '{baseSymbol}' not found" });
-            }
-            
-            var currentPrice = crypto.CurrentPrice ?? 0m;
-            var priceChange24h = crypto.PriceChange24h ?? 0m;
-            var priceChangePercentage24h = crypto.PriceChangePercentage24h ?? 0m;
-            
-            // Generate order book around current price (mock order book)
-            var asks = new List<OrderBookLevelDto>();
-            var bids = new List<OrderBookLevelDto>();
-            
-            // Generate sell orders (asks) - above current price
-            for (int i = 0; i < 5; i++)
-            {
-                var price = currentPrice * (1 + (0.001m * (i + 1))); // 0.1% above per level
-                asks.Add(new OrderBookLevelDto
-                {
-                    Price = price,
-                    Amount = (decimal)(0.2 + i * 0.1),
-                    Total = price * (decimal)(0.2 + i * 0.1)
-                });
-            }
-            
-            // Generate buy orders (bids) - below current price
-            for (int i = 0; i < 5; i++)
-            {
-                var price = currentPrice * (1 - (0.001m * (i + 1))); // 0.1% below per level
-                bids.Add(new OrderBookLevelDto
-                {
-                    Price = price,
-                    Amount = (decimal)(0.3 + i * 0.1),
-                    Total = price * (decimal)(0.3 + i * 0.1)
-                });
-            }
-            
-            var orderBook = new OrderBookDto
-            {
-                Symbol = symbol,
-                CurrentPrice = currentPrice,
-                PriceChange24h = priceChange24h,
-                PriceChangePercentage24h = priceChangePercentage24h,
-                Asks = asks.OrderByDescending(a => a.Price).ToList(),
-                Bids = bids.OrderByDescending(b => b.Price).ToList(),
-                LastUpdated = DateTime.UtcNow
-            };
-            
+            var orderBook = await _tradingService.GetOrderBookAsync(symbol, depth);
             return Ok(orderBook);
         }
         catch (Exception ex)
@@ -552,154 +510,111 @@ public class TradingController : ControllerBase
     }
 
     /// <summary>
-    /// Place new order
+    /// Place a new order with validation and balance locking
     /// </summary>
+    /// <param name="request">Order placement request</param>
     [HttpPost("orders")]
-    public async Task<IActionResult> PlaceOrder([FromBody] PlaceOrderDto dto)
+    public async Task<IActionResult> PlaceOrder([FromBody] PlaceOrderRequest request)
     {
         try
         {
             var userId = GetUserId();
-            
-            // Parse symbol (e.g., "BTC/USDT" -> "BTC")
-            var symbolParts = dto.Symbol.Split('/');
-            if (symbolParts.Length != 2)
-            {
-                return BadRequest(new { message = "Invalid symbol format. Expected format: SYMBOL/USDT" });
-            }
-            
-            var coinSymbol = symbolParts[0].ToUpper();
-            
-            // Find cryptocurrency
-            var crypto = await _db.Cryptocurrencies
-                .FirstOrDefaultAsync(c => c.Symbol.ToUpper() == coinSymbol);
-            
-            if (crypto == null)
-            {
-                return NotFound(new { message = $"Cryptocurrency '{coinSymbol}' not found" });
-            }
-            
-            // Create order
-            var order = new Order
-            {
-                UserId = userId,
-                CryptocurrencyId = crypto.Id,
-                Side = dto.Side.ToUpper(),
-                Type = dto.Type.ToUpper(),
-                PriceUsd = dto.Price,
-                QuantityCoin = dto.Quantity,
-                FilledQty = 0,
-                Status = "NEW",
-                CreatedAt = DateTime.UtcNow
-            };
-            
-            _db.Orders.Add(order);
-            await _db.SaveChangesAsync();
-            
-            // Return DTO
-            var orderDto = new OrderDto
-            {
-                Id = order.Id.ToString(),
-                Symbol = dto.Symbol,
-                Side = order.Side,
-                Type = order.Type,
-                Quantity = order.QuantityCoin,
-                Price = order.PriceUsd,
-                Filled = order.FilledQty,
-                Remaining = order.QuantityCoin - order.FilledQty,
-                Status = order.Status,
-                CreatedAt = order.CreatedAt,
-                UpdatedAt = order.UpdatedAt ?? order.CreatedAt
-            };
-            
-            return Ok(orderDto);
+            var order = await _tradingService.PlaceOrderAsync(userId, request);
+            return Ok(order);
         }
-        catch (Exception ex)
+        catch (InvalidOperationException ex)
         {
             return BadRequest(new { message = ex.Message });
+        }
+        catch (Exception)
+        {
+            return StatusCode(500, new { message = "An error occurred while placing the order" });
         }
     }
 
     /// <summary>
-    /// Get order by ID
+    /// Get detailed information about a specific order including trades
     /// </summary>
+    /// <param name="id">Order ID</param>
     [HttpGet("orders/{id}")]
     public async Task<IActionResult> GetOrder(ulong id)
     {
         try
         {
             var userId = GetUserId();
-            
-            var order = await _db.Orders
-                .Where(o => o.Id == id && o.UserId == userId)
-                .Include(o => o.Cryptocurrency)
-                .FirstOrDefaultAsync();
-            
-            if (order == null)
-            {
-                return NotFound(new { message = "Order not found" });
-            }
-            
-            var orderDto = new OrderDto
-            {
-                Id = order.Id.ToString(),
-                Symbol = $"{order.Cryptocurrency.Symbol.ToUpper()}/USDT",
-                Side = order.Side,
-                Type = order.Type,
-                Quantity = order.QuantityCoin,
-                Price = order.PriceUsd,
-                Filled = order.FilledQty,
-                Remaining = order.QuantityCoin - order.FilledQty,
-                Status = order.Status,
-                CreatedAt = order.CreatedAt,
-                UpdatedAt = order.UpdatedAt ?? order.CreatedAt
-            };
-            
-            return Ok(orderDto);
+            var order = await _tradingService.GetOrderAsync(userId, id);
+            return Ok(order);
         }
-        catch (Exception ex)
+        catch (InvalidOperationException ex)
         {
-            return BadRequest(new { message = ex.Message });
+            return NotFound(new { message = ex.Message });
+        }
+        catch (Exception)
+        {
+            return StatusCode(500, new { message = "An error occurred while retrieving the order" });
         }
     }
 
     /// <summary>
-    /// Get user orders
+    /// Get user orders with filtering and pagination
     /// </summary>
     [HttpGet("orders")]
-    public async Task<IActionResult> GetOrders()
+    public async Task<IActionResult> GetOrders([FromQuery] OrdersQuery query)
     {
         try
         {
             var userId = GetUserId();
-            
-            // Get real orders from database
-            var orders = await _db.Orders
-                .Where(o => o.UserId == userId)
-                .Include(o => o.Cryptocurrency)
-                .OrderByDescending(o => o.CreatedAt)
-                .ToListAsync();
-            
-            var orderDtos = orders.Select(o => new OrderDto
-            {
-                Id = o.Id.ToString(),
-                Symbol = $"{o.Cryptocurrency.Symbol.ToUpper()}/USDT",
-                Side = o.Side,
-                Type = o.Type,
-                Quantity = o.QuantityCoin,
-                Price = o.PriceUsd,
-                Filled = o.FilledQty,
-                Remaining = o.QuantityCoin - o.FilledQty,
-                Status = o.Status,
-                CreatedAt = o.CreatedAt,
-                UpdatedAt = o.UpdatedAt ?? o.CreatedAt
-            }).ToList();
-            
-            return Ok(orderDtos);
+            var orders = await _tradingService.GetOrdersAsync(userId, query);
+            return Ok(orders);
         }
-        catch (Exception ex)
+        catch (Exception)
+        {
+            return StatusCode(500, new { message = "An error occurred while retrieving orders" });
+        }
+    }
+
+    /// <summary>
+    /// Cancel an existing order
+    /// </summary>
+    /// <param name="id">Order ID to cancel</param>
+    [HttpDelete("orders/{id}")]
+    public async Task<IActionResult> CancelOrder(ulong id)
+    {
+        try
+        {
+            var userId = GetUserId();
+            var order = await _tradingService.CancelOrderAsync(userId, id);
+            return Ok(order);
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return Forbid(ex.Message);
+        }
+        catch (InvalidOperationException ex)
         {
             return BadRequest(new { message = ex.Message });
+        }
+        catch (Exception)
+        {
+            return StatusCode(500, new { message = "An error occurred while canceling the order" });
+        }
+    }
+
+    /// <summary>
+    /// Get trade history with filtering and pagination
+    /// </summary>
+    [HttpGet("trades")]
+    public async Task<IActionResult> GetTrades([FromQuery] TradesQuery query)
+    {
+        try
+        {
+            var userId = GetUserId();
+            var trades = await _tradingService.GetTradesAsync(userId, query);
+            return Ok(trades);
+        }
+        catch (Exception)
+        {
+            return StatusCode(500, new { message = "An error occurred while retrieving trades" });
         }
     }
 }

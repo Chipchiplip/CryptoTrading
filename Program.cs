@@ -28,7 +28,7 @@ builder.Services.AddSwaggerGen(c =>
     {
         Title = "Crypto Trading API",
         Version = "v1",
-        Description = "API for Crypto Trading Platform with Authentication and 2FA"
+        Description = "API for Crypto Trading Platform with Authentication, 2FA, and Trading"
     });
 
     c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
@@ -54,6 +54,14 @@ builder.Services.AddSwaggerGen(c =>
             Array.Empty<string>()
         }
     });
+
+    // Enable XML documentation
+    var xmlFile = $"{System.Reflection.Assembly.GetExecutingAssembly().GetName().Name}.xml";
+    var xmlPath = Path.Combine(AppContext.BaseDirectory, xmlFile);
+    if (File.Exists(xmlPath))
+    {
+        c.IncludeXmlComments(xmlPath);
+    }
 });
 
 // Database (MySQL)
@@ -130,10 +138,12 @@ builder.Services.AddSignalR();
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IWatchlistService, WatchlistService>();
 builder.Services.AddScoped<ICryptoDataSyncService, CryptoDataSyncService>();
+builder.Services.AddScoped<CryptoTrading.Services.Trading.ITradingService, CryptoTrading.Services.Trading.TradingService>();
 
 // Background Services
 builder.Services.AddHostedService<CryptoSyncBackgroundService>();
 builder.Services.AddHostedService<CryptoTrading.Services.RealtimeBroadcastService>();
+builder.Services.AddHostedService<CryptoTrading.Services.OrderMatchingBackgroundService>();
 
 var app = builder.Build();
 
