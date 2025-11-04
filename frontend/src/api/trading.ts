@@ -148,6 +148,6 @@ export const TradingApi = {
   getOrder: (id: string) => apiGet<Order>(`/api/trading/orders/${id}`),
   placeOrder: (dto: PlaceOrderDto) => apiPost<Order>('/api/trading/orders', dto),
   getDashboard: () => apiGet<DashboardData>('/api/trading/dashboard'),
-  getOrderBook: (symbol: string) => apiGet<OrderBook>(`/api/trading/orderbook/${symbol}`),
+  getOrderBook: (symbol: string) => apiGet<OrderBook>(`/api/trading/orderbook/${encodeURIComponent(symbol)}`),
 };
 

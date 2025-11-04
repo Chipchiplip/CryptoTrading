@@ -221,23 +221,68 @@ namespace CryptoTrading.Services
         {
             try
             {
-                var response = await _httpClient.GetFromJsonAsync<dynamic>(
-                    $"coins/{coinId}/market_chart?vs_currency=usd&days={days}");
+                // Add delay to respect rate limits
+                await Task.Delay(500);
                 
-                var priceHistory = new List<PriceHistory>();
-                if (response?.prices != null)
+                var url = $"coins/{coinId}/market_chart?vs_currency=usd&days={days}";
+                if (!string.IsNullOrEmpty(_apiKey))
                 {
-                    foreach (var price in response.prices)
+                    url += $"&x_cg_demo_api_key={_apiKey}";
+                }
+                
+                // Get raw JSON string first
+                var httpResponse = await _httpClient.GetAsync(url);
+                httpResponse.EnsureSuccessStatusCode();
+                
+                var jsonString = await httpResponse.Content.ReadAsStringAsync();
+                
+                if (string.IsNullOrWhiteSpace(jsonString))
+                {
+                    _logger.LogWarning("Empty response from CoinGecko API for {CoinId}", coinId);
+                    return new List<PriceHistory>();
+                }
+                
+                var jsonDoc = JsonDocument.Parse(jsonString);
+                var priceHistory = new List<PriceHistory>();
+                
+                if (jsonDoc.RootElement.TryGetProperty("prices", out var pricesElement) && pricesElement.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var priceElement in pricesElement.EnumerateArray())
                     {
-                        priceHistory.Add(new PriceHistory
+                        try
                         {
-                            CoinId = coinId,
-                            Price = (decimal)price[1],
-                            Timestamp = DateTimeOffset.FromUnixTimeMilliseconds((long)price[0]).DateTime
-                        });
+                            if (priceElement.ValueKind == JsonValueKind.Array && priceElement.GetArrayLength() >= 2)
+                            {
+                                var timestamp = priceElement[0].GetInt64();
+                                var price = priceElement[1].GetDecimal();
+                                
+                                priceHistory.Add(new PriceHistory
+                                {
+                                    CoinId = coinId,
+                                    Price = price,
+                                    Timestamp = DateTimeOffset.FromUnixTimeMilliseconds(timestamp).DateTime
+                                });
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogWarning(ex, "Error parsing price element for {CoinId}", coinId);
+                            // Continue with next element
+                        }
                     }
                 }
+                else
+                {
+                    _logger.LogWarning("Response from CoinGecko API for {CoinId} does not contain 'prices' array. Response: {Response}", coinId, jsonString.Substring(0, Math.Min(200, jsonString.Length)));
+                }
+                
+                _logger.LogInformation("Parsed {Count} price history items for {CoinId}", priceHistory.Count, coinId);
                 return priceHistory;
+            }
+            catch (HttpRequestException httpEx) when (httpEx.Message.Contains("429") || httpEx.Message.Contains("Too Many Requests"))
+            {
+                _logger.LogWarning("Rate limited by CoinGecko API for price history {CoinId}. Returning empty list.", coinId);
+                return new List<PriceHistory>();
             }
             catch (Exception ex)
             {

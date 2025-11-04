@@ -23,6 +23,7 @@ import Subscription from './components/pages/trader/Subscription';
 import Settings from './components/pages/trader/Settings';
 import OrderDetail from './components/pages/trader/OrderDetail';
 import Market from './components/pages/trader/Market';
+import ChartTest from './components/pages/test/ChartTest';
 
 const guestPathMap: Record<string, string> = {
   home: '/',
@@ -126,6 +127,13 @@ export default function App() {
         <Route path="/forgot-password" element={<GuestPage current="forgot-password"><ForgotPassword /></GuestPage>} />
         <Route path="/reset-password" element={<GuestPage current="reset-password"><ResetPassword /></GuestPage>} />
         <Route path="/verify-email" element={<GuestPage current="verify-email"><VerifyEmail /></GuestPage>} />
+        
+        {/* Test Route - Public */}
+        <Route path="/test/chart" element={
+          <div className="dark min-h-screen bg-black">
+            <ChartTest />
+          </div>
+        } />
         
         {/* Trader Routes - Protected */}
         <Route path="/trader-dashboard" element={<ProtectedRoute><TraderPage current="trader-dashboard"><TraderDashboard /></TraderPage></ProtectedRoute>} />

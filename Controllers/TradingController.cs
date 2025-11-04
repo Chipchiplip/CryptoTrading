@@ -403,9 +403,12 @@ public class TradingController : ControllerBase
         {
             var userId = GetUserId();
             
+            // Decode URL-encoded symbol (e.g., BTC%2FUSDT -> BTC/USDT)
+            var decodedSymbol = Uri.UnescapeDataString(symbol);
+            
             // Get current market price from CoinGecko
             var marketData = await _coinGeckoService.GetMarketDataAsync();
-            var baseSymbol = symbol.Split('/')[0].ToUpper();
+            var baseSymbol = decodedSymbol.Split('/')[0].ToUpper();
             var crypto = marketData.FirstOrDefault(c => c.Symbol.Equals(baseSymbol, StringComparison.OrdinalIgnoreCase));
             
             if (crypto == null)
@@ -447,7 +450,7 @@ public class TradingController : ControllerBase
             
             var orderBook = new OrderBookDto
             {
-                Symbol = symbol,
+                Symbol = decodedSymbol,
                 CurrentPrice = currentPrice,
                 PriceChange24h = priceChange24h,
                 PriceChangePercentage24h = priceChangePercentage24h,

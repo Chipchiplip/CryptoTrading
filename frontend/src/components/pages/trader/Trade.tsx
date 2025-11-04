@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { TrendingUp, TrendingDown, Info, Loader2 } from 'lucide-react';
 import { Card } from '../../ui/card';
@@ -10,9 +10,10 @@ import { Alert, AlertDescription } from '../../ui/alert';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '../../ui/dialog';
 import { Badge } from '../../ui/badge';
 import { CoinIcon } from '../../ui/CoinIcon';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { createChart, ColorType, IChartApi, ISeriesApi, CandlestickSeries } from 'lightweight-charts';
+import * as signalR from '@microsoft/signalr';
 import { TradingApi, OrderBook, TradingBalances } from '../../../api/trading';
-import { MarketApi, Crypto, PriceHistoryItem } from '../../../api/market';
+import { MarketApi, Crypto, CandlestickData } from '../../../api/market';
 
 interface TradeProps {
   onNavigate?: (page: string) => void;
@@ -44,8 +45,23 @@ export default function Trade({ onNavigate }: TradeProps) {
   const [pairs, setPairs] = useState<Crypto[]>([]);
   const [orderBook, setOrderBook] = useState<OrderBook | null>(null);
   const [balances, setBalances] = useState<TradingBalances | null>(null);
-  const [priceHistory, setPriceHistory] = useState<PriceHistoryItem[]>([]);
   const [selectedCoin, setSelectedCoin] = useState<Crypto | null>(null);
+  
+  // Chart refs and state
+  const chartContainerRef = useRef<HTMLDivElement>(null);
+  const chartRef = useRef<IChartApi | null>(null);
+  const seriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
+  const [candles, setCandles] = useState<CandlestickData[]>([]);
+  const signalRConnectionRef = useRef<signalR.HubConnection | null>(null);
+  
+  // Map timeframe to chart interval
+  const intervalMap: Record<Timeframe, string> = {
+    '1D': '1h',
+    '7D': '4h',
+    '1M': '1d',
+    '3M': '1d',
+    '1Y': '1d'
+  };
 
   // Update selectedPair when URL param changes
   useEffect(() => {
@@ -118,31 +134,307 @@ export default function Trade({ onNavigate }: TradeProps) {
     }
   }, [selectedPair, pairs]);
 
-  // Fetch price history when coin or timeframe changes
+  // Initialize chart - only once on mount (exact copy from ChartTest)
+  useLayoutEffect(() => {
+    console.log('[Chart] useLayoutEffect triggered, chartContainerRef.current:', !!chartContainerRef.current);
+    
+    let resizeHandler: (() => void) | null = null;
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+
+    // Wait for container to have proper size
+    const initChart = () => {
+      if (!chartContainerRef.current) {
+        console.log('[Chart] Container ref is null in initChart, retrying...');
+        setTimeout(initChart, 100);
+        return;
+      }
+      
+      // Don't reinitialize if chart already exists
+      if (chartRef.current) {
+        console.log('[Chart] Chart already initialized, skipping');
+        return;
+      }
+
+      const container = chartContainerRef.current;
+      const rect = container.getBoundingClientRect();
+      const width = rect.width || container.clientWidth;
+      const height = rect.height || container.clientHeight || 400;
+
+      console.log('[Chart] Container size check - width:', width, 'height:', height);
+
+      if (width === 0 || height === 0) {
+        console.log('[Chart] Container has no size, retrying in 100ms...');
+        setTimeout(initChart, 100);
+        return;
+      }
+
+      const finalWidth = width > 0 ? width : 800;
+      const finalHeight = height > 0 ? height : 400;
+
+      console.log('[Chart] Initializing chart with size:', finalWidth, 'x', finalHeight);
+
+      try {
+        // Don't clear container - let createChart handle it
+        // createChart will automatically clear the container
+
+        // Create chart with minimal config first
+        const chart = createChart(container, {
+          layout: {
+            background: { type: ColorType.Solid, color: '#000000' },
+            textColor: '#ffffff',
+          },
+          grid: {
+            vertLines: { color: '#1a1a1a' },
+            horzLines: { color: '#1a1a1a' },
+          },
+          width: finalWidth,
+          height: finalHeight,
+          timeScale: {
+            timeVisible: true,
+            secondsVisible: false,
+          },
+          rightPriceScale: {
+            borderColor: '#1a1a1a',
+          },
+        });
+
+        console.log('[Chart] Chart created, adding series...');
+        console.log('[Chart] Chart instance:', chart);
+        console.log('[Chart] Container children:', container.children.length);
+
+        // Add candlestick series - Use CandlestickSeries class for version 5.x
+        // In v5.x, you need to import CandlestickSeries and use it
+        let candlestickSeries: ISeriesApi<'Candlestick'>;
+        
+        try {
+          console.log('[Chart] CandlestickSeries:', CandlestickSeries);
+          candlestickSeries = chart.addSeries(CandlestickSeries, {
+            upColor: '#22c55e',
+            downColor: '#ef4444',
+            borderVisible: false,
+            wickUpColor: '#22c55e',
+            wickDownColor: '#ef4444',
+          }) as ISeriesApi<'Candlestick'>;
+          
+          console.log('[Chart] Series created successfully:', candlestickSeries);
+        } catch (err: any) {
+          console.error('[Chart] Error creating series:', err);
+          console.error('[Chart] Error message:', err?.message);
+          console.error('[Chart] Error stack:', err?.stack);
+          throw err;
+        }
+
+        chartRef.current = chart;
+        seriesRef.current = candlestickSeries;
+
+        console.log('[Chart] Chart initialized successfully');
+        console.log('[Chart] Chart object:', chart);
+        console.log('[Chart] Series object:', candlestickSeries);
+        console.log('[Chart] seriesRef.current is now set:', !!seriesRef.current);
+        console.log('[Chart] chartRef.current is now set:', !!chartRef.current);
+
+        // Set data if already available
+        if (candles.length > 0) {
+          console.log('[Chart] Setting initial candles data:', candles.length);
+          try {
+            const formattedData = candles.map(c => ({
+              time: c.time as any,
+              open: Number(c.open) || 0,
+              high: Number(c.high) || 0,
+              low: Number(c.low) || 0,
+              close: Number(c.close) || 0,
+            })).filter(c => c.time > 0 && c.open > 0 && c.high > 0 && c.low > 0 && c.close > 0);
+            
+            console.log('[Chart] Formatted data sample:', formattedData[0]);
+            candlestickSeries.setData(formattedData);
+            chart.timeScale().fitContent();
+            console.log('[Chart] Initial candles data set successfully');
+          } catch (error) {
+            console.error('[Chart] Error setting initial candles:', error);
+          }
+        }
+
+        // Handle resize
+        resizeHandler = () => {
+          if (chartContainerRef.current && chartRef.current) {
+            const newWidth = chartContainerRef.current.clientWidth || 800;
+            chartRef.current.applyOptions({ width: newWidth });
+          }
+        };
+
+        window.addEventListener('resize', resizeHandler);
+      } catch (error) {
+        console.error('[Chart] Error initializing chart:', error);
+        console.error('[Chart] Error details:', error);
+      }
+    };
+
+    // Start initialization - try immediately and also after delay
+    initChart();
+    timeoutId = setTimeout(initChart, 200);
+
+    return () => {
+      console.log('[Chart] Cleanup: removing chart');
+      
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+      
+      if (resizeHandler) {
+        window.removeEventListener('resize', resizeHandler);
+        resizeHandler = null;
+      }
+      
+      if (chartRef.current) {
+        try {
+          // Simply call remove() - lightweight-charts handles cleanup internally
+          chartRef.current.remove();
+        } catch (error) {
+          console.warn('[Chart] Error removing chart (this is usually safe to ignore):', error);
+        }
+        
+        chartRef.current = null;
+        seriesRef.current = null;
+      }
+    };
+  }, []); // Only run once on mount
+
+  // Fetch candles data
   useEffect(() => {
-    const fetchPriceHistory = async () => {
-      if (!selectedCoin?.id) return;
+    const fetchCandles = async () => {
+      if (!selectedCoin?.symbol) return;
       
       setLoadingChart(true);
       try {
-        const days = timeframeDays[timeframe];
-        // Use coin.id which is the CoinGecko coin ID (e.g., "bitcoin", "ethereum")
-        const coinId = selectedCoin.id.toLowerCase();
-        const res = await MarketApi.getPriceHistory(coinId, days);
-        if (res.ok) {
-          setPriceHistory(res.data);
+        const symbol = `${selectedCoin.symbol}USDT`;
+        const interval = intervalMap[timeframe] || '1m';
+        
+        const res = await MarketApi.getCandles(symbol, interval);
+        console.log(`[Chart] API response for ${symbol} (${interval}):`, res);
+        
+        if (res.ok && res.data && res.data.length > 0) {
+          const formattedData = res.data.map((candle: CandlestickData) => {
+            // Ensure time is a Unix timestamp (seconds)
+            const time = typeof candle.time === 'number' 
+              ? candle.time 
+              : Math.floor(new Date(candle.time as any).getTime() / 1000);
+            
+            return {
+              time: time as any, // lightweight-charts expects Unix timestamp
+              open: Number(candle.open) || 0,
+              high: Number(candle.high) || 0,
+              low: Number(candle.low) || 0,
+              close: Number(candle.close) || 0,
+            };
+          }).filter(c => c.time > 0 && c.open > 0 && c.high > 0 && c.low > 0 && c.close > 0);
+          
+          console.log(`[Chart] Loaded ${formattedData.length} valid candles for ${symbol} (${interval})`);
+          console.log('[Chart] Sample candle:', formattedData[0]);
+          
+          // Always set candles state - useEffect will handle setting to chart
+          setCandles(formattedData);
         } else {
-          console.error('Failed to fetch price history:', res.error);
+          console.warn(`[Chart] No candles data for ${symbol} (${interval}):`, !res.ok ? res.error : 'Empty response');
+          setCandles([]);
         }
       } catch (e: any) {
-        console.error('Error fetching price history:', e);
+        console.error('Error fetching candles:', e);
+        setCandles([]);
       } finally {
         setLoadingChart(false);
       }
     };
     
-    fetchPriceHistory();
-  }, [selectedCoin?.id, timeframe]);
+    fetchCandles();
+    
+    // Auto refresh every 5 seconds
+    const intervalId = setInterval(fetchCandles, 5000);
+    return () => clearInterval(intervalId);
+  }, [selectedCoin?.symbol, timeframe, intervalMap]);
+
+  // Update chart when candles change (exact copy from ChartTest)
+  useEffect(() => {
+    if (!seriesRef.current || candles.length === 0) {
+      return;
+    }
+
+    console.log('[Chart] Updating chart with', candles.length, 'candles');
+    
+    try {
+      const formattedData = candles.map(c => ({
+        time: c.time as any,
+        open: Number(c.open) || 0,
+        high: Number(c.high) || 0,
+        low: Number(c.low) || 0,
+        close: Number(c.close) || 0,
+      })).filter(c => c.time > 0 && c.open > 0 && c.high > 0 && c.low > 0 && c.close > 0);
+
+      console.log('[Chart] Formatted data sample:', formattedData[0]);
+      
+      seriesRef.current.setData(formattedData);
+      
+      if (chartRef.current) {
+        chartRef.current.timeScale().fitContent();
+      }
+      
+      console.log('[Chart] Chart data updated successfully');
+    } catch (error) {
+      console.error('[Chart] Error updating chart data:', error);
+    }
+  }, [candles]);
+
+  // SignalR realtime updates
+  useEffect(() => {
+    const connectSignalR = async () => {
+      try {
+        const connection = new signalR.HubConnectionBuilder()
+          .withUrl('/marketHub')
+          .withAutomaticReconnect()
+          .build();
+
+        connection.on('ReceivePriceUpdate', (update: any) => {
+          if (update.symbol === selectedCoin?.symbol && seriesRef.current && candles.length > 0) {
+            const lastCandle = candles[candles.length - 1];
+            const now = Math.floor(Date.now() / 1000);
+            
+            // Check if we should update the current candle or create a new one
+            if (lastCandle.time === now || Math.abs(lastCandle.time - now) < 60) {
+              // Update current candle
+              const updated = {
+                ...lastCandle,
+                high: Math.max(lastCandle.high, update.currentPrice),
+                low: Math.min(lastCandle.low, update.currentPrice),
+                close: update.currentPrice,
+              };
+              seriesRef.current.update(updated);
+              setCandles(prev => {
+                const newCandles = [...prev];
+                newCandles[newCandles.length - 1] = updated;
+                return newCandles;
+              });
+            }
+          }
+        });
+
+        await connection.start();
+        await connection.invoke('JoinMarketGroup');
+        signalRConnectionRef.current = connection;
+      } catch (err) {
+        console.warn('SignalR connection failed, using polling only:', err);
+      }
+    };
+
+    if (selectedCoin?.symbol) {
+      connectSignalR();
+    }
+
+    return () => {
+      if (signalRConnectionRef.current) {
+        signalRConnectionRef.current.stop();
+        signalRConnectionRef.current = null;
+      }
+    };
+  }, [selectedCoin?.symbol, candles]);
 
   // Fetch order book when pair changes
   useEffect(() => {
@@ -163,24 +455,6 @@ export default function Trade({ onNavigate }: TradeProps) {
     return () => clearInterval(interval);
   }, [selectedPair]);
 
-  // Calculate chart data
-  const chartData = useMemo(() => {
-    if (!priceHistory.length) return [];
-    
-    return priceHistory.map((item) => ({
-      time: new Date(item.timestamp).toLocaleTimeString('en-US', { 
-        hour: '2-digit', 
-        minute: '2-digit',
-        hour12: false 
-      }),
-      date: new Date(item.timestamp).toLocaleDateString('en-US', { 
-        month: 'short', 
-        day: 'numeric' 
-      }),
-      price: Number(item.price),
-      timestamp: item.timestamp,
-    }));
-  }, [priceHistory]);
 
   // Format price
   const formatPrice = (value: number | undefined | null) => {
@@ -363,54 +637,33 @@ export default function Trade({ onNavigate }: TradeProps) {
             </div>
 
             {/* Price Chart */}
-            <div className="h-[400px] w-full">
-              {loadingChart ? (
-                <div className="flex items-center justify-center h-full">
-                  <Loader2 className="w-8 h-8 text-[#f2c94c] animate-spin" />
+            <div 
+              className="h-[400px] w-full relative bg-black" 
+              ref={(el) => {
+                chartContainerRef.current = el;
+                if (el) {
+                  console.log('[Chart] Container ref set, size:', el.clientWidth, 'x', el.clientHeight);
+                }
+              }}
+              style={{ minHeight: '400px', minWidth: '100%', position: 'relative', width: '100%', height: '400px' }}
+            >
+              {loadingChart && candles.length === 0 && (
+                <div className="flex items-center justify-center h-full absolute inset-0 bg-black/50 z-10 pointer-events-none">
+                  <div className="flex flex-col items-center gap-2">
+                    <Loader2 className="w-8 h-8 text-[#f2c94c] animate-spin" />
+                    <span className="text-gray-400 text-sm">Loading chart data...</span>
+                  </div>
                 </div>
-              ) : chartData.length > 0 ? (
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={chartData}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#2d3748" />
-                    <XAxis 
-                      dataKey="time" 
-                      stroke="#9ca3af"
-                      tick={{ fill: '#9ca3af', fontSize: 12 }}
-                    />
-                    <YAxis 
-                      stroke="#9ca3af"
-                      tick={{ fill: '#9ca3af', fontSize: 12 }}
-                      domain={['auto', 'auto']}
-                      tickFormatter={(value) => {
-                        if (value >= 1000) return `$${(value / 1000).toFixed(0)}K`;
-                        return `$${value.toFixed(0)}`;
-                      }}
-                    />
-                    <Tooltip
-                      contentStyle={{ 
-                        backgroundColor: '#1a1d24', 
-                        border: '1px solid #374151',
-                        borderRadius: '8px',
-                        color: '#fff'
-                      }}
-                      formatter={(value: any) => formatPrice(value)}
-                    />
-                    <Line 
-                      type="monotone" 
-                      dataKey="price" 
-                      stroke="#f2c94c" 
-                      strokeWidth={2}
-                      dot={false}
-                      activeDot={{ r: 4, fill: '#f2c94c' }}
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
-              ) : (
-                <div className="flex items-center justify-center h-full text-gray-400">
-                  No chart data available
+              )}
+              {!loadingChart && candles.length === 0 && !chartRef.current && (
+                <div className="flex items-center justify-center h-full absolute inset-0 text-gray-400 z-10 pointer-events-none">
+                  <div className="text-center">
+                    <p>No chart data available</p>
+                    <p className="text-xs text-gray-500 mt-2">Chart will appear when data is loaded</p>
+                  </div>
                 </div>
-                )}
-              </div>
+              )}
+            </div>
 
             <div className="mt-4 text-xs text-gray-500">
               Lần gần nhất cập nhật trang: {new Date().toLocaleString('vi-VN', { 
