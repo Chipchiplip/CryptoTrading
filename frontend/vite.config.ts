@@ -53,21 +53,68 @@
       target: 'esnext',
       outDir: 'build',
     },
-    server: {
-      port: 3000,
-      open: true,
-      proxy: {
-        '/api': {
-          target: process.env.VITE_API_TARGET || 'http://localhost:5299',
-          changeOrigin: true,
-          secure: false,
+  server: {
+    port: 3000,
+    open: true,
+    proxy: {
+      '/api': {
+        target: process.env.VITE_API_TARGET || 'http://localhost:5299',
+        changeOrigin: true,
+        secure: false,
+        configure: (proxy, _options) => {
+          proxy.on('error', (err: any, _req, _res) => {
+            // Silently ignore proxy errors to prevent console spam
+            if (err?.code !== 'ECONNRESET' && err?.code !== 'ECONNREFUSED') {
+              console.error('Proxy error:', err?.message || err);
+            }
+          });
         },
-        '/marketHub': {
-          target: process.env.VITE_API_TARGET || 'http://localhost:5299',
-          ws: true,
-          changeOrigin: true,
-          secure: false,
+      },
+      '/marketHub': {
+        target: process.env.VITE_API_TARGET || 'http://localhost:5299',
+        ws: true,
+        changeOrigin: true,
+        secure: false,
+        configure: (proxy, _options) => {
+          proxy.on('error', (err: any, _req, _res) => {
+            // Silently ignore WebSocket proxy errors - SignalR will handle reconnection
+            if (err?.code !== 'ECONNRESET' && err?.code !== 'ECONNREFUSED') {
+              console.warn('WebSocket proxy error:', err?.message || err);
+            }
+          });
+          proxy.on('proxyReqWs', (proxyReq, req, socket) => {
+            // Handle WebSocket upgrade errors silently
+            socket.on('error', (err: any) => {
+              if (err?.code !== 'ECONNRESET' && err?.code !== 'ECONNREFUSED') {
+                console.warn('WebSocket socket error:', err?.message || err);
+              }
+            });
+          });
+        },
+      },
+      // TradingHub SignalR for order/trade events
+      '/hubs/trading': {
+        target: process.env.VITE_API_TARGET || 'http://localhost:5299',
+        ws: true,
+        changeOrigin: true,
+        secure: false,
+        configure: (proxy, _options) => {
+          proxy.on('error', (err: any, _req, _res) => {
+            // Silently ignore WebSocket proxy errors - SignalR will handle reconnection
+            if (err?.code !== 'ECONNRESET' && err?.code !== 'ECONNREFUSED') {
+              console.warn('WebSocket proxy error:', err?.message || err);
+            }
+          });
+          proxy.on('proxyReqWs', (proxyReq, req, socket) => {
+            // Handle WebSocket upgrade errors silently
+            socket.on('error', (err: any) => {
+              if (err?.code !== 'ECONNRESET' && err?.code !== 'ECONNREFUSED') {
+                console.warn('WebSocket socket error:', err?.message || err);
+              }
+            });
+          });
         },
       },
     },
+  },
   });

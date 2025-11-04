@@ -34,8 +34,12 @@ export default function Trade({ onNavigate }: TradeProps) {
   const urlPair = searchParams.get('pair');
   const [selectedPair, setSelectedPair] = useState(urlPair || 'BTC/USDT');
   const [side, setSide] = useState<'buy' | 'sell'>('buy');
+  const [orderType, setOrderType] = useState<'MARKET' | 'LIMIT'>('MARKET');
   const [buyAmount, setBuyAmount] = useState('');
   const [useAmount, setUseAmount] = useState('');
+  const [sellAmount, setSellAmount] = useState('');
+  const [receiveAmount, setReceiveAmount] = useState('');
+  const [limitPrice, setLimitPrice] = useState('');
   const [showPreview, setShowPreview] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadingChart, setLoadingChart] = useState(false);
@@ -133,6 +137,15 @@ export default function Trade({ onNavigate }: TradeProps) {
       }
     }
   }, [selectedPair, pairs]);
+
+  // Reset form fields when switching between buy and sell
+  useEffect(() => {
+    setBuyAmount('');
+    setUseAmount('');
+    setSellAmount('');
+    setReceiveAmount('');
+    setLimitPrice('');
+  }, [side]);
 
   // Initialize chart - only once on mount (exact copy from ChartTest)
   useLayoutEffect(() => {
@@ -383,14 +396,41 @@ export default function Trade({ onNavigate }: TradeProps) {
     }
   }, [candles]);
 
-  // SignalR realtime updates
+  // SignalR MarketHub - realtime price updates for charts
   useEffect(() => {
+    let retryCount = 0;
+    const MAX_RETRIES = 3;
+    let isCancelled = false;
+
     const connectSignalR = async () => {
+      if (isCancelled) return;
+
       try {
         const connection = new signalR.HubConnectionBuilder()
           .withUrl('/marketHub')
-          .withAutomaticReconnect()
+          .withAutomaticReconnect({
+            nextRetryDelayInMilliseconds: (retryContext) => {
+              // Exponential backoff: 2s, 4s, 8s, max 30s
+              return Math.min(1000 * Math.pow(2, retryContext.previousRetryCount), 30000);
+            }
+          })
           .build();
+
+        // Handle connection errors gracefully
+        connection.onclose((error) => {
+          if (error && !isCancelled) {
+            console.warn('SignalR connection closed:', error);
+          }
+        });
+
+        connection.onreconnecting((error) => {
+          console.log('SignalR reconnecting...', error?.message);
+        });
+
+        connection.onreconnected((connectionId) => {
+          console.log('SignalR reconnected:', connectionId);
+          retryCount = 0;
+        });
 
         connection.on('ReceivePriceUpdate', (update: any) => {
           if (update.symbol === selectedCoin?.symbol && seriesRef.current && candles.length > 0) {
@@ -416,11 +456,53 @@ export default function Trade({ onNavigate }: TradeProps) {
           }
         });
 
-        await connection.start();
-        await connection.invoke('JoinMarketGroup');
-        signalRConnectionRef.current = connection;
-      } catch (err) {
-        console.warn('SignalR connection failed, using polling only:', err);
+        // Start connection with timeout
+        const timeout = setTimeout(() => {
+          if (!isCancelled) {
+            connection.stop().catch(() => {});
+            if (retryCount < MAX_RETRIES) {
+              retryCount++;
+              setTimeout(connectSignalR, 2000 * retryCount);
+            } else {
+              console.warn('SignalR: Max retries reached, using polling only');
+            }
+          }
+        }, 5000);
+
+        try {
+          await connection.start();
+          clearTimeout(timeout);
+          
+          if (isCancelled) {
+            await connection.stop();
+            return;
+          }
+
+          await connection.invoke('JoinMarketGroup');
+          signalRConnectionRef.current = connection;
+          retryCount = 0;
+          console.log('SignalR MarketHub connected successfully');
+        } catch (startError: any) {
+          clearTimeout(timeout);
+          throw startError;
+        }
+      } catch (err: any) {
+        if (isCancelled) return;
+        
+        console.warn('SignalR connection failed, using polling only:', err?.message || err);
+        
+        // Retry with exponential backoff
+        if (retryCount < MAX_RETRIES) {
+          retryCount++;
+          const delay = 2000 * Math.pow(2, retryCount - 1);
+          setTimeout(() => {
+            if (!isCancelled) {
+              connectSignalR();
+            }
+          }, delay);
+        } else {
+          console.warn('SignalR: Max retries reached, will use polling only');
+        }
       }
     };
 
@@ -429,12 +511,83 @@ export default function Trade({ onNavigate }: TradeProps) {
     }
 
     return () => {
+      isCancelled = true;
       if (signalRConnectionRef.current) {
-        signalRConnectionRef.current.stop();
+        signalRConnectionRef.current.stop().catch(() => {
+          // Ignore errors on cleanup
+        });
         signalRConnectionRef.current = null;
       }
     };
   }, [selectedCoin?.symbol, candles]);
+
+  // TODO: TradingHub SignalR - for order/trade realtime events
+  // NOTE: Backend TradingHub is not yet implemented. Uncomment this code when backend adds TradingHub
+  /*
+  const tradingHubRef = useRef<signalR.HubConnection | null>(null);
+  
+  useEffect(() => {
+    const connectTradingHub = async () => {
+      try {
+        const token = localStorage.getItem('token');
+        const connection = new signalR.HubConnectionBuilder()
+          .withUrl('/hubs/trading', {
+            accessTokenFactory: () => token || ''
+          })
+          .withAutomaticReconnect()
+          .build();
+
+        // Order placed event
+        connection.on('OrderPlaced', (order: any) => {
+          console.log('Order placed:', order);
+          // Refetch balances when order is placed
+          TradingApi.getBalances().then(res => {
+            if (res.ok) setBalances(res.data);
+          });
+        });
+
+        // Order updated event (filled, partial fill, etc.)
+        connection.on('OrderUpdated', (order: any) => {
+          console.log('Order updated:', order);
+          // Refetch balances when order status changes
+          TradingApi.getBalances().then(res => {
+            if (res.ok) setBalances(res.data);
+          });
+        });
+
+        // Trade executed event
+        connection.on('TradeExecuted', (trade: any) => {
+          console.log('Trade executed:', trade);
+          // Refetch balances after trade
+          TradingApi.getBalances().then(res => {
+            if (res.ok) setBalances(res.data);
+          });
+        });
+
+        // Order rejected event
+        connection.on('OrderRejected', (data: any) => {
+          console.log('Order rejected:', data);
+          setError(data.reason || 'Order was rejected');
+        });
+
+        await connection.start();
+        await connection.invoke('SubscribeToUserOrders');
+        tradingHubRef.current = connection;
+      } catch (err) {
+        console.warn('TradingHub connection failed:', err);
+      }
+    };
+
+    connectTradingHub();
+
+    return () => {
+      if (tradingHubRef.current) {
+        tradingHubRef.current.stop();
+        tradingHubRef.current = null;
+      }
+    };
+  }, []);
+  */
 
   // Fetch order book when pair changes
   useEffect(() => {
@@ -507,22 +660,52 @@ export default function Trade({ onNavigate }: TradeProps) {
     }
   };
 
+  const handleSellAmountChange = (value: string) => {
+    setSellAmount(value);
+    if (value && currentPrice > 0) {
+      const calculated = (parseFloat(value) * currentPrice).toFixed(2);
+      setReceiveAmount(calculated);
+    } else {
+      setReceiveAmount('');
+    }
+  };
+
+  const handleReceiveAmountChange = (value: string) => {
+    setReceiveAmount(value);
+    if (value && currentPrice > 0) {
+      const calculated = (parseFloat(value) / currentPrice).toFixed(8);
+      setSellAmount(calculated);
+    } else {
+      setSellAmount('');
+    }
+  };
+
   const handleSubmit = async () => {
-    if (!buyAmount || !useAmount) return;
+    if (side === 'buy' && (!buyAmount || !useAmount)) return;
+    if (side === 'sell' && (!sellAmount || !receiveAmount)) return;
     setShowPreview(true);
   };
 
   const confirmOrder = async () => {
-    if (!buyAmount || !useAmount) return;
+    const amount = side === 'buy' ? buyAmount : sellAmount;
+    if (!amount) return;
+    if (orderType === 'LIMIT' && !limitPrice) {
+      setError('Limit price is required for limit orders');
+      return;
+    }
     
     setError(null);
     try {
+      // Round quantity and price to proper precision
+      const quantity = parseFloat(amount);
+      const price = orderType === 'LIMIT' ? parseFloat(limitPrice) : undefined;
+      
       const res = await TradingApi.placeOrder({
         symbol: selectedPair,
-        side: side === 'buy' ? 'Buy' : 'Sell',
-        type: 'Market',
-        quantity: parseFloat(buyAmount),
-        price: undefined,
+        side: side === 'buy' ? 'BUY' : 'SELL',  // Backend expects uppercase
+        type: orderType,  // Already uppercase
+        quantity,
+        price,
       });
       
       if (!res.ok) {
@@ -534,6 +717,16 @@ export default function Trade({ onNavigate }: TradeProps) {
       setShowPreview(false);
       setBuyAmount('');
       setUseAmount('');
+      setSellAmount('');
+      setReceiveAmount('');
+      setLimitPrice('');
+      
+      // Refetch balances after order is placed
+      const balancesRes = await TradingApi.getBalances();
+      if (balancesRes.ok) {
+        setBalances(balancesRes.data);
+      }
+      
       onNavigate?.('orders');
     } catch (e: any) {
       setError(e?.message || 'Failed to place order');
@@ -683,32 +876,84 @@ export default function Trade({ onNavigate }: TradeProps) {
           {/* Trading Form */}
           <Card className="bg-[#1a1d24] border-gray-800 p-6">
             <div className="flex gap-2 mb-4 border-b border-gray-800 pb-2">
-                <Button
+                <button
                   type="button"
-                variant="ghost"
                   onClick={() => setSide('buy')}
-                className={`flex-1 ${side === 'buy' 
-                  ? 'border-b-2 border-[#f2c94c] text-[#f2c94c]' 
-                  : 'text-gray-400 hover:text-gray-300'
-                }`}
+                  className={`flex-1 py-2 px-4 rounded-t-md transition-all ${
+                    side === 'buy' 
+                      ? 'border-b-2 border-[#f2c94c] text-[#f2c94c] bg-gray-800/50 font-semibold' 
+                      : 'text-gray-400 hover:text-gray-300 hover:bg-gray-800/30'
+                  }`}
                 >
-                Mua {selectedPair.split('/')[0]}
-                </Button>
-                <Button
+                  Mua {selectedPair.split('/')[0]}
+                </button>
+                <button
                   type="button"
-                variant="ghost"
                   onClick={() => setSide('sell')}
-                className={`flex-1 ${side === 'sell' 
-                  ? 'border-b-2 border-[#f2c94c] text-[#f2c94c]' 
-                  : 'text-gray-400 hover:text-gray-300'
-                }`}
+                  className={`flex-1 py-2 px-4 rounded-t-md transition-all ${
+                    side === 'sell' 
+                      ? 'border-b-2 border-[#f2c94c] text-[#f2c94c] bg-gray-800/50 font-semibold' 
+                      : 'text-gray-400 hover:text-gray-300 hover:bg-gray-800/30'
+                  }`}
                 >
-                Giao dịch {selectedPair.split('/')[0]}
-                </Button>
+                  Bán {selectedPair.split('/')[0]}
+                </button>
+            </div>
+
+            {/* Order Type Selector */}
+            <div className="flex gap-2 mb-4">
+              <Button
+                type="button"
+                variant={orderType === 'MARKET' ? 'default' : 'outline'}
+                onClick={() => setOrderType('MARKET')}
+                className={`flex-1 font-medium ${
+                  orderType === 'MARKET' 
+                    ? 'bg-emerald-500 text-black hover:bg-emerald-600 shadow-sm' 
+                    : 'border-gray-700 text-gray-300 hover:bg-gray-800 hover:text-white hover:border-gray-600'
+                }`}
+                size="sm"
+              >
+                Market
+              </Button>
+              <Button
+                type="button"
+                variant={orderType === 'LIMIT' ? 'default' : 'outline'}
+                onClick={() => setOrderType('LIMIT')}
+                className={`flex-1 font-medium ${
+                  orderType === 'LIMIT' 
+                    ? 'bg-emerald-500 text-black hover:bg-emerald-600 shadow-sm' 
+                    : 'border-gray-700 text-gray-300 hover:bg-gray-800 hover:text-white hover:border-gray-600'
+                }`}
+                size="sm"
+              >
+                Limit
+              </Button>
             </div>
 
             {side === 'buy' ? (
               <div className="space-y-4">
+                {/* Limit Price (only for LIMIT orders) */}
+                {orderType === 'LIMIT' && (
+                  <div>
+                    <Label className="text-gray-400 mb-2 block">Giá limit</Label>
+                    <div className="flex gap-2">
+                      <Input
+                        type="number"
+                        placeholder={formatPrice(currentPrice)}
+                        value={limitPrice}
+                        onChange={(e) => setLimitPrice(e.target.value)}
+                        className="bg-gray-800 border-gray-700 text-white flex-1"
+                      />
+                      <div className="flex items-center justify-center px-3 py-2 border border-gray-700 bg-gray-800/50 text-gray-300 rounded-md w-20 text-sm font-medium cursor-default">
+                        {selectedPair.split('/')[1]}
+                      </div>
+                    </div>
+                    <p className="text-sm text-gray-500 mt-2">
+                      Giá thị trường hiện tại: {formatPrice(currentPrice)}
+                    </p>
+                  </div>
+                )}
+
                 {/* You Buy */}
                 <div>
                   <Label className="text-gray-400 mb-2 block">Bạn mua</Label>
@@ -720,9 +965,9 @@ export default function Trade({ onNavigate }: TradeProps) {
                       onChange={(e) => handleBuyAmountChange(e.target.value)}
                       className="bg-gray-800 border-gray-700 text-white flex-1"
                     />
-                    <Button variant="outline" className="border-gray-700 text-gray-400 w-20">
+                    <div className="flex items-center justify-center px-3 py-2 border border-gray-700 bg-gray-800/50 text-gray-300 rounded-md w-20 text-sm font-medium cursor-default">
                       {selectedPair.split('/')[0]}
-                    </Button>
+                    </div>
                   </div>
                   <p className="text-sm text-gray-500 mt-2">
                     1 {selectedPair.split('/')[0]} ≈ {selectedPair.split('/')[1]} {formatPrice(currentPrice)}
@@ -731,7 +976,7 @@ export default function Trade({ onNavigate }: TradeProps) {
 
                 {/* You Use */}
             <div>
-                  <Label className="text-gray-400 mb-2 block">Bạn sử dụng</Label>
+                  <Label className="text-gray-400 mb-2 block">Bạn sử dụng{orderType === 'LIMIT' ? ' (dự kiến)' : ''}</Label>
                   <div className="flex gap-2">
               <Input
                 type="number"
@@ -740,29 +985,90 @@ export default function Trade({ onNavigate }: TradeProps) {
                       onChange={(e) => handleUseAmountChange(e.target.value)}
                       className="bg-gray-800 border-gray-700 text-white flex-1"
                     />
-                    <Button variant="outline" className="border-gray-700 text-gray-400 w-20">
+                    <div className="flex items-center justify-center px-3 py-2 border border-gray-700 bg-gray-800/50 text-gray-300 rounded-md w-20 text-sm font-medium cursor-default">
                       {selectedPair.split('/')[1]}
-                  </Button>
+                    </div>
               </div>
             </div>
 
                 {/* Buy Button */}
             <Button
               onClick={handleSubmit}
-                  disabled={!buyAmount || !useAmount}
-                  className="w-full bg-[#f2c94c] text-black hover:bg-[#e5b73d] font-bold py-6 text-lg"
-                >
-                  Mua {selectedPair.split('/')[0]}
+              disabled={!buyAmount || !useAmount}
+              className="w-full bg-[#f2c94c] text-black hover:bg-[#e5b73d] font-bold py-6 text-lg shadow-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+            >
+              Mua {selectedPair.split('/')[0]}
             </Button>
           </div>
             ) : (
               <div className="space-y-4">
-                <Alert className="bg-blue-500/10 border-blue-500/50">
-                  <Info className="h-4 w-4 text-blue-500" />
-                  <AlertDescription className="text-blue-500">
-                    Sell functionality coming soon
-                  </AlertDescription>
-                </Alert>
+                {/* Limit Price (only for LIMIT orders) */}
+                {orderType === 'LIMIT' && (
+                  <div>
+                    <Label className="text-gray-400 mb-2 block">Giá limit</Label>
+                    <div className="flex gap-2">
+                      <Input
+                        type="number"
+                        placeholder={formatPrice(currentPrice)}
+                        value={limitPrice}
+                        onChange={(e) => setLimitPrice(e.target.value)}
+                        className="bg-gray-800 border-gray-700 text-white flex-1"
+                      />
+                      <div className="flex items-center justify-center px-3 py-2 border border-gray-700 bg-gray-800/50 text-gray-300 rounded-md w-20 text-sm font-medium cursor-default">
+                        {selectedPair.split('/')[1]}
+                      </div>
+                    </div>
+                    <p className="text-sm text-gray-500 mt-2">
+                      Giá thị trường hiện tại: {formatPrice(currentPrice)}
+                    </p>
+                  </div>
+                )}
+
+                {/* You Sell */}
+                <div>
+                  <Label className="text-gray-400 mb-2 block">Bạn bán</Label>
+                  <div className="flex gap-2">
+                    <Input
+                      type="number"
+                      placeholder="0"
+                      value={sellAmount}
+                      onChange={(e) => handleSellAmountChange(e.target.value)}
+                      className="bg-gray-800 border-gray-700 text-white flex-1"
+                    />
+                    <div className="flex items-center justify-center px-3 py-2 border border-gray-700 bg-gray-800/50 text-gray-300 rounded-md w-20 text-sm font-medium cursor-default">
+                      {selectedPair.split('/')[0]}
+                    </div>
+                  </div>
+                  <p className="text-sm text-gray-500 mt-2">
+                    1 {selectedPair.split('/')[0]} ≈ {selectedPair.split('/')[1]} {formatPrice(currentPrice)}
+                  </p>
+                </div>
+
+                {/* You Receive */}
+                <div>
+                  <Label className="text-gray-400 mb-2 block">Bạn nhận{orderType === 'LIMIT' ? ' (dự kiến)' : ''}</Label>
+                  <div className="flex gap-2">
+                    <Input
+                      type="number"
+                      placeholder="0"
+                      value={receiveAmount}
+                      onChange={(e) => handleReceiveAmountChange(e.target.value)}
+                      className="bg-gray-800 border-gray-700 text-white flex-1"
+                    />
+                    <div className="flex items-center justify-center px-3 py-2 border border-gray-700 bg-gray-800/50 text-gray-300 rounded-md w-20 text-sm font-medium cursor-default">
+                      {selectedPair.split('/')[1]}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Sell Button */}
+                <Button
+                  onClick={handleSubmit}
+                  disabled={!sellAmount || !receiveAmount}
+                  className="w-full bg-red-500 text-white hover:bg-red-600 font-bold py-6 text-lg shadow-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                >
+                  Bán {selectedPair.split('/')[0]}
+                </Button>
               </div>
             )}
         </Card>
@@ -777,7 +1083,7 @@ export default function Trade({ onNavigate }: TradeProps) {
                   orderBook.asks.slice(0, 5).map((ask, i) => (
                     <div key={i} className="flex justify-between text-sm py-1">
                       <span className="text-red-500">{formatPrice(ask.price)}</span>
-                      <span className="text-gray-400">{ask.amount.toFixed(4)}</span>
+                      <span className="text-gray-400">{ask.quantity.toFixed(4)}</span>
                     </div>
                   ))
                 ) : (
@@ -805,7 +1111,7 @@ export default function Trade({ onNavigate }: TradeProps) {
                   orderBook.bids.slice(0, 5).map((bid, i) => (
                     <div key={i} className="flex justify-between text-sm py-1">
                       <span className="text-emerald-500">{formatPrice(bid.price)}</span>
-                      <span className="text-gray-400">{bid.amount.toFixed(4)}</span>
+                      <span className="text-gray-400">{bid.quantity.toFixed(4)}</span>
                     </div>
                   ))
                 ) : (
@@ -856,19 +1162,42 @@ export default function Trade({ onNavigate }: TradeProps) {
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-400">Side</span>
-                <Badge className="bg-emerald-500/10 text-emerald-500">Buy</Badge>
+                <Badge className={side === 'buy' ? "bg-emerald-500/10 text-emerald-500" : "bg-red-500/10 text-red-500"}>
+                  {side === 'buy' ? 'BUY' : 'SELL'}
+                </Badge>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-400">Type</span>
+                <Badge className="bg-blue-500/10 text-blue-500">{orderType}</Badge>
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-400">Amount</span>
-                <span className="text-white">{buyAmount} {selectedPair.split('/')[0]}</span>
+                <span className="text-white">
+                  {side === 'buy' ? buyAmount : sellAmount} {selectedPair.split('/')[0]}
+                </span>
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-400">Price</span>
-                <span className="text-white">{formatPrice(currentPrice)}</span>
+                <span className="text-white">
+                  {orderType === 'LIMIT' ? formatPrice(parseFloat(limitPrice)) : formatPrice(currentPrice)}
+                  {orderType === 'MARKET' && <span className="text-xs text-gray-500 ml-1">(market)</span>}
+                </span>
               </div>
               <div className="flex justify-between border-t border-gray-700 pt-3">
-                <span className="text-white">Total</span>
-                <span className="text-white text-lg">{useAmount} {selectedPair.split('/')[1]}</span>
+                <span className="text-white">
+                  {side === 'buy' ? 'Total' : 'Receive'}{orderType === 'LIMIT' ? ' (estimated)' : ''}
+                </span>
+                <span className="text-white text-lg">
+                  {side === 'buy' ? (
+                    orderType === 'LIMIT' && limitPrice 
+                      ? (parseFloat(buyAmount) * parseFloat(limitPrice)).toFixed(2)
+                      : useAmount
+                  ) : (
+                    orderType === 'LIMIT' && limitPrice
+                      ? (parseFloat(sellAmount) * parseFloat(limitPrice)).toFixed(2)
+                      : receiveAmount
+                  )} {selectedPair.split('/')[1]}
+                </span>
               </div>
             </div>
           </div>
@@ -880,7 +1209,7 @@ export default function Trade({ onNavigate }: TradeProps) {
               onClick={confirmOrder}
               className="bg-[#f2c94c] text-black hover:bg-[#e5b73d]"
             >
-              Confirm Buy
+              Confirm {side === 'buy' ? 'Buy' : 'Sell'}
             </Button>
           </DialogFooter>
         </DialogContent>

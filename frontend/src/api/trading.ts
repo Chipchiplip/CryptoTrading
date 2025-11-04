@@ -59,7 +59,11 @@ async function apiDelete<T>(url: string): Promise<ApiResult<T>> {
   }
 }
 
-// DTOs
+// DTOs - aligned with backend Models/DTOs/TradingDtos.cs
+export type OrderStatus = 'NEW' | 'PARTIAL' | 'FILLED' | 'CANCELED' | 'REJECTED';
+export type OrderSide = 'BUY' | 'SELL';
+export type OrderType = 'MARKET' | 'LIMIT';
+
 export interface WalletBalance {
   symbol: string;
   available: number;
@@ -78,23 +82,47 @@ export interface TradingBalances {
 export interface Order {
   id: string;
   symbol: string;
-  side: 'Buy' | 'Sell';
-  type: 'Market' | 'Limit';
+  side: OrderSide;
+  type: OrderType;
   quantity: number;
   price?: number;
   filled: number;
   remaining: number;
-  status: 'Open' | 'Filled' | 'Partial' | 'Canceled';
+  status: OrderStatus;
   createdAt: string;
   updatedAt: string;
 }
 
+export interface OrderDetail extends Order {
+  avgPrice?: number;
+  totalFees: number;
+  trades: Trade[];
+}
+
+export interface Trade {
+  id: string;
+  orderId: string;
+  symbol: string;
+  price: number;
+  quantity: number;
+  fee: number;
+  createdAt: string;
+}
+
 export interface PlaceOrderDto {
   symbol: string;
-  side: 'Buy' | 'Sell';
-  type: 'Market' | 'Limit';
+  side: OrderSide;
+  type: OrderType;
   quantity: number;
   price?: number;
+}
+
+export interface PaginatedResponse<T> {
+  page: number;
+  pageSize: number;
+  totalItems: number;
+  totalPages: number;
+  data: T[];
 }
 
 export interface DashboardData {
@@ -138,16 +166,68 @@ export interface OrderBook {
 
 export interface OrderBookLevel {
   price: number;
-  amount: number;
+  quantity: number;  // Backend uses 'quantity', not 'amount'
   total: number;
+  orderCount: number;
 }
 
 export const TradingApi = {
   getBalances: () => apiGet<TradingBalances>('/api/trading/balances'),
-  getOrders: () => apiGet<Order[]>('/api/trading/orders'),
-  getOrder: (id: string) => apiGet<Order>(`/api/trading/orders/${id}`),
-  placeOrder: (dto: PlaceOrderDto) => apiPost<Order>('/api/trading/orders', dto),
+  
+  // Orders - with pagination support
+  getOrders: (params?: {
+    symbol?: string;
+    side?: OrderSide;
+    type?: OrderType;
+    status?: OrderStatus[];
+    fromDate?: string;
+    toDate?: string;
+    page?: number;
+    pageSize?: number;
+  }) => {
+    const query = new URLSearchParams();
+    if (params?.symbol) query.append('symbol', params.symbol);
+    if (params?.side) query.append('side', params.side);
+    if (params?.type) query.append('type', params.type);
+    if (params?.status) params.status.forEach(s => query.append('status', s));
+    if (params?.fromDate) query.append('fromDate', params.fromDate);
+    if (params?.toDate) query.append('toDate', params.toDate);
+    if (params?.page) query.append('page', params.page.toString());
+    if (params?.pageSize) query.append('pageSize', params.pageSize.toString());
+    
+    const queryStr = query.toString();
+    return apiGet<PaginatedResponse<Order>>(`/api/trading/orders${queryStr ? `?${queryStr}` : ''}`);
+  },
+  
+  getOrder: (id: string) => apiGet<OrderDetail>(`/api/trading/orders/${id}`),
+  
+  placeOrder: (dto: PlaceOrderDto) => apiPost<OrderDetail>('/api/trading/orders', dto),
+  
+  cancelOrder: (id: string) => apiDelete<Order>(`/api/trading/orders/${id}`),
+  
+  // Trades - with pagination support
+  getTrades: (params?: {
+    symbol?: string;
+    orderId?: string;
+    fromDate?: string;
+    toDate?: string;
+    page?: number;
+    pageSize?: number;
+  }) => {
+    const query = new URLSearchParams();
+    if (params?.symbol) query.append('symbol', params.symbol);
+    if (params?.orderId) query.append('orderId', params.orderId);
+    if (params?.fromDate) query.append('fromDate', params.fromDate);
+    if (params?.toDate) query.append('toDate', params.toDate);
+    if (params?.page) query.append('page', params.page.toString());
+    if (params?.pageSize) query.append('pageSize', params.pageSize.toString());
+    
+    const queryStr = query.toString();
+    return apiGet<PaginatedResponse<Trade>>(`/api/trading/trades${queryStr ? `?${queryStr}` : ''}`);
+  },
+  
   getDashboard: () => apiGet<DashboardData>('/api/trading/dashboard'),
+  
   getOrderBook: (symbol: string) => apiGet<OrderBook>(`/api/trading/orderbook/${encodeURIComponent(symbol)}`),
 };
 
