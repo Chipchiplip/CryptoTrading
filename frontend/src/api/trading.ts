@@ -228,6 +228,9 @@ export const TradingApi = {
   
   getDashboard: () => apiGet<DashboardData>('/api/trading/dashboard'),
   
-  getOrderBook: (symbol: string) => apiGet<OrderBook>(`/api/trading/orderbook/${encodeURIComponent(symbol)}`),
+  getOrderBook: (symbol: string) => {
+    const encodedSymbol = encodeURIComponent(symbol);
+    return apiGet<OrderBook>(`/api/trading/orderbook?symbolQuery=${encodedSymbol}`);
+  },
 };
 

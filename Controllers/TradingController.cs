@@ -429,21 +429,49 @@ public class TradingController : ControllerBase
     /// <summary>
     /// Get order book for a trading pair with real bid/ask aggregation
     /// </summary>
-    /// <param name="symbol">Trading pair symbol (e.g., "BTC/USDT"). Can be provided as route parameter or query string.</param>
+    /// <param name="symbolQuery">Trading pair symbol (e.g., "BTC/USDT") as query parameter</param>
+    /// <param name="symbol">Trading pair symbol as route parameter (optional, for backward compatibility)</param>
     /// <param name="depth">Number of price levels to return (default 20)</param>
-    [HttpGet("orderbook/{symbol?}")]
-    public async Task<IActionResult> GetOrderBook([FromRoute] string? symbol = null, [FromQuery] string? symbolQuery = null, [FromQuery] int depth = 20)
+    [HttpGet("orderbook")]
+    public async Task<IActionResult> GetOrderBook([FromQuery] string? symbolQuery = null, [FromRoute] string? symbol = null, [FromQuery] int depth = 20)
     {
-        // Support both route parameter and query string for backward compatibility
-        var tradingSymbol = symbol ?? symbolQuery;
-        if (string.IsNullOrEmpty(tradingSymbol))
+        try
         {
-            throw new ArgumentException("Symbol is required. Provide it as route parameter (/orderbook/BTC-USD) or query string (?symbol=BTC/USD)");
+            // Support both route parameter and query string for backward compatibility
+            // Use query string if provided (more reliable for symbols with /), otherwise use route parameter
+            var tradingSymbol = symbolQuery ?? symbol;
+            
+            // Decode URL-encoded symbols (e.g., BTC%2FUSDT -> BTC/USDT)
+            if (!string.IsNullOrEmpty(tradingSymbol))
+            {
+                tradingSymbol = Uri.UnescapeDataString(tradingSymbol);
+            }
+            
+            if (string.IsNullOrWhiteSpace(tradingSymbol))
+            {
+                _logger.LogWarning("Order book request missing symbol parameter");
+                return BadRequest(new { message = "Symbol is required. Provide it as route parameter (/orderbook/BTC%2FUSDT) or query string (?symbolQuery=BTC%2FUSDT)" });
+            }
+            
+            _logger.LogDebug("Fetching order book for symbol {Symbol}", tradingSymbol);
+            var orderBook = await _tradingService.GetOrderBookAsync(tradingSymbol, depth);
+            return Ok(orderBook);
         }
-        
-        _logger.LogDebug("Fetching order book for symbol {Symbol}", tradingSymbol);
-        var orderBook = await _tradingService.GetOrderBookAsync(tradingSymbol, depth);
-        return Ok(orderBook);
+        catch (ArgumentException ex)
+        {
+            _logger.LogWarning(ex, "Invalid symbol for order book request");
+            return BadRequest(new { message = ex.Message });
+        }
+        catch (InvalidOperationException ex)
+        {
+            _logger.LogWarning(ex, "Error fetching order book: {Message}", ex.Message);
+            return BadRequest(new { message = ex.Message });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Unexpected error fetching order book");
+            throw;
+        }
     }
 
     /// <summary>

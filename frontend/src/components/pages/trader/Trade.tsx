@@ -742,12 +742,19 @@ export default function Trade({ onNavigate }: TradeProps) {
     const fetchOrderBook = async () => {
       if (!selectedPair) return;
       try {
+        console.log('[OrderBook] Fetching order book for:', selectedPair);
         const res = await TradingApi.getOrderBook(selectedPair);
-        if (res.ok) {
+        console.log('[OrderBook] Response:', res);
+        if (res.ok && res.data) {
+          console.log('[OrderBook] Setting order book data:', res.data);
           setOrderBook(res.data);
+        } else {
+          console.warn('[OrderBook] API response not OK');
+          setOrderBook(null);
         }
       } catch (e: any) {
-        console.error('Error fetching order book:', e);
+        console.error('[OrderBook] Error fetching order book:', e);
+        setOrderBook(null);
       }
     };
     
