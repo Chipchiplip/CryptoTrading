@@ -57,6 +57,9 @@ export default function Trade({ onNavigate }: TradeProps) {
   const seriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
   const [candles, setCandles] = useState<CandlestickData[]>([]);
   const signalRConnectionRef = useRef<signalR.HubConnection | null>(null);
+  const hasFittedContentRef = useRef<boolean>(false); // Track if we've fitted content initially
+  const lastSymbolRef = useRef<string | null>(null); // Track last symbol to reset fit on symbol change
+  const lastTimeframeRef = useRef<Timeframe | null>(null); // Track last timeframe to reset fit on timeframe change
   
   // Map timeframe to chart interval
   const intervalMap: Record<Timeframe, string> = {
@@ -152,6 +155,7 @@ export default function Trade({ onNavigate }: TradeProps) {
     console.log('[Chart] useLayoutEffect triggered, chartContainerRef.current:', !!chartContainerRef.current);
     
     let resizeHandler: (() => void) | null = null;
+    let resizeObserverInstance: ResizeObserver | null = null;
     let timeoutId: ReturnType<typeof setTimeout> | null = null;
 
     // Wait for container to have proper size
@@ -191,6 +195,8 @@ export default function Trade({ onNavigate }: TradeProps) {
         // createChart will automatically clear the container
 
         // Create chart with minimal config first
+        // Note: In lightweight-charts v5, zoom and scroll are enabled by default
+        // But we need to ensure proper configuration
         const chart = createChart(container, {
           layout: {
             background: { type: ColorType.Solid, color: '#000000' },
@@ -200,14 +206,35 @@ export default function Trade({ onNavigate }: TradeProps) {
             vertLines: { color: '#1a1a1a' },
             horzLines: { color: '#1a1a1a' },
           },
+          // Use autoSize to maintain proper aspect ratio
+          autoSize: true,
           width: finalWidth,
           height: finalHeight,
           timeScale: {
             timeVisible: true,
             secondsVisible: false,
+            // Enable pan and zoom
+            fixLeftEdge: false,
+            fixRightEdge: false,
+            allowShiftVisibleRangeOnWhitespaceReplacement: true,
           },
           rightPriceScale: {
             borderColor: '#1a1a1a',
+          },
+          // Enable crosshair for better interaction
+          crosshair: {
+            vertLine: {
+              visible: true,
+              width: 1,
+              color: '#758696',
+              style: 0,
+            },
+            horzLine: {
+              visible: true,
+              width: 1,
+              color: '#758696',
+              style: 0,
+            },
           },
         });
 
@@ -217,7 +244,7 @@ export default function Trade({ onNavigate }: TradeProps) {
 
         // Add candlestick series - Use CandlestickSeries class for version 5.x
         // In v5.x, you need to import CandlestickSeries and use it
-        let candlestickSeries: ISeriesApi<'Candlestick'>;
+        let candlestickSeries: ISeriesApi<'Candlestick'> | null = null;
         
         try {
           console.log('[Chart] CandlestickSeries:', CandlestickSeries);
@@ -234,11 +261,16 @@ export default function Trade({ onNavigate }: TradeProps) {
           console.error('[Chart] Error creating series:', err);
           console.error('[Chart] Error message:', err?.message);
           console.error('[Chart] Error stack:', err?.stack);
-          throw err;
+          // Don't throw - let chart render even if series creation fails
+          // The chart will still be created and can be used
+          console.warn('[Chart] Continuing despite series creation error - chart will still render');
         }
 
+        // Always save chart reference, even if series creation failed
         chartRef.current = chart;
-        seriesRef.current = candlestickSeries;
+        if (candlestickSeries) {
+          seriesRef.current = candlestickSeries;
+        }
 
         console.log('[Chart] Chart initialized successfully');
         console.log('[Chart] Chart object:', chart);
@@ -246,8 +278,45 @@ export default function Trade({ onNavigate }: TradeProps) {
         console.log('[Chart] seriesRef.current is now set:', !!seriesRef.current);
         console.log('[Chart] chartRef.current is now set:', !!chartRef.current);
 
+        // Ensure canvas can receive events for zoom/scroll
+        // Use setTimeout to ensure canvas is created
+        setTimeout(() => {
+          const canvas = container.querySelector('canvas');
+          if (canvas) {
+            console.log('[Chart] Canvas found after initialization, configuring for zoom/scroll');
+            canvas.style.pointerEvents = 'auto';
+            canvas.style.touchAction = 'pan-x pan-y';
+            canvas.style.userSelect = 'none'; // Prevent text selection
+            canvas.style.webkitUserSelect = 'none';
+            // Ensure canvas is not blocked
+            canvas.style.position = 'relative';
+            canvas.style.zIndex = '1';
+            
+            // Also check for any overlay divs that might block interaction
+            const overlays = container.querySelectorAll('div[style*="position: absolute"]');
+            overlays.forEach((overlay) => {
+              const el = overlay as HTMLElement;
+              if (el.style.pointerEvents !== 'none') {
+                // Only set to none if it's not already a loading overlay
+                if (!el.classList.contains('pointer-events-none')) {
+                  // Check if it's blocking the canvas
+                  const rect = el.getBoundingClientRect();
+                  const canvasRect = canvas.getBoundingClientRect();
+                  if (rect.top <= canvasRect.top && rect.bottom >= canvasRect.bottom &&
+                      rect.left <= canvasRect.left && rect.right >= canvasRect.right) {
+                    console.warn('[Chart] Found potential blocking overlay, setting pointer-events-none');
+                    el.style.pointerEvents = 'none';
+                  }
+                }
+              }
+            });
+          } else {
+            console.warn('[Chart] Canvas not found after initialization');
+          }
+        }, 200);
+
         // Set data if already available
-        if (candles.length > 0) {
+        if (candles.length > 0 && candlestickSeries) {
           console.log('[Chart] Setting initial candles data:', candles.length);
           try {
             const formattedData = candles.map(c => ({
@@ -258,20 +327,48 @@ export default function Trade({ onNavigate }: TradeProps) {
               close: Number(c.close) || 0,
             })).filter(c => c.time > 0 && c.open > 0 && c.high > 0 && c.low > 0 && c.close > 0);
             
-            console.log('[Chart] Formatted data sample:', formattedData[0]);
-            candlestickSeries.setData(formattedData);
-            chart.timeScale().fitContent();
-            console.log('[Chart] Initial candles data set successfully');
+            if (formattedData.length > 0) {
+              console.log('[Chart] Formatted data sample:', formattedData[0]);
+              candlestickSeries.setData(formattedData);
+              chart.timeScale().fitContent();
+              console.log('[Chart] Initial candles data set successfully');
+            }
           } catch (error) {
             console.error('[Chart] Error setting initial candles:', error);
           }
         }
 
-        // Handle resize
+        // Handle resize - use ResizeObserver for better performance
+        resizeObserverInstance = new ResizeObserver((entries) => {
+          if (chartRef.current && entries.length > 0) {
+            const entry = entries[0];
+            const newWidth = entry.contentRect.width;
+            const newHeight = entry.contentRect.height;
+            
+            if (newWidth > 0 && newHeight > 0) {
+              chartRef.current.applyOptions({ 
+                width: newWidth,
+                height: newHeight 
+              });
+            }
+          }
+        });
+
+        resizeObserverInstance.observe(container);
+
+        // Also handle window resize for fallback
         resizeHandler = () => {
           if (chartContainerRef.current && chartRef.current) {
-            const newWidth = chartContainerRef.current.clientWidth || 800;
-            chartRef.current.applyOptions({ width: newWidth });
+            const rect = chartContainerRef.current.getBoundingClientRect();
+            const newWidth = rect.width || chartContainerRef.current.clientWidth || 800;
+            const newHeight = rect.height || chartContainerRef.current.clientHeight || 400;
+            
+            if (newWidth > 0 && newHeight > 0) {
+              chartRef.current.applyOptions({ 
+                width: newWidth,
+                height: newHeight 
+              });
+            }
           }
         };
 
@@ -291,6 +388,12 @@ export default function Trade({ onNavigate }: TradeProps) {
       
       if (timeoutId) {
         clearTimeout(timeoutId);
+      }
+      
+      if (resizeObserverInstance && chartContainerRef.current) {
+        resizeObserverInstance.unobserve(chartContainerRef.current);
+        resizeObserverInstance.disconnect();
+        resizeObserverInstance = null;
       }
       
       if (resizeHandler) {
@@ -360,15 +463,26 @@ export default function Trade({ onNavigate }: TradeProps) {
     
     fetchCandles();
     
-    // Auto refresh every 5 seconds
-    const intervalId = setInterval(fetchCandles, 5000);
+    // Auto refresh every 30 seconds (reduced frequency to prevent jitter)
+    const intervalId = setInterval(fetchCandles, 30000);
     return () => clearInterval(intervalId);
-  }, [selectedCoin?.symbol, timeframe, intervalMap]);
+  }, [selectedCoin?.symbol, timeframe]); // Removed intervalMap from dependencies
 
-  // Update chart when candles change (exact copy from ChartTest)
+  // Update chart when candles change - preserve zoom state
   useEffect(() => {
-    if (!seriesRef.current || candles.length === 0) {
+    if (!seriesRef.current || !chartRef.current || candles.length === 0) {
       return;
+    }
+
+    const currentSymbol = selectedCoin?.symbol || '';
+    const symbolChanged = lastSymbolRef.current !== currentSymbol;
+    const timeframeChanged = lastTimeframeRef.current !== timeframe;
+    
+    // Reset fit flag if symbol or timeframe changed
+    if (symbolChanged || timeframeChanged) {
+      hasFittedContentRef.current = false;
+      lastSymbolRef.current = currentSymbol;
+      lastTimeframeRef.current = timeframe;
     }
 
     console.log('[Chart] Updating chart with', candles.length, 'candles');
@@ -384,29 +498,46 @@ export default function Trade({ onNavigate }: TradeProps) {
 
       console.log('[Chart] Formatted data sample:', formattedData[0]);
       
+      // Update data without resetting zoom
       seriesRef.current.setData(formattedData);
       
-      if (chartRef.current) {
+      // Only fit content on first load or when symbol/timeframe changes
+      if (chartRef.current && (!hasFittedContentRef.current || symbolChanged || timeframeChanged)) {
         chartRef.current.timeScale().fitContent();
+        hasFittedContentRef.current = true;
+        console.log('[Chart] Fitted content (first time, symbol change, or timeframe change)');
+      } else {
+        console.log('[Chart] Preserved zoom state during update');
       }
       
       console.log('[Chart] Chart data updated successfully');
     } catch (error) {
       console.error('[Chart] Error updating chart data:', error);
     }
-  }, [candles]);
+  }, [candles, selectedCoin?.symbol, timeframe]); // Added selectedCoin?.symbol and timeframe to detect changes
 
   // SignalR MarketHub - realtime price updates for charts
   useEffect(() => {
     let retryCount = 0;
     const MAX_RETRIES = 3;
-    let isCancelled = false;
+    let isMounted = true;
+    let connection: signalR.HubConnection | null = null;
 
     const connectSignalR = async () => {
-      if (isCancelled) return;
+      // Clean up existing connection first
+      if (signalRConnectionRef.current) {
+        try {
+          await signalRConnectionRef.current.stop();
+        } catch (err) {
+          console.warn('Error stopping existing SignalR connection:', err);
+        }
+        signalRConnectionRef.current = null;
+      }
+
+      if (!selectedCoin?.symbol || !isMounted) return;
 
       try {
-        const connection = new signalR.HubConnectionBuilder()
+        connection = new signalR.HubConnectionBuilder()
           .withUrl('/marketHub')
           .withAutomaticReconnect({
             nextRetryDelayInMilliseconds: (retryContext) => {
@@ -414,11 +545,12 @@ export default function Trade({ onNavigate }: TradeProps) {
               return Math.min(1000 * Math.pow(2, retryContext.previousRetryCount), 30000);
             }
           })
+          .configureLogging(signalR.LogLevel.Warning)
           .build();
 
         // Handle connection errors gracefully
         connection.onclose((error) => {
-          if (error && !isCancelled) {
+          if (error && isMounted) {
             console.warn('SignalR connection closed:', error);
           }
         });
@@ -433,33 +565,46 @@ export default function Trade({ onNavigate }: TradeProps) {
         });
 
         connection.on('ReceivePriceUpdate', (update: any) => {
-          if (update.symbol === selectedCoin?.symbol && seriesRef.current && candles.length > 0) {
-            const lastCandle = candles[candles.length - 1];
-            const now = Math.floor(Date.now() / 1000);
-            
-            // Check if we should update the current candle or create a new one
-            if (lastCandle.time === now || Math.abs(lastCandle.time - now) < 60) {
-              // Update current candle
-              const updated = {
-                ...lastCandle,
-                high: Math.max(lastCandle.high, update.currentPrice),
-                low: Math.min(lastCandle.low, update.currentPrice),
-                close: update.currentPrice,
-              };
-              seriesRef.current.update(updated);
-              setCandles(prev => {
+          if (!isMounted) return;
+          if (update.symbol === selectedCoin?.symbol && seriesRef.current) {
+            setCandles(prev => {
+              if (prev.length === 0) return prev;
+              const lastCandle = prev[prev.length - 1];
+              const now = Math.floor(Date.now() / 1000);
+              
+              // Check if we should update the current candle or create a new one
+              if (lastCandle.time === now || Math.abs(lastCandle.time - now) < 60) {
+                // Update current candle
+                const updated = {
+                  ...lastCandle,
+                  high: Math.max(lastCandle.high, update.currentPrice),
+                  low: Math.min(lastCandle.low, update.currentPrice),
+                  close: update.currentPrice,
+                };
+                
+                // Update chart
+                if (seriesRef.current) {
+                  try {
+                    seriesRef.current.update(updated);
+                  } catch (err) {
+                    console.warn('Error updating chart:', err);
+                  }
+                }
+                
+                // Update state
                 const newCandles = [...prev];
                 newCandles[newCandles.length - 1] = updated;
                 return newCandles;
-              });
-            }
+              }
+              return prev;
+            });
           }
         });
 
         // Start connection with timeout
         const timeout = setTimeout(() => {
-          if (!isCancelled) {
-            connection.stop().catch(() => {});
+          if (isMounted) {
+            connection?.stop().catch(() => {});
             if (retryCount < MAX_RETRIES) {
               retryCount++;
               setTimeout(connectSignalR, 2000 * retryCount);
@@ -473,7 +618,7 @@ export default function Trade({ onNavigate }: TradeProps) {
           await connection.start();
           clearTimeout(timeout);
           
-          if (isCancelled) {
+          if (!isMounted) {
             await connection.stop();
             return;
           }
@@ -487,7 +632,7 @@ export default function Trade({ onNavigate }: TradeProps) {
           throw startError;
         }
       } catch (err: any) {
-        if (isCancelled) return;
+        if (!isMounted) return;
         
         console.warn('SignalR connection failed, using polling only:', err?.message || err);
         
@@ -496,7 +641,7 @@ export default function Trade({ onNavigate }: TradeProps) {
           retryCount++;
           const delay = 2000 * Math.pow(2, retryCount - 1);
           setTimeout(() => {
-            if (!isCancelled) {
+            if (isMounted) {
               connectSignalR();
             }
           }, delay);
@@ -511,15 +656,18 @@ export default function Trade({ onNavigate }: TradeProps) {
     }
 
     return () => {
-      isCancelled = true;
+      isMounted = false;
       if (signalRConnectionRef.current) {
-        signalRConnectionRef.current.stop().catch(() => {
-          // Ignore errors on cleanup
-        });
-        signalRConnectionRef.current = null;
+        signalRConnectionRef.current.stop()
+          .catch((err) => {
+            console.warn('Error stopping SignalR connection during cleanup:', err);
+          })
+          .finally(() => {
+            signalRConnectionRef.current = null;
+          });
       }
     };
-  }, [selectedCoin?.symbol, candles]);
+  }, [selectedCoin?.symbol]); // Removed 'candles' from dependencies
 
   // TODO: TradingHub SignalR - for order/trade realtime events
   // NOTE: Backend TradingHub is not yet implemented. Uncomment this code when backend adds TradingHub
@@ -832,17 +980,25 @@ export default function Trade({ onNavigate }: TradeProps) {
             {/* Price Chart */}
             <div 
               className="h-[400px] w-full relative bg-black" 
-              ref={(el) => {
-                chartContainerRef.current = el;
-                if (el) {
-                  console.log('[Chart] Container ref set, size:', el.clientWidth, 'x', el.clientHeight);
-                }
+              ref={chartContainerRef}
+              style={{ 
+                minHeight: '400px', 
+                minWidth: '100%', 
+                position: 'relative', 
+                width: '100%', 
+                height: '400px',
+                maxHeight: '400px',
+                // Ensure container can receive mouse events
+                overflow: 'hidden', // Changed from 'visible' to prevent overflow
+                pointerEvents: 'auto',
+                touchAction: 'pan-x pan-y',
+                userSelect: 'none', // Prevent text selection
+                WebkitUserSelect: 'none',
               }}
-              style={{ minHeight: '400px', minWidth: '100%', position: 'relative', width: '100%', height: '400px' }}
             >
               {loadingChart && candles.length === 0 && (
                 <div className="flex items-center justify-center h-full absolute inset-0 bg-black/50 z-10 pointer-events-none">
-                  <div className="flex flex-col items-center gap-2">
+                  <div className="flex flex-col items-center gap-2 pointer-events-none">
                     <Loader2 className="w-8 h-8 text-[#f2c94c] animate-spin" />
                     <span className="text-gray-400 text-sm">Loading chart data...</span>
                   </div>
@@ -850,7 +1006,7 @@ export default function Trade({ onNavigate }: TradeProps) {
               )}
               {!loadingChart && candles.length === 0 && !chartRef.current && (
                 <div className="flex items-center justify-center h-full absolute inset-0 text-gray-400 z-10 pointer-events-none">
-                  <div className="text-center">
+                  <div className="text-center pointer-events-none">
                     <p>No chart data available</p>
                     <p className="text-xs text-gray-500 mt-2">Chart will appear when data is loaded</p>
                   </div>
