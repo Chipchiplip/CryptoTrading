@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using System.Net;
@@ -9,11 +10,13 @@ namespace CryptoTrading.Middleware
     {
         private readonly RequestDelegate _next;
         private readonly ILogger<ErrorHandlingMiddleware> _logger;
+        private readonly IWebHostEnvironment? _environment;
 
-        public ErrorHandlingMiddleware(RequestDelegate next, ILogger<ErrorHandlingMiddleware> logger)
+        public ErrorHandlingMiddleware(RequestDelegate next, ILogger<ErrorHandlingMiddleware> logger, IWebHostEnvironment? environment = null)
         {
             _next = next;
             _logger = logger;
+            _environment = environment;
         }
 
         public async Task InvokeAsync(HttpContext context)
@@ -29,11 +32,27 @@ namespace CryptoTrading.Middleware
             }
         }
 
-        private static Task HandleExceptionAsync(HttpContext context, Exception exception)
+        private Task HandleExceptionAsync(HttpContext context, Exception exception)
         {
             var statusCode = HttpStatusCode.InternalServerError;
             var message = "An error occurred while processing your request";
             var details = exception.Message;
+
+            // Include inner exception details if available (especially for EF Core exceptions)
+            if (exception.InnerException != null)
+            {
+                details = $"{exception.Message}. Inner exception: {exception.InnerException.Message}";
+                
+                // Include stack trace in development mode for debugging
+                if (_environment?.IsDevelopment() == true)
+                {
+                    details += $"\n\nStack trace:\n{exception.StackTrace}";
+                    if (exception.InnerException.StackTrace != null)
+                    {
+                        details += $"\n\nInner stack trace:\n{exception.InnerException.StackTrace}";
+                    }
+                }
+            }
 
             // Xác định loại exception và status code tương ứng
             switch (exception)

@@ -131,18 +131,20 @@ namespace CryptoTrading.Services.Trading
 
                 // Lock balance
                 await LockBalanceAsync(order.Id, wallet.Id, requiredAmount);
+                await _context.SaveChangesAsync(); // Save the lock within transaction
+
+                // If market order, execute immediately within the same transaction
+                if (request.Type.ToUpper() == "MARKET")
+                {
+                    // Execute market order within the same transaction
+                    await ExecuteMarketOrderInTransactionAsync(order, currentPrice, transaction);
+                }
 
                 await transaction.CommitAsync();
 
                 _logger.LogInformation(
                     "Order {OrderId} placed: {Side} {Quantity} {Symbol} @ {Price}",
                     order.Id, order.Side, order.QuantityCoin, coinSymbol, orderPrice);
-
-                // If market order, execute immediately with cached market data
-                if (request.Type.ToUpper() == "MARKET")
-                {
-                    await ExecuteMarketOrderAsync(order, currentPrice);
-                }
 
                 // Return DTO with preserved quote symbol
                 return MapToOrderDto(order, coinSymbol, quoteSymbol);
@@ -161,8 +163,9 @@ namespace CryptoTrading.Services.Trading
 
         /// <summary>
         /// Locks balance for an order
+        /// Note: Does not call SaveChangesAsync - caller must save changes
         /// </summary>
-        private async Task LockBalanceAsync(ulong orderId, ulong walletId, decimal amount)
+        private Task LockBalanceAsync(ulong orderId, ulong walletId, decimal amount)
         {
             var orderHold = new OrderHold
             {
@@ -174,14 +177,17 @@ namespace CryptoTrading.Services.Trading
             };
 
             _context.OrderHolds.Add(orderHold);
-            await _context.SaveChangesAsync();
+            // Don't save here - let caller manage SaveChanges within transaction
 
             _logger.LogDebug("Locked {Amount} for order {OrderId} in wallet {WalletId}",
                 amount, orderId, walletId);
+
+            return Task.CompletedTask;
         }
 
         /// <summary>
         /// Releases locked balance for an order
+        /// Note: Does not call SaveChangesAsync - caller must save changes
         /// </summary>
         private async Task ReleaseBalanceAsync(ulong orderId, decimal? amountToRelease = null)
         {
@@ -212,13 +218,15 @@ namespace CryptoTrading.Services.Trading
                 hold.ReleasedAt = DateTime.UtcNow;
             }
 
-            await _context.SaveChangesAsync();
+            // Don't save here - let caller manage SaveChanges within transaction
 
             _logger.LogDebug("Released balance for order {OrderId}", orderId);
         }
 
         /// <summary>
         /// Gets or creates a wallet for a user
+        /// If creating a new wallet, saves it immediately to get the ID (required for foreign keys)
+        /// This is safe because it's called within a transaction
         /// </summary>
         private async Task<Wallet> GetOrCreateWalletAsync(
             int userId, string assetType, string? currencyCode, int? cryptoId)
@@ -241,6 +249,8 @@ namespace CryptoTrading.Services.Trading
                 };
 
                 _context.Wallets.Add(wallet);
+                // Must save immediately to get the ID for foreign key references
+                // This is safe because we're within a transaction - if transaction rolls back, wallet is also rolled back
                 await _context.SaveChangesAsync();
 
                 _logger.LogInformation("Created wallet {WalletId} for user {UserId}", wallet.Id, userId);
@@ -273,6 +283,7 @@ namespace CryptoTrading.Services.Trading
 
         /// <summary>
         /// Executes a market order immediately with internal matching and virtual counterparty
+        /// Uses its own transaction - for standalone execution
         /// </summary>
         /// <param name="order">The order to execute</param>
         /// <param name="cachedPrice">Optional cached price to avoid refetching market data</param>
@@ -373,6 +384,103 @@ namespace CryptoTrading.Services.Trading
                 await transaction.RollbackAsync();
                 _logger.LogError(ex, "Error executing market order {OrderId}", order.Id);
                 throw;
+            }
+        }
+
+        /// <summary>
+        /// Executes a market order within an existing transaction
+        /// Used when placing a market order to keep everything in one transaction
+        /// </summary>
+        /// <param name="order">The order to execute</param>
+        /// <param name="cachedPrice">Cached price to use for execution</param>
+        /// <param name="transaction">Existing transaction to use</param>
+        private async Task ExecuteMarketOrderInTransactionAsync(Order order, decimal? cachedPrice, Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction transaction)
+        {
+            try
+            {
+                // Reload order with navigation properties
+                order = await _context.Orders
+                    .Include(o => o.Cryptocurrency)
+                    .FirstOrDefaultAsync(o => o.Id == order.Id)
+                    ?? throw new InvalidOperationException($"Order {order.Id} not found");
+
+                // Use cached price
+                decimal executionPrice = cachedPrice ?? 0m;
+                if (executionPrice <= 0)
+                {
+                    var marketData = await _coinGeckoService.GetMarketDataAsync();
+                    executionPrice = marketData
+                        .FirstOrDefault(c => c.Symbol.Equals(order.Cryptocurrency.Symbol, StringComparison.OrdinalIgnoreCase))
+                        ?.CurrentPrice ?? 0m;
+                }
+
+                if (executionPrice <= 0)
+                {
+                    order.Status = "REJECTED";
+                    order.UpdatedAt = DateTime.UtcNow;
+                    await _context.SaveChangesAsync();
+                    _logger.LogWarning("Market order {OrderId} rejected: no market price", order.Id);
+                    return;
+                }
+
+                // Try internal matching first (match with opposite side limit orders)
+                var remainingQty = order.QuantityCoin;
+                var opposingSide = order.Side == "BUY" ? "SELL" : "BUY";
+
+                var opposingOrders = await _context.Orders
+                    .Where(o =>
+                        o.CryptocurrencyId == order.CryptocurrencyId &&
+                        o.Side == opposingSide &&
+                        o.Type == "LIMIT" &&
+                        (o.Status == "NEW" || o.Status == "PARTIAL"))
+                    .OrderBy(o => order.Side == "BUY" ? o.PriceUsd : -o.PriceUsd) // Best price first
+                    .ThenBy(o => o.CreatedAt) // FIFO
+                    .ToListAsync();
+
+                foreach (var opposingOrder in opposingOrders)
+                {
+                    if (remainingQty <= 0) break;
+
+                    // Check if price is acceptable for market order
+                    var opposingPrice = opposingOrder.PriceUsd ?? 0m;
+                    if (order.Side == "BUY" && opposingPrice > executionPrice * 1.10m) continue;
+                    if (order.Side == "SELL" && opposingPrice < executionPrice * 0.90m) continue;
+
+                    var matchQty = Math.Min(remainingQty, opposingOrder.QuantityCoin - opposingOrder.FilledQty);
+                    if (matchQty <= 0) continue;
+
+                    // Execute the match at the limit order's price
+                    await ExecuteTradeAsync(order, opposingOrder, matchQty, opposingPrice);
+                    remainingQty -= matchQty;
+                }
+
+                // If still remaining quantity, match with virtual counterparty at market price
+                if (remainingQty > 0)
+                {
+                    await ExecuteTradeWithVirtualCounterpartyAsync(order, remainingQty, executionPrice);
+                }
+
+                // Update order status
+                order.UpdatedAt = DateTime.UtcNow;
+                if (order.FilledQty >= order.QuantityCoin)
+                {
+                    order.Status = "FILLED";
+                }
+                else if (order.FilledQty > 0)
+                {
+                    order.Status = "PARTIAL";
+                }
+
+                await _context.SaveChangesAsync();
+
+                _logger.LogInformation(
+                    "Market order {OrderId} executed: {Filled}/{Total} @ avg ${AvgPrice}",
+                    order.Id, order.FilledQty, order.QuantityCoin, executionPrice);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error executing market order {OrderId} in transaction", order.Id);
+                throw; // Let the outer transaction handle rollback
             }
         }
 
@@ -494,6 +602,7 @@ namespace CryptoTrading.Services.Trading
 
         /// <summary>
         /// Settles wallet balances after a trade
+        /// Note: Does not call SaveChangesAsync - caller must save changes
         /// </summary>
         private async Task SettleTradeAsync(int userId, string side, decimal quantity, decimal price, decimal feeUsd, int cryptoId)
         {
@@ -556,7 +665,7 @@ namespace CryptoTrading.Services.Trading
                 });
             }
 
-            await _context.SaveChangesAsync();
+            // Don't save here - let caller manage SaveChanges within transaction
         }
 
         #endregion
