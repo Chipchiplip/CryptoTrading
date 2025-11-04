@@ -55,6 +55,14 @@ export interface PriceHistoryItem {
   timestamp: string;
 }
 
+export interface CandlestickData {
+  time: number; // Unix timestamp in seconds
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+}
+
 export const MarketApi = {
   getCryptocurrencies: () => apiGet<Crypto[]>('/api/market/cryptocurrencies'),
   getCryptocurrency: (symbol: string) => apiGet<Crypto>(`/api/market/cryptocurrencies/${symbol}`),
@@ -62,5 +70,6 @@ export const MarketApi = {
   getMarketStats: () => apiGet<any>('/api/market/stats'),
   getWatchlistRealtime: (watchlistId: string) => apiGet<WatchlistRealtimeUpdate>(`/api/portfolio/watchlists/${watchlistId}/realtime`),
   getPriceHistory: (coinId: string, days: number) => apiGet<PriceHistoryItem[]>(`/api/market/cryptocurrencies/${coinId}/history?days=${days}`),
+  getCandles: (symbol: string, interval: string) => apiGet<CandlestickData[]>(`/api/market/candles?symbol=${symbol}&interval=${interval}`),
 };
 

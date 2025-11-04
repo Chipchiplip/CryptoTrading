@@ -49,9 +49,9 @@ export default function TraderLayout({ children, currentPage, onNavigate }: Trad
   ];
 
   const SidebarContent = () => (
-    <>
+    <div className="flex flex-col h-full">
       {/* Logo */}
-      <div className="p-6 border-b border-gray-800">
+      <div className="p-6 border-b border-gray-800 flex-shrink-0">
         <div className="flex items-center gap-2">
           <div className="w-8 h-8 bg-emerald-500 rounded-lg flex items-center justify-center">
             <span className="text-black">CT</span>
@@ -61,7 +61,7 @@ export default function TraderLayout({ children, currentPage, onNavigate }: Trad
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 p-4 space-y-1">
+      <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
         {menuItems.map((item) => (
           <button
             key={item.id}
@@ -81,21 +81,21 @@ export default function TraderLayout({ children, currentPage, onNavigate }: Trad
         ))}
       </nav>
 
-      {/* Quick Stats */}
-      <div className="p-4 border-t border-gray-800">
+      {/* Quick Stats - Fixed at bottom */}
+      <div className="p-4 border-t border-gray-800 flex-shrink-0">
         <div className="bg-gray-900 rounded-lg p-4 space-y-2">
           <div className="text-gray-400 text-sm">Total Balance</div>
           <div className="text-2xl text-white">$12,458.32</div>
           <div className="text-emerald-500 text-sm">+$234.12 (1.9%)</div>
         </div>
       </div>
-    </>
+    </div>
   );
 
   return (
     <div className="flex h-screen bg-black text-white">
       {/* Desktop Sidebar */}
-      <aside className="hidden lg:flex lg:flex-col w-64 bg-black border-r border-gray-800">
+      <aside className="hidden lg:flex lg:flex-col w-64 bg-black border-r border-gray-800 h-screen">
         <SidebarContent />
       </aside>
 
