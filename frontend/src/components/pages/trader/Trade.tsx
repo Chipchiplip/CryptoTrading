@@ -1448,13 +1448,29 @@ export default function Trade({ onNavigate }: TradeProps) {
 
       {/* Modern Coin Selector Dialog */}
       <Dialog open={showCoinSelector} onOpenChange={setShowCoinSelector}>
-        <DialogContent className="bg-[#1a1d24] border-gray-800 text-white max-w-2xl max-h-[80vh]">
+        <DialogContent className="bg-black border-gray-800 text-white max-w-2xl max-h-[80vh] flex flex-col">
+          <style>{`
+            .coin-list-scroll::-webkit-scrollbar {
+              width: 8px;
+            }
+            .coin-list-scroll::-webkit-scrollbar-track {
+              background: #000000;
+              border-radius: 4px;
+            }
+            .coin-list-scroll::-webkit-scrollbar-thumb {
+              background: #4b5563;
+              border-radius: 4px;
+            }
+            .coin-list-scroll::-webkit-scrollbar-thumb:hover {
+              background: #6b7280;
+            }
+          `}</style>
           <DialogHeader>
             <DialogTitle className="text-2xl font-bold">Chọn cặp giao dịch</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4">
+          <div className="space-y-4 flex-1 flex flex-col min-h-0">
             {/* Search Bar */}
-            <div className="relative">
+            <div className="relative flex-shrink-0">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
               <Input
                 type="text"
@@ -1466,7 +1482,15 @@ export default function Trade({ onNavigate }: TradeProps) {
             </div>
 
             {/* Coin List */}
-            <div className="max-h-[500px] overflow-y-auto space-y-2 pr-2 custom-scrollbar">
+            <div 
+              className="coin-list-scroll flex-1 overflow-y-auto overflow-x-hidden space-y-2 pr-2 min-h-0"
+              style={{
+                scrollbarWidth: 'thin',
+                scrollbarColor: '#4b5563 #000000',
+                WebkitOverflowScrolling: 'touch',
+                maxHeight: '500px',
+              }}
+            >
               {pairs
                 .filter((coin) => {
                   const query = coinSearchQuery.toLowerCase();
