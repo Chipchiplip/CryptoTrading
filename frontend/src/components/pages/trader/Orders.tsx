@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Search, Filter, X, Eye, Trash2 } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Search, Filter, X, Eye, Trash2, Loader2 } from 'lucide-react';
 import { Card } from '../../ui/card';
 import { Button } from '../../ui/button';
 import { Input } from '../../ui/input';
@@ -7,6 +7,7 @@ import { Badge } from '../../ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../../ui/table';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '../../ui/alert-dialog';
+import { TradingApi, Order, OrderStatus } from '../../../api/trading';
 
 interface OrdersProps {
   onNavigate?: (page: string, orderId?: string) => void;
@@ -18,106 +19,108 @@ export default function Orders({ onNavigate }: OrdersProps) {
   const [filterStatus, setFilterStatus] = useState('all');
   const [filterType, setFilterType] = useState('all');
   const [cancelOrderId, setCancelOrderId] = useState<string | null>(null);
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const pageSize = 20;
 
-  const orders = [
-    { 
-      id: 'ORD-001', 
-      time: '2025-01-15 14:23:45', 
-      pair: 'BTC/USDT', 
-      type: 'Limit', 
-      side: 'Buy', 
-      price: 50200.00, 
-      amount: 0.0234, 
-      filled: 0.0234, 
-      total: 1174.68, 
-      status: 'Filled' 
-    },
-    { 
-      id: 'ORD-002', 
-      time: '2025-01-15 14:15:22', 
-      pair: 'ETH/USDT', 
-      type: 'Market', 
-      side: 'Sell', 
-      price: 2845.32, 
-      amount: 1.2, 
-      filled: 1.2, 
-      total: 3414.38, 
-      status: 'Filled' 
-    },
-    { 
-      id: 'ORD-003', 
-      time: '2025-01-15 13:45:10', 
-      pair: 'SOL/USDT', 
-      type: 'Limit', 
-      side: 'Buy', 
-      price: 97.50, 
-      amount: 45, 
-      filled: 23, 
-      total: 4387.50, 
-      status: 'Partial' 
-    },
-    { 
-      id: 'ORD-004', 
-      time: '2025-01-15 12:30:18', 
-      pair: 'BNB/USDT', 
-      type: 'Limit', 
-      side: 'Buy', 
-      price: 310.00, 
-      amount: 3.5, 
-      filled: 0, 
-      total: 1085.00, 
-      status: 'Open' 
-    },
-    { 
-      id: 'ORD-005', 
-      time: '2025-01-15 11:20:33', 
-      pair: 'BTC/USDT', 
-      type: 'Limit', 
-      side: 'Sell', 
-      price: 51000.00, 
-      amount: 0.05, 
-      filled: 0, 
-      total: 2550.00, 
-      status: 'Open' 
-    },
-    { 
-      id: 'ORD-006', 
-      time: '2025-01-15 10:15:45', 
-      pair: 'ETH/USDT', 
-      type: 'Market', 
-      side: 'Buy', 
-      price: 2830.00, 
-      amount: 0.5, 
-      filled: 0, 
-      total: 1415.00, 
-      status: 'Canceled' 
-    },
-  ];
+  // Fetch orders from API
+  useEffect(() => {
+    fetchOrders();
+  }, [currentPage, filterPair, filterStatus, filterType]);
+
+  const fetchOrders = async () => {
+    setLoading(true);
+    setError(null);
+    
+    try {
+      const params: any = {
+        page: currentPage,
+        pageSize,
+      };
+      
+      if (filterPair !== 'all') params.symbol = filterPair;
+      if (filterType !== 'all') params.type = filterType.toUpperCase();
+      if (filterStatus !== 'all') {
+        // Map UI status to backend status
+        const statusMap: Record<string, OrderStatus> = {
+          'open': 'NEW',
+          'partial': 'PARTIAL',
+          'filled': 'FILLED',
+          'canceled': 'CANCELED',
+        };
+        params.status = [statusMap[filterStatus] || filterStatus.toUpperCase()];
+      }
+      
+      const res = await TradingApi.getOrders(params);
+      
+      if (!res.ok) {
+        setError(res.error);
+        setLoading(false);
+        return;
+      }
+      
+      setOrders(res.data.data);
+      setTotalPages(res.data.totalPages);
+      setLoading(false);
+    } catch (e: any) {
+      setError(e?.message || 'Failed to load orders');
+      setLoading(false);
+    }
+  };
 
   const handleCancelOrder = (orderId: string) => {
     setCancelOrderId(orderId);
   };
 
-  const confirmCancel = () => {
-    // Cancel order logic here
-    setCancelOrderId(null);
+  const confirmCancel = async () => {
+    if (!cancelOrderId) return;
+    
+    try {
+      const res = await TradingApi.cancelOrder(cancelOrderId);
+      
+      if (!res.ok) {
+        setError(res.error);
+        setCancelOrderId(null);
+        return;
+      }
+      
+      // Refresh orders list
+      await fetchOrders();
+      setCancelOrderId(null);
+    } catch (e: any) {
+      setError(e?.message || 'Failed to cancel order');
+      setCancelOrderId(null);
+    }
+  };
+  
+  // Map backend status to UI display
+  const getStatusDisplay = (status: OrderStatus): string => {
+    const statusMap: Record<OrderStatus, string> = {
+      'NEW': 'Open',
+      'PARTIAL': 'Partial',
+      'FILLED': 'Filled',
+      'CANCELED': 'Canceled',
+      'REJECTED': 'Rejected',
+    };
+    return statusMap[status] || status;
   };
 
+  // Client-side filter for search query (API already filtered by pair/status/type)
   const filteredOrders = orders.filter(order => {
-    const matchesSearch = order.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                         order.pair.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesPair = filterPair === 'all' || order.pair === filterPair;
-    const matchesStatus = filterStatus === 'all' || order.status.toLowerCase() === filterStatus.toLowerCase();
-    const matchesType = filterType === 'all' || order.type.toLowerCase() === filterType.toLowerCase();
-    
-    return matchesSearch && matchesPair && matchesStatus && matchesType;
+    if (!searchQuery) return true;
+    const searchLower = searchQuery.toLowerCase();
+    return order.id.toLowerCase().includes(searchLower) ||
+           order.symbol.toLowerCase().includes(searchLower);
   });
 
   const stats = {
     total: orders.length,
-    open: orders.filter(o => o.status === 'Open').length,
-    filled: orders.filter(o => o.status === 'Filled').length,
-    partial: orders.filter(o => o.status === 'Partial').length,
+    open: orders.filter(o => o.status === 'NEW').length,
+    filled: orders.filter(o => o.status === 'FILLED').length,
+    partial: orders.filter(o => o.status === 'PARTIAL').length,
   };
 
   return (
@@ -126,6 +129,13 @@ export default function Orders({ onNavigate }: OrdersProps) {
         <h1 className="text-3xl mb-2">Orders</h1>
         <p className="text-gray-400">View and manage your trading orders</p>
       </div>
+
+      {/* Error Message */}
+      {error && (
+        <div className="mb-4 p-4 bg-red-500/10 border border-red-500/50 rounded-lg text-red-400">
+          {error}
+        </div>
+      )}
 
       {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
@@ -227,82 +237,124 @@ export default function Orders({ onNavigate }: OrdersProps) {
 
       {/* Orders Table */}
       <Card className="bg-gray-900 border-gray-800 overflow-hidden">
-        <div className="overflow-x-auto">
-          <Table>
-            <TableHeader>
-              <TableRow className="border-gray-800 hover:bg-transparent">
-                <TableHead className="text-gray-400">Order ID</TableHead>
-                <TableHead className="text-gray-400">Time</TableHead>
-                <TableHead className="text-gray-400">Pair</TableHead>
-                <TableHead className="text-gray-400">Type</TableHead>
-                <TableHead className="text-gray-400">Side</TableHead>
-                <TableHead className="text-gray-400 text-right">Price</TableHead>
-                <TableHead className="text-gray-400 text-right">Amount</TableHead>
-                <TableHead className="text-gray-400 text-right">Filled</TableHead>
-                <TableHead className="text-gray-400 text-right">Total</TableHead>
-                <TableHead className="text-gray-400">Status</TableHead>
-                <TableHead className="text-gray-400 text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filteredOrders.map((order) => (
-                <TableRow key={order.id} className="border-gray-800 hover:bg-gray-800/50">
-                  <TableCell className="text-emerald-500 cursor-pointer" onClick={() => onNavigate?.('order-detail', order.id)}>
-                    {order.id}
-                  </TableCell>
-                  <TableCell className="text-gray-400">{order.time}</TableCell>
-                  <TableCell className="text-white">{order.pair}</TableCell>
-                  <TableCell>
-                    <Badge variant="outline" className="border-gray-700">
-                      {order.type}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    <Badge className={order.side === 'Buy' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-red-500/10 text-red-500'}>
-                      {order.side}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-right text-white">${order.price.toLocaleString()}</TableCell>
-                  <TableCell className="text-right text-gray-300">{order.amount}</TableCell>
-                  <TableCell className="text-right text-gray-300">{order.filled}</TableCell>
-                  <TableCell className="text-right text-white">${order.total.toLocaleString()}</TableCell>
-                  <TableCell>
-                    <Badge className={
-                      order.status === 'Filled' ? 'bg-emerald-500/10 text-emerald-500' :
-                      order.status === 'Open' ? 'bg-yellow-500/10 text-yellow-500' :
-                      order.status === 'Partial' ? 'bg-blue-500/10 text-blue-500' :
-                      'bg-gray-500/10 text-gray-500'
-                    }>
-                      {order.status}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex items-center justify-end gap-2">
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => onNavigate?.('order-detail', order.id)}
-                      >
-                        <Eye className="w-4 h-4" />
-                      </Button>
-                      {(order.status === 'Open' || order.status === 'Partial') && (
+        {loading ? (
+          <div className="flex items-center justify-center py-12">
+            <Loader2 className="w-8 h-8 text-emerald-500 animate-spin" />
+          </div>
+        ) : filteredOrders.length === 0 ? (
+          <div className="text-center py-12 text-gray-400">
+            <p>No orders found</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow className="border-gray-800 hover:bg-transparent">
+                  <TableHead className="text-gray-400">Order ID</TableHead>
+                  <TableHead className="text-gray-400">Time</TableHead>
+                  <TableHead className="text-gray-400">Pair</TableHead>
+                  <TableHead className="text-gray-400">Type</TableHead>
+                  <TableHead className="text-gray-400">Side</TableHead>
+                  <TableHead className="text-gray-400 text-right">Price</TableHead>
+                  <TableHead className="text-gray-400 text-right">Quantity</TableHead>
+                  <TableHead className="text-gray-400 text-right">Filled</TableHead>
+                  <TableHead className="text-gray-400 text-right">Remaining</TableHead>
+                  <TableHead className="text-gray-400">Status</TableHead>
+                  <TableHead className="text-gray-400 text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filteredOrders.map((order) => (
+                  <TableRow key={order.id} className="border-gray-800 hover:bg-gray-800/50">
+                    <TableCell className="text-emerald-500 cursor-pointer" onClick={() => onNavigate?.('order-detail', order.id)}>
+                      {order.id}
+                    </TableCell>
+                    <TableCell className="text-gray-400">
+                      {new Date(order.createdAt).toLocaleString('vi-VN')}
+                    </TableCell>
+                    <TableCell className="text-white">{order.symbol}</TableCell>
+                    <TableCell>
+                      <Badge variant="outline" className="border-gray-700">
+                        {order.type}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <Badge className={order.side === 'BUY' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-red-500/10 text-red-500'}>
+                        {order.side}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-right text-white">
+                      {order.price ? `$${order.price.toLocaleString()}` : 'Market'}
+                    </TableCell>
+                    <TableCell className="text-right text-gray-300">{order.quantity}</TableCell>
+                    <TableCell className="text-right text-gray-300">{order.filled}</TableCell>
+                    <TableCell className="text-right text-gray-300">{order.remaining}</TableCell>
+                    <TableCell>
+                      <Badge className={
+                        order.status === 'FILLED' ? 'bg-emerald-500/10 text-emerald-500' :
+                        order.status === 'NEW' ? 'bg-yellow-500/10 text-yellow-500' :
+                        order.status === 'PARTIAL' ? 'bg-blue-500/10 text-blue-500' :
+                        order.status === 'REJECTED' ? 'bg-red-500/10 text-red-500' :
+                        'bg-gray-500/10 text-gray-500'
+                      }>
+                        {getStatusDisplay(order.status)}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex items-center justify-end gap-2">
                         <Button
                           size="sm"
                           variant="ghost"
-                          className="text-red-500 hover:text-red-400 hover:bg-red-500/10"
-                          onClick={() => handleCancelOrder(order.id)}
+                          onClick={() => onNavigate?.('order-detail', order.id)}
                         >
-                          <Trash2 className="w-4 h-4" />
+                          <Eye className="w-4 h-4" />
                         </Button>
-                      )}
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+                        {(order.status === 'NEW' || order.status === 'PARTIAL') && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="text-red-500 hover:text-red-400 hover:bg-red-500/10"
+                            onClick={() => handleCancelOrder(order.id)}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        )}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        )}
       </Card>
+
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-center gap-2 mt-6">
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={currentPage === 1}
+            onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+            className="border-gray-700"
+          >
+            Previous
+          </Button>
+          <span className="text-gray-400 text-sm">
+            Page {currentPage} of {totalPages}
+          </span>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={currentPage === totalPages}
+            onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+            className="border-gray-700"
+          >
+            Next
+          </Button>
+        </div>
+      )}
 
       {/* Cancel Order Dialog */}
       <AlertDialog open={!!cancelOrderId} onOpenChange={() => setCancelOrderId(null)}>

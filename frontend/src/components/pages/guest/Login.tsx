@@ -28,41 +28,86 @@ export default function Login({ onNavigate }: LoginProps) {
     setError('');
     setLoading(true);
 
-    const res = await AuthApi.login({ email, password });
-    if (!res.ok) {
-      setError(res.error);
+    try {
+      console.log('[Login] Attempting login for:', email);
+      const res = await AuthApi.login({ email, password });
+      
+      if (!res.ok) {
+        console.error('[Login] Login failed:', res.error);
+        setError(res.error || 'Login failed');
+        setLoading(false);
+        return;
+      }
+
+      console.log('[Login] Response received:', {
+        requiresTwoFactor: res.data.requiresTwoFactor,
+        hasAccessToken: !!res.data.accessToken,
+        user: res.data.user
+      });
+
+      if (res.data.requiresTwoFactor) {
+        console.log('[Login] 2FA required, showing 2FA form');
+        setTwoFARequired(true);
+        setLoading(false);
+        return;
+      }
+
+      if (!res.data.accessToken || res.data.accessToken === '') {
+        console.error('[Login] No access token in response');
+        setError('Login failed: No access token received');
+        setLoading(false);
+        return;
+      }
+
+      console.log('[Login] Login successful, setting access token');
+      setAccessToken(res.data.accessToken);
+      onNavigate?.('trader-dashboard');
+    } catch (err: any) {
+      console.error('[Login] Unexpected error:', err);
+      setError(err?.message || 'An unexpected error occurred');
+    } finally {
       setLoading(false);
-      return;
     }
-    if (res.data.requiresTwoFactor) {
-      setTwoFARequired(true);
-      setLoading(false);
-      return;
-    }
-    if (!res.data.accessToken || res.data.accessToken === '') {
-      setError('Login failed: No access token received');
-      setLoading(false);
-      return;
-    }
-    console.log('[Login] Setting access token:', res.data.accessToken.substring(0, 20) + '...');
-    setAccessToken(res.data.accessToken);
-    onNavigate?.('trader-dashboard');
-    setLoading(false);
   };
 
   const handleSubmit2FA = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setLoading(true);
-    const res = await AuthApi.login2fa({ email, code: twoFACode });
-    if (!res.ok) {
-      setError(res.error);
+
+    if (!twoFACode.trim()) {
+      setError('Please enter the 2FA code');
       setLoading(false);
       return;
     }
-    setAccessToken(res.data.accessToken);
-    onNavigate?.('trader-dashboard');
-    setLoading(false);
+
+    try {
+      console.log('[Login] Verifying 2FA code for:', email);
+      const res = await AuthApi.login2fa({ email, code: twoFACode });
+      
+      if (!res.ok) {
+        console.error('[Login] 2FA verification failed:', res.error);
+        setError(res.error || 'Invalid 2FA code');
+        setLoading(false);
+        return;
+      }
+
+      if (!res.data.accessToken || res.data.accessToken === '') {
+        console.error('[Login] No access token after 2FA verification');
+        setError('Login failed: No access token received');
+        setLoading(false);
+        return;
+      }
+
+      console.log('[Login] 2FA verification successful');
+      setAccessToken(res.data.accessToken);
+      onNavigate?.('trader-dashboard');
+    } catch (err: any) {
+      console.error('[Login] Unexpected error during 2FA:', err);
+      setError(err?.message || 'An unexpected error occurred');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (

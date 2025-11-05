@@ -12,11 +12,11 @@ namespace CryptoTrading.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.DropTable(
-                name: "WatchlistItems");
-
-            migrationBuilder.DropTable(
-                name: "Watchlists");
+            // Drop tables only if they exist (using raw SQL for IF EXISTS)
+            migrationBuilder.Sql(@"
+                DROP TABLE IF EXISTS `WatchlistItems`;
+                DROP TABLE IF EXISTS `Watchlists`;
+            ");
 
             migrationBuilder.RenameTable(
                 name: "MarketStats",
@@ -107,188 +107,97 @@ namespace CryptoTrading.Migrations
                 oldClrType: typeof(DateTime),
                 oldType: "datetime(6)");
 
-            migrationBuilder.CreateTable(
-                name: "Orders",
-                columns: table => new
-                {
-                    Id = table.Column<ulong>(type: "BIGINT UNSIGNED", nullable: false)
-                        .Annotation("MySql:ValueGenerationStrategy", MySqlValueGenerationStrategy.IdentityColumn),
-                    UserId = table.Column<int>(type: "int", nullable: false),
-                    CryptocurrencyId = table.Column<int>(type: "int", nullable: false),
-                    Side = table.Column<string>(type: "varchar(4)", maxLength: 4, nullable: false)
-                        .Annotation("MySql:CharSet", "utf8mb4"),
-                    Type = table.Column<string>(type: "varchar(12)", maxLength: 12, nullable: false)
-                        .Annotation("MySql:CharSet", "utf8mb4"),
-                    Status = table.Column<string>(type: "varchar(12)", maxLength: 12, nullable: false)
-                        .Annotation("MySql:CharSet", "utf8mb4"),
-                    PriceUsd = table.Column<decimal>(type: "decimal(30,10)", nullable: true),
-                    QuantityCoin = table.Column<decimal>(type: "decimal(38,18)", nullable: false),
-                    FilledQty = table.Column<decimal>(type: "decimal(38,18)", nullable: false),
-                    CreatedAt = table.Column<DateTime>(type: "datetime(6)", nullable: false),
-                    UpdatedAt = table.Column<DateTime>(type: "datetime(6)", nullable: true)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_Orders", x => x.Id);
-                    table.ForeignKey(
-                        name: "FK_Orders_Cryptocurrencies_CryptocurrencyId",
-                        column: x => x.CryptocurrencyId,
-                        principalTable: "Cryptocurrencies",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Cascade);
-                    table.ForeignKey(
-                        name: "FK_Orders_Users_UserId",
-                        column: x => x.UserId,
-                        principalTable: "Users",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Cascade);
-                })
-                .Annotation("MySql:CharSet", "utf8mb4");
+            // Create Orders table only if it doesn't exist
+            migrationBuilder.Sql(@"
+                CREATE TABLE IF NOT EXISTS `Orders` (
+                    `Id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+                    `UserId` int NOT NULL,
+                    `CryptocurrencyId` int NOT NULL,
+                    `Side` varchar(4) CHARACTER SET utf8mb4 NOT NULL,
+                    `Type` varchar(12) CHARACTER SET utf8mb4 NOT NULL,
+                    `Status` varchar(12) CHARACTER SET utf8mb4 NOT NULL,
+                    `PriceUsd` decimal(30,10) NULL,
+                    `QuantityCoin` decimal(38,18) NOT NULL,
+                    `FilledQty` decimal(38,18) NOT NULL,
+                    `CreatedAt` datetime(6) NOT NULL,
+                    `UpdatedAt` datetime(6) NULL,
+                    CONSTRAINT `PK_Orders` PRIMARY KEY (`Id`),
+                    CONSTRAINT `FK_Orders_Cryptocurrencies_CryptocurrencyId` FOREIGN KEY (`CryptocurrencyId`) REFERENCES `Cryptocurrencies` (`Id`) ON DELETE CASCADE,
+                    CONSTRAINT `FK_Orders_Users_UserId` FOREIGN KEY (`UserId`) REFERENCES `Users` (`Id`) ON DELETE CASCADE
+                ) CHARACTER SET=utf8mb4;
+            ");
 
-            migrationBuilder.CreateTable(
-                name: "UserWatchlist",
-                columns: table => new
-                {
-                    UserId = table.Column<int>(type: "int", nullable: false),
-                    CryptocurrencyId = table.Column<int>(type: "int", nullable: false),
-                    CreatedAt = table.Column<DateTime>(type: "datetime(6)", nullable: false, defaultValueSql: "CURRENT_TIMESTAMP(6)")
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_UserWatchlist", x => new { x.UserId, x.CryptocurrencyId });
-                    table.ForeignKey(
-                        name: "FK_UserWatchlist_Cryptocurrencies_CryptocurrencyId",
-                        column: x => x.CryptocurrencyId,
-                        principalTable: "Cryptocurrencies",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Cascade);
-                    table.ForeignKey(
-                        name: "FK_UserWatchlist_Users_UserId",
-                        column: x => x.UserId,
-                        principalTable: "Users",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Cascade);
-                })
-                .Annotation("MySql:CharSet", "utf8mb4");
+            // Create UserWatchlist table only if it doesn't exist
+            migrationBuilder.Sql(@"
+                CREATE TABLE IF NOT EXISTS `UserWatchlist` (
+                    `UserId` int NOT NULL,
+                    `CryptocurrencyId` int NOT NULL,
+                    `CreatedAt` datetime(6) NOT NULL DEFAULT (CURRENT_TIMESTAMP(6)),
+                    CONSTRAINT `PK_UserWatchlist` PRIMARY KEY (`UserId`, `CryptocurrencyId`),
+                    CONSTRAINT `FK_UserWatchlist_Cryptocurrencies_CryptocurrencyId` FOREIGN KEY (`CryptocurrencyId`) REFERENCES `Cryptocurrencies` (`Id`) ON DELETE CASCADE,
+                    CONSTRAINT `FK_UserWatchlist_Users_UserId` FOREIGN KEY (`UserId`) REFERENCES `Users` (`Id`) ON DELETE CASCADE
+                ) CHARACTER SET=utf8mb4;
+            ");
 
-            migrationBuilder.CreateTable(
-                name: "Wallets",
-                columns: table => new
-                {
-                    Id = table.Column<ulong>(type: "BIGINT UNSIGNED", nullable: false)
-                        .Annotation("MySql:ValueGenerationStrategy", MySqlValueGenerationStrategy.IdentityColumn),
-                    UserId = table.Column<int>(type: "int", nullable: false),
-                    AssetType = table.Column<string>(type: "varchar(10)", maxLength: 10, nullable: false)
-                        .Annotation("MySql:CharSet", "utf8mb4"),
-                    CurrencyCode = table.Column<string>(type: "varchar(3)", maxLength: 3, nullable: true)
-                        .Annotation("MySql:CharSet", "utf8mb4"),
-                    CryptocurrencyId = table.Column<int>(type: "int", nullable: true)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_Wallets", x => x.Id);
-                    table.ForeignKey(
-                        name: "FK_Wallets_Cryptocurrencies_CryptocurrencyId",
-                        column: x => x.CryptocurrencyId,
-                        principalTable: "Cryptocurrencies",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.SetNull);
-                    table.ForeignKey(
-                        name: "FK_Wallets_Users_UserId",
-                        column: x => x.UserId,
-                        principalTable: "Users",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Cascade);
-                })
-                .Annotation("MySql:CharSet", "utf8mb4");
+            // Create Wallets table only if it doesn't exist
+            migrationBuilder.Sql(@"
+                CREATE TABLE IF NOT EXISTS `Wallets` (
+                    `Id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+                    `UserId` int NOT NULL,
+                    `AssetType` varchar(10) CHARACTER SET utf8mb4 NOT NULL,
+                    `CurrencyCode` varchar(3) CHARACTER SET utf8mb4 NULL,
+                    `CryptocurrencyId` int NULL,
+                    CONSTRAINT `PK_Wallets` PRIMARY KEY (`Id`),
+                    CONSTRAINT `FK_Wallets_Cryptocurrencies_CryptocurrencyId` FOREIGN KEY (`CryptocurrencyId`) REFERENCES `Cryptocurrencies` (`Id`) ON DELETE SET NULL,
+                    CONSTRAINT `FK_Wallets_Users_UserId` FOREIGN KEY (`UserId`) REFERENCES `Users` (`Id`) ON DELETE CASCADE
+                ) CHARACTER SET=utf8mb4;
+            ");
 
-            migrationBuilder.CreateTable(
-                name: "Trades",
-                columns: table => new
-                {
-                    Id = table.Column<ulong>(type: "BIGINT UNSIGNED", nullable: false)
-                        .Annotation("MySql:ValueGenerationStrategy", MySqlValueGenerationStrategy.IdentityColumn),
-                    OrderId = table.Column<ulong>(type: "BIGINT UNSIGNED", nullable: false),
-                    CryptocurrencyId = table.Column<int>(type: "int", nullable: false),
-                    PriceUsd = table.Column<decimal>(type: "decimal(30,10)", nullable: false),
-                    QuantityCoin = table.Column<decimal>(type: "decimal(38,18)", nullable: false),
-                    FeeUsd = table.Column<decimal>(type: "decimal(30,10)", nullable: false),
-                    CreatedAt = table.Column<DateTime>(type: "datetime(6)", nullable: false)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_Trades", x => x.Id);
-                    table.ForeignKey(
-                        name: "FK_Trades_Cryptocurrencies_CryptocurrencyId",
-                        column: x => x.CryptocurrencyId,
-                        principalTable: "Cryptocurrencies",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Cascade);
-                    table.ForeignKey(
-                        name: "FK_Trades_Orders_OrderId",
-                        column: x => x.OrderId,
-                        principalTable: "Orders",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Cascade);
-                })
-                .Annotation("MySql:CharSet", "utf8mb4");
+            // Create Trades table only if it doesn't exist
+            migrationBuilder.Sql(@"
+                CREATE TABLE IF NOT EXISTS `Trades` (
+                    `Id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+                    `OrderId` BIGINT UNSIGNED NOT NULL,
+                    `CryptocurrencyId` int NOT NULL,
+                    `PriceUsd` decimal(30,10) NOT NULL,
+                    `QuantityCoin` decimal(38,18) NOT NULL,
+                    `FeeUsd` decimal(30,10) NOT NULL,
+                    `CreatedAt` datetime(6) NOT NULL,
+                    CONSTRAINT `PK_Trades` PRIMARY KEY (`Id`),
+                    CONSTRAINT `FK_Trades_Cryptocurrencies_CryptocurrencyId` FOREIGN KEY (`CryptocurrencyId`) REFERENCES `Cryptocurrencies` (`Id`) ON DELETE CASCADE,
+                    CONSTRAINT `FK_Trades_Orders_OrderId` FOREIGN KEY (`OrderId`) REFERENCES `Orders` (`Id`) ON DELETE CASCADE
+                ) CHARACTER SET=utf8mb4;
+            ");
 
-            migrationBuilder.CreateTable(
-                name: "OrderHolds",
-                columns: table => new
-                {
-                    Id = table.Column<ulong>(type: "BIGINT UNSIGNED", nullable: false)
-                        .Annotation("MySql:ValueGenerationStrategy", MySqlValueGenerationStrategy.IdentityColumn),
-                    OrderId = table.Column<ulong>(type: "BIGINT UNSIGNED", nullable: false),
-                    WalletId = table.Column<ulong>(type: "BIGINT UNSIGNED", nullable: false),
-                    Amount = table.Column<decimal>(type: "decimal(38,18)", nullable: false),
-                    CreatedAt = table.Column<DateTime>(type: "datetime(6)", nullable: false),
-                    ReleasedAt = table.Column<DateTime>(type: "datetime(6)", nullable: true)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_OrderHolds", x => x.Id);
-                    table.ForeignKey(
-                        name: "FK_OrderHolds_Orders_OrderId",
-                        column: x => x.OrderId,
-                        principalTable: "Orders",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Cascade);
-                    table.ForeignKey(
-                        name: "FK_OrderHolds_Wallets_WalletId",
-                        column: x => x.WalletId,
-                        principalTable: "Wallets",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Cascade);
-                })
-                .Annotation("MySql:CharSet", "utf8mb4");
+            // Create OrderHolds table only if it doesn't exist
+            migrationBuilder.Sql(@"
+                CREATE TABLE IF NOT EXISTS `OrderHolds` (
+                    `Id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+                    `OrderId` BIGINT UNSIGNED NOT NULL,
+                    `WalletId` BIGINT UNSIGNED NOT NULL,
+                    `Amount` decimal(38,18) NOT NULL,
+                    `CreatedAt` datetime(6) NOT NULL,
+                    `ReleasedAt` datetime(6) NULL,
+                    CONSTRAINT `PK_OrderHolds` PRIMARY KEY (`Id`),
+                    CONSTRAINT `FK_OrderHolds_Orders_OrderId` FOREIGN KEY (`OrderId`) REFERENCES `Orders` (`Id`) ON DELETE CASCADE,
+                    CONSTRAINT `FK_OrderHolds_Wallets_WalletId` FOREIGN KEY (`WalletId`) REFERENCES `Wallets` (`Id`) ON DELETE CASCADE
+                ) CHARACTER SET=utf8mb4;
+            ");
 
-            migrationBuilder.CreateTable(
-                name: "WalletMovements",
-                columns: table => new
-                {
-                    Id = table.Column<ulong>(type: "BIGINT UNSIGNED", nullable: false)
-                        .Annotation("MySql:ValueGenerationStrategy", MySqlValueGenerationStrategy.IdentityColumn),
-                    WalletId = table.Column<ulong>(type: "BIGINT UNSIGNED", nullable: false),
-                    RefType = table.Column<string>(type: "varchar(50)", maxLength: 50, nullable: false)
-                        .Annotation("MySql:CharSet", "utf8mb4"),
-                    RefId = table.Column<ulong>(type: "BIGINT UNSIGNED", nullable: true),
-                    Amount = table.Column<decimal>(type: "decimal(38,18)", nullable: false),
-                    Note = table.Column<string>(type: "varchar(255)", maxLength: 255, nullable: true)
-                        .Annotation("MySql:CharSet", "utf8mb4"),
-                    CreatedAt = table.Column<DateTime>(type: "datetime(6)", nullable: false)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_WalletMovements", x => x.Id);
-                    table.ForeignKey(
-                        name: "FK_WalletMovements_Wallets_WalletId",
-                        column: x => x.WalletId,
-                        principalTable: "Wallets",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Cascade);
-                })
-                .Annotation("MySql:CharSet", "utf8mb4");
+            // Create WalletMovements table only if it doesn't exist
+            migrationBuilder.Sql(@"
+                CREATE TABLE IF NOT EXISTS `WalletMovements` (
+                    `Id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+                    `WalletId` BIGINT UNSIGNED NOT NULL,
+                    `RefType` varchar(50) CHARACTER SET utf8mb4 NOT NULL,
+                    `RefId` BIGINT UNSIGNED NULL,
+                    `Amount` decimal(38,18) NOT NULL,
+                    `Note` varchar(255) CHARACTER SET utf8mb4 NULL,
+                    `CreatedAt` datetime(6) NOT NULL,
+                    CONSTRAINT `PK_WalletMovements` PRIMARY KEY (`Id`),
+                    CONSTRAINT `FK_WalletMovements_Wallets_WalletId` FOREIGN KEY (`WalletId`) REFERENCES `Wallets` (`Id`) ON DELETE CASCADE
+                ) CHARACTER SET=utf8mb4;
+            ");
 
             migrationBuilder.CreateIndex(
                 name: "IX_OrderHolds_OrderId",
