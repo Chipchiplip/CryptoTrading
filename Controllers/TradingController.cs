@@ -167,7 +167,7 @@ public class TradingController : ControllerBase
         {
             var balance = movements.GetValueOrDefault(wallet.Id, 0m);
             var crypto = marketData.FirstOrDefault(c => 
-                c.Symbol.Equals(wallet.Cryptocurrency.Symbol, StringComparison.OrdinalIgnoreCase));
+                c.Symbol.Equals(wallet.Cryptocurrency!.Symbol, StringComparison.OrdinalIgnoreCase));
             var price = crypto?.CurrentPrice ?? 0m;
             var valueUsd = balance * price;
             

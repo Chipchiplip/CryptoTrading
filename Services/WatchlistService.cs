@@ -236,11 +236,11 @@ namespace CryptoTrading.Services
             );
         }
 
-        public async Task<bool> EnsureDefaultWatchlistExistsAsync(int userId)
+        public Task<bool> EnsureDefaultWatchlistExistsAsync(int userId)
         {
             // With UserWatchlist, we don't need to create a watchlist entity
             // The watchlist is implicit - just return true
-            return true;
+            return Task.FromResult(true);
         }
 
         public async Task<bool> CanCreateMoreWatchlistsAsync(int userId)
