@@ -24,39 +24,69 @@ export default function TraderDashboard({ onNavigate }: TraderDashboardProps) {
     try {
       console.log('[Dashboard] Fetching dashboard data...');
       
-      // Fetch summary, NAV history, and PnL history in parallel
+      // Add timeout to requests
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 8000); // 8 second timeout
+      
+      // Fetch summary, NAV history, and PnL history in parallel with timeout
       const [summaryRes, navRes, pnlRes] = await Promise.all([
-        DashboardApi.getSummary(),
-        DashboardApi.getNavHistory(),
-        DashboardApi.getPnlHistory('hourly')
+        DashboardApi.getSummary().catch(() => ({ ok: false, error: 'Network error', data: null })),
+        DashboardApi.getNavHistory().catch(() => ({ ok: false, error: 'Network error', data: null })),
+        DashboardApi.getPnlHistory('hourly').catch(() => ({ ok: false, error: 'Network error', data: null }))
       ]);
       
-      if (!summaryRes.ok) {
-        console.error('[Dashboard] Summary error:', summaryRes.error);
-        setError(summaryRes.error || 'Failed to load dashboard summary');
+      clearTimeout(timeoutId);
+      
+      // Handle errors gracefully - show error but don't block the UI completely
+      if (!summaryRes.ok && !navRes.ok && !pnlRes.ok) {
+        console.warn('[Dashboard] All API calls failed - backend may be unavailable');
+        setError(summaryRes.error || navRes.error || pnlRes.error || 'Backend service unavailable. Please ensure the backend server is running.');
+        setLoading(false);
         return;
       }
       
-      if (!navRes.ok) {
-        console.error('[Dashboard] NAV history error:', navRes.error);
-        setError(navRes.error || 'Failed to load NAV history');
-        return;
+      // Set data for successful calls, use defaults for failed ones
+      if (summaryRes.ok) {
+        setSummary(summaryRes.data);
+      } else {
+        console.warn('[Dashboard] Summary failed:', summaryRes.error);
+        // Set default summary if API fails
+        setSummary({
+          totalBalance: 0,
+          totalBalanceChange: 0,
+          totalBalanceChangePercent: 0,
+          todayPnl: 0,
+          todayPnlPercent: 0,
+          availableBalance: 0,
+          availableBalancePercent: 0,
+          openOrdersCount: 0,
+          openOrdersBuy: 0,
+          openOrdersSell: 0
+        });
       }
       
-      if (!pnlRes.ok) {
-        console.error('[Dashboard] PnL history error:', pnlRes.error);
-        setError(pnlRes.error || 'Failed to load PnL history');
-        return;
+      if (navRes.ok) {
+        setNavHistory(navRes.data);
+      } else {
+        console.warn('[Dashboard] NAV history failed:', navRes.error);
+        setNavHistory({ data: [] });
+      }
+      
+      if (pnlRes.ok) {
+        setPnlHistory(pnlRes.data);
+      } else {
+        console.warn('[Dashboard] PnL history failed:', pnlRes.error);
+        setPnlHistory({ data: [] });
       }
       
       console.log('[Dashboard] Data loaded:', { summary: summaryRes.data, nav: navRes.data, pnl: pnlRes.data });
-      
-      setSummary(summaryRes.data);
-      setNavHistory(navRes.data);
-      setPnlHistory(pnlRes.data);
     } catch (e: any) {
       console.error('[Dashboard] Fetch error:', e);
-      setError(e?.message || 'Failed to load dashboard data');
+      if (e.name === 'AbortError') {
+        setError('Request timeout - backend server may be unavailable');
+      } else {
+        setError(e?.message || 'Failed to load dashboard data');
+      }
     } finally {
       setLoading(false);
     }
@@ -102,25 +132,50 @@ export default function TraderDashboard({ onNavigate }: TraderDashboardProps) {
     );
   }
 
-  if (error) {
-    return (
-      <div className="p-4 lg:p-8">
-        <Alert className="bg-red-500/10 border-red-500/50 text-red-500">
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
-      </div>
-    );
-  }
+  // Show error banner but still render dashboard with default/empty data
+  // This allows users to see the UI even when backend is unavailable
+  const hasData = summary && navHistory && pnlHistory;
+  
+  // Use default data if API failed but we still want to show the UI
+  const displaySummary = summary || {
+    totalBalance: 0,
+    totalBalanceChange: 0,
+    totalBalanceChangePercent: 0,
+    todayPnl: 0,
+    todayPnlPercent: 0,
+    availableBalance: 0,
+    availableBalancePercent: 0,
+    openOrdersCount: 0,
+    openOrdersBuy: 0,
+    openOrdersSell: 0
+  };
+  
+  const displayNavHistory = navHistory || { data: [] };
+  const displayPnlHistory = pnlHistory || { data: [] };
 
-  if (!summary || !navHistory || !pnlHistory) {
-    return null;
-  }
-
-  const navData = navHistory.data.map(h => ({ date: h.date, value: h.value }));
-  const pnlData = pnlHistory.data.map(h => ({ time: h.time, pnl: h.pnl }));
+  const navData = displayNavHistory.data.map(h => ({ date: h.date, value: h.value }));
+  const pnlData = displayPnlHistory.data.map(h => ({ time: h.time, pnl: h.pnl }));
 
   return (
     <div className="p-4 lg:p-8 space-y-6">
+      {/* Error Banner - Show at top but don't block UI */}
+      {error && (
+        <Alert className="bg-yellow-500/10 border-yellow-500/50 text-yellow-400 mb-4">
+          <AlertDescription>
+            <div className="flex items-center justify-between">
+              <span>{error}</span>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={fetchDashboardData}
+                className="ml-4 border-yellow-500/50 text-yellow-400 hover:bg-yellow-500/20"
+              >
+                Retry
+              </Button>
+            </div>
+          </AlertDescription>
+        </Alert>
+      )}
       {/* Quick Stats */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <Card className="bg-gray-900 border-gray-800 p-6">
@@ -130,10 +185,10 @@ export default function TraderDashboard({ onNavigate }: TraderDashboardProps) {
               <Wallet className="w-5 h-5 text-emerald-500" />
             </div>
           </div>
-          <div className="text-3xl text-white mb-1">{formatCurrency(summary.totalBalance)}</div>
-          <div className={`flex items-center gap-1 text-sm ${summary.totalBalanceChange >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
-            {summary.totalBalanceChange >= 0 ? <ArrowUpRight className="w-4 h-4" /> : <ArrowDownRight className="w-4 h-4" />}
-            {summary.totalBalanceChange >= 0 ? '+' : ''}{formatCurrency(summary.totalBalanceChange)} ({summary.totalBalanceChangePercent >= 0 ? '+' : ''}{summary.totalBalanceChangePercent.toFixed(2)}%)
+          <div className="text-3xl text-white mb-1">{formatCurrency(displaySummary.totalBalance)}</div>
+          <div className={`flex items-center gap-1 text-sm ${displaySummary.totalBalanceChange >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
+            {displaySummary.totalBalanceChange >= 0 ? <ArrowUpRight className="w-4 h-4" /> : <ArrowDownRight className="w-4 h-4" />}
+            {displaySummary.totalBalanceChange >= 0 ? '+' : ''}{formatCurrency(displaySummary.totalBalanceChange)} ({displaySummary.totalBalanceChangePercent >= 0 ? '+' : ''}{displaySummary.totalBalanceChangePercent.toFixed(2)}%)
           </div>
         </Card>
 
@@ -144,12 +199,12 @@ export default function TraderDashboard({ onNavigate }: TraderDashboardProps) {
               <TrendingUp className="w-5 h-5 text-emerald-500" />
             </div>
           </div>
-          <div className={`text-3xl mb-1 ${summary.todayPnl >= 0 ? 'text-white' : 'text-red-500'}`}>
-            {summary.todayPnl >= 0 ? '+' : ''}{formatCurrency(summary.todayPnl)}
+          <div className={`text-3xl mb-1 ${displaySummary.todayPnl >= 0 ? 'text-white' : 'text-red-500'}`}>
+            {displaySummary.todayPnl >= 0 ? '+' : ''}{formatCurrency(displaySummary.todayPnl)}
           </div>
-          <div className={`flex items-center gap-1 text-sm ${summary.todayPnlPercent >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
-            {summary.todayPnlPercent >= 0 ? <ArrowUpRight className="w-4 h-4" /> : <ArrowDownRight className="w-4 h-4" />}
-            {summary.todayPnlPercent >= 0 ? '+' : ''}{summary.todayPnlPercent.toFixed(2)}%
+          <div className={`flex items-center gap-1 text-sm ${displaySummary.todayPnlPercent >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
+            {displaySummary.todayPnlPercent >= 0 ? <ArrowUpRight className="w-4 h-4" /> : <ArrowDownRight className="w-4 h-4" />}
+            {displaySummary.todayPnlPercent >= 0 ? '+' : ''}{displaySummary.todayPnlPercent.toFixed(2)}%
           </div>
         </Card>
 
@@ -160,8 +215,8 @@ export default function TraderDashboard({ onNavigate }: TraderDashboardProps) {
               <DollarSign className="w-5 h-5 text-blue-500" />
             </div>
           </div>
-          <div className="text-3xl text-white mb-1">{formatCurrency(summary.availableBalance)}</div>
-          <div className="text-gray-400 text-sm">{summary.availableBalancePercent.toFixed(1)}% of total</div>
+          <div className="text-3xl text-white mb-1">{formatCurrency(displaySummary.availableBalance)}</div>
+          <div className="text-gray-400 text-sm">{displaySummary.availableBalancePercent.toFixed(1)}% of total</div>
         </Card>
 
         <Card className="bg-gray-900 border-gray-800 p-6">
@@ -171,8 +226,8 @@ export default function TraderDashboard({ onNavigate }: TraderDashboardProps) {
               <Activity className="w-5 h-5 text-yellow-500" />
             </div>
           </div>
-          <div className="text-3xl text-white mb-1">{summary.openOrdersCount}</div>
-          <div className="text-gray-400 text-sm">{summary.openOrdersBuy} Buy, {summary.openOrdersSell} Sell</div>
+          <div className="text-3xl text-white mb-1">{displaySummary.openOrdersCount}</div>
+          <div className="text-gray-400 text-sm">{displaySummary.openOrdersBuy} Buy, {displaySummary.openOrdersSell} Sell</div>
         </Card>
       </div>
 

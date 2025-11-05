@@ -55,12 +55,15 @@
     },
   server: {
     port: 3000,
+    host: true, // Allow external access
     open: true,
+    strictPort: false, // Try next available port if 3000 is busy
     proxy: {
       '/api': {
         target: process.env.VITE_API_TARGET || 'http://localhost:5299',
         changeOrigin: true,
         secure: false,
+        timeout: 5000, // 5 second timeout
         configure: (proxy, _options) => {
           proxy.on('error', (err: any, _req, _res) => {
             // Silently ignore proxy errors to prevent console spam
@@ -75,6 +78,7 @@
         ws: true,
         changeOrigin: true,
         secure: false,
+        timeout: 5000,
         configure: (proxy, _options) => {
           proxy.on('error', (err: any, _req, _res) => {
             // Silently ignore WebSocket proxy errors - SignalR will handle reconnection

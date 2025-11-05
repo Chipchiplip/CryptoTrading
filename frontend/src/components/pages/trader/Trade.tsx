@@ -1158,7 +1158,7 @@ export default function Trade({ onNavigate }: TradeProps) {
             <Button
               onClick={handleSubmit}
               disabled={!buyAmount || !useAmount}
-              className="w-full bg-[#f2c94c] text-black hover:bg-[#e5b73d] font-bold py-6 text-lg shadow-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+              className="w-full bg-[#f2c94c] text-black hover:bg-[#e5b73d] font-bold py-6 text-lg shadow-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all mt-4"
             >
               Mua {selectedPair.split('/')[0]}
             </Button>

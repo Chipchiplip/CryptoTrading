@@ -21,15 +21,33 @@ export default function Home({ onNavigate }: HomeProps) {
     const load = async () => {
       try {
         setError(null);
+        // Add timeout to requests
+        const timeoutId = setTimeout(() => controller.abort(), 8000); // 8 second timeout
+        
         const [statsRes, listRes] = await Promise.all([
-          fetch('/api/market/stats', { signal: controller.signal }),
-          fetch('/api/market/cryptocurrencies', { signal: controller.signal }),
+          fetch('/api/market/stats', { signal: controller.signal }).catch(() => ({ ok: false, status: 0 }) as Response),
+          fetch('/api/market/cryptocurrencies', { signal: controller.signal }).catch(() => ({ ok: false, status: 0 }) as Response),
         ]);
+        
+        clearTimeout(timeoutId);
+        
+        // Handle errors gracefully
+        if (!statsRes.ok || !listRes.ok) {
+          console.warn('[Home] API not available, using empty data');
+          if (!isMounted) return;
+          setOverview({
+            users: '—',
+            volume: 0,
+            markets: 0,
+            countries: 180,
+          });
+          setPopularCoins([]);
+          return;
+        }
+        
         const stats = await statsRes.json().catch(() => ({}));
         const list = await listRes.json().catch(() => []);
-        if (!statsRes.ok) throw new Error((stats as any)?.message || `HTTP ${statsRes.status}`);
-        if (!listRes.ok) throw new Error((list as any)?.message || `HTTP ${listRes.status}`);
-
+        
         if (!isMounted) return;
         setOverview({
           users: '—',
