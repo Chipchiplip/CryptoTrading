@@ -1,11 +1,10 @@
 import React, { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { TrendingUp, TrendingDown, Info, Loader2 } from 'lucide-react';
+import { TrendingUp, TrendingDown, Info, Loader2, Search, ChevronDown } from 'lucide-react';
 import { Card } from '../../ui/card';
 import { Button } from '../../ui/button';
 import { Input } from '../../ui/input';
 import { Label } from '../../ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../ui/select';
 import { Alert, AlertDescription } from '../../ui/alert';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '../../ui/dialog';
 import { Badge } from '../../ui/badge';
@@ -45,6 +44,8 @@ export default function Trade({ onNavigate }: TradeProps) {
   const [loadingChart, setLoadingChart] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [timeframe, setTimeframe] = useState<Timeframe>('1D');
+  const [showCoinSelector, setShowCoinSelector] = useState(false);
+  const [coinSearchQuery, setCoinSearchQuery] = useState('');
   
   const [pairs, setPairs] = useState<Crypto[]>([]);
   const [orderBook, setOrderBook] = useState<OrderBook | null>(null);
@@ -904,11 +905,11 @@ export default function Trade({ onNavigate }: TradeProps) {
   const isPositive = priceChange >= 0;
 
   return (
-    <div className="p-4 lg:p-8 bg-[#0d1117] min-h-screen">
+    <div className="p-4 lg:p-8 bg-[#1a1f2e] min-h-screen">
       {/* Header */}
       <div className="mb-6">
         <h1 className="text-3xl font-bold mb-2 text-white">Trade</h1>
-        <p className="text-gray-400">Execute market or limit orders</p>
+        <p className="text-gray-300">Execute market or limit orders</p>
       </div>
 
       {/* Error Message */}
@@ -922,7 +923,7 @@ export default function Trade({ onNavigate }: TradeProps) {
         {/* Left: Chart and Trading Info */}
         <div className="lg:col-span-2 space-y-6">
           {/* Coin Info and Pair Selection */}
-          <Card className="bg-[#1a1d24] border-gray-800 p-6">
+          <Card className="bg-[#243447] border-gray-700/50 p-6 shadow-lg">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-4">
                 <CoinIcon symbol={selectedCoin?.symbol || 'BTC'} image={selectedCoin?.image} size="lg" />
@@ -941,28 +942,27 @@ export default function Trade({ onNavigate }: TradeProps) {
                       {isPositive ? <TrendingUp className="w-3 h-3 mr-1" /> : <TrendingDown className="w-3 h-3 mr-1" />}
                       {isPositive ? '+' : ''}{priceChange.toFixed(2)}%
                     </Badge>
-                    <span className="text-gray-400 text-sm">1 ngày</span>
+                    <span className="text-gray-300 text-sm">1 ngày</span>
                   </div>
                 </div>
               </div>
-              <Select 
-                value={selectedPair} 
-                onValueChange={(value) => {
-                  setSelectedPair(value);
-                  setSearchParams({ pair: value });
-                }}
+              {/* Modern Coin Selector Button */}
+              <button
+                onClick={() => setShowCoinSelector(true)}
+                className="flex items-center gap-3 px-4 py-2.5 bg-[#2d4156] hover:bg-[#354a62] border border-gray-600 rounded-lg transition-all duration-200 hover:border-emerald-500/70 group shadow-md"
               >
-                <SelectTrigger className="bg-gray-800 border-gray-700 w-48">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent className="bg-gray-800 border-gray-700 text-white">
-                  {pairs.slice(0, 20).map((coin) => (
-                    <SelectItem key={coin.id} value={`${coin.symbol}/USDT`}>
-                      {coin.symbol}/USDT
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                <div className="flex items-center gap-2">
+                  <CoinIcon 
+                    symbol={selectedCoin?.symbol || 'BTC'} 
+                    image={selectedCoin?.image} 
+                    size="sm" 
+                  />
+                  <span className="text-white font-medium">
+                    {selectedPair}
+                  </span>
+                </div>
+                <ChevronDown className="w-4 h-4 text-gray-400 group-hover:text-emerald-500 transition-colors" />
+              </button>
             </div>
 
             {/* Timeframe Selector */}
@@ -974,8 +974,8 @@ export default function Trade({ onNavigate }: TradeProps) {
                   variant={timeframe === tf ? 'default' : 'outline'}
                   onClick={() => setTimeframe(tf)}
                   className={timeframe === tf 
-                    ? 'bg-emerald-500 text-black hover:bg-emerald-600' 
-                    : 'border-gray-700 text-gray-400 hover:bg-gray-800'
+                    ? 'bg-emerald-500 text-white hover:bg-emerald-600 shadow-lg shadow-emerald-500/30' 
+                    : 'border-gray-600 bg-[#2d4156] text-gray-200 hover:bg-[#354a62] hover:text-white'
                   }
                   size="sm"
                 >
@@ -1021,7 +1021,7 @@ export default function Trade({ onNavigate }: TradeProps) {
               )}
             </div>
 
-            <div className="mt-4 text-xs text-gray-500">
+            <div className="mt-4 text-xs text-gray-400">
               Lần gần nhất cập nhật trang: {new Date().toLocaleString('vi-VN', { 
                 year: 'numeric', 
                 month: '2-digit', 
@@ -1037,15 +1037,15 @@ export default function Trade({ onNavigate }: TradeProps) {
         {/* Right: Trading Form */}
         <div className="space-y-6">
           {/* Trading Form */}
-          <Card className="bg-[#1a1d24] border-gray-800 p-6">
+          <Card className="bg-[#243447] border-gray-700/50 p-6 shadow-lg">
             <div className="flex gap-2 mb-4 border-b border-gray-800 pb-2">
                 <button
                   type="button"
                   onClick={() => setSide('buy')}
                   className={`flex-1 py-2 px-4 rounded-t-md transition-all ${
                     side === 'buy' 
-                      ? 'border-b-2 border-[#f2c94c] text-[#f2c94c] bg-gray-800/50 font-semibold' 
-                      : 'text-gray-400 hover:text-gray-300 hover:bg-gray-800/30'
+                      ? 'border-b-2 border-emerald-500 text-emerald-400 bg-[#2d4156] font-semibold' 
+                      : 'text-gray-300 hover:text-white hover:bg-[#2d4156]/50'
                   }`}
                 >
                   Mua {selectedPair.split('/')[0]}
@@ -1055,8 +1055,8 @@ export default function Trade({ onNavigate }: TradeProps) {
                   onClick={() => setSide('sell')}
                   className={`flex-1 py-2 px-4 rounded-t-md transition-all ${
                     side === 'sell' 
-                      ? 'border-b-2 border-[#f2c94c] text-[#f2c94c] bg-gray-800/50 font-semibold' 
-                      : 'text-gray-400 hover:text-gray-300 hover:bg-gray-800/30'
+                      ? 'border-b-2 border-red-500 text-red-400 bg-[#2d4156] font-semibold' 
+                      : 'text-gray-300 hover:text-white hover:bg-[#2d4156]/50'
                   }`}
                 >
                   Bán {selectedPair.split('/')[0]}
@@ -1071,8 +1071,8 @@ export default function Trade({ onNavigate }: TradeProps) {
                 onClick={() => setOrderType('MARKET')}
                 className={`flex-1 font-medium ${
                   orderType === 'MARKET' 
-                    ? 'bg-emerald-500 text-black hover:bg-emerald-600 shadow-sm' 
-                    : 'border-gray-700 text-gray-300 hover:bg-gray-800 hover:text-white hover:border-gray-600'
+                    ? 'bg-emerald-500 text-white hover:bg-emerald-600 shadow-lg shadow-emerald-500/30' 
+                    : 'border-gray-600 bg-[#2d4156] text-gray-200 hover:bg-[#354a62] hover:text-white hover:border-gray-500'
                 }`}
                 size="sm"
               >
@@ -1084,8 +1084,8 @@ export default function Trade({ onNavigate }: TradeProps) {
                 onClick={() => setOrderType('LIMIT')}
                 className={`flex-1 font-medium ${
                   orderType === 'LIMIT' 
-                    ? 'bg-emerald-500 text-black hover:bg-emerald-600 shadow-sm' 
-                    : 'border-gray-700 text-gray-300 hover:bg-gray-800 hover:text-white hover:border-gray-600'
+                    ? 'bg-emerald-500 text-white hover:bg-emerald-600 shadow-lg shadow-emerald-500/30' 
+                    : 'border-gray-600 bg-[#2d4156] text-gray-200 hover:bg-[#354a62] hover:text-white hover:border-gray-500'
                 }`}
                 size="sm"
               >
@@ -1119,16 +1119,16 @@ export default function Trade({ onNavigate }: TradeProps) {
 
                 {/* You Buy */}
                 <div>
-                  <Label className="text-gray-400 mb-2 block">Bạn mua</Label>
+                  <Label className="text-gray-200 mb-2 block">Bạn mua</Label>
                   <div className="flex gap-2">
                   <Input
                     type="number"
                       placeholder="0"
                       value={buyAmount}
                       onChange={(e) => handleBuyAmountChange(e.target.value)}
-                      className="bg-gray-800 border-gray-700 text-white flex-1"
+                      className="bg-[#2d4156] border-gray-600 text-white placeholder:text-gray-400 flex-1 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
                     />
-                    <div className="flex items-center justify-center px-3 py-2 border border-gray-700 bg-gray-800/50 text-gray-300 rounded-md w-20 text-sm font-medium cursor-default">
+                    <div className="flex items-center justify-center px-3 py-2 border border-gray-600 bg-[#2d4156] text-gray-200 rounded-md w-20 text-sm font-medium cursor-default">
                       {selectedPair.split('/')[0]}
                     </div>
                   </div>
@@ -1139,29 +1139,53 @@ export default function Trade({ onNavigate }: TradeProps) {
 
                 {/* You Use */}
             <div>
-                  <Label className="text-gray-400 mb-2 block">Bạn sử dụng{orderType === 'LIMIT' ? ' (dự kiến)' : ''}</Label>
+                  <Label className="text-gray-200 mb-2 block">Bạn sử dụng{orderType === 'LIMIT' ? ' (dự kiến)' : ''}</Label>
                   <div className="flex gap-2">
               <Input
                 type="number"
                       placeholder="10 - 50,000"
                       value={useAmount}
                       onChange={(e) => handleUseAmountChange(e.target.value)}
-                      className="bg-gray-800 border-gray-700 text-white flex-1"
+                      className="bg-[#2d4156] border-gray-600 text-white placeholder:text-gray-400 flex-1 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
                     />
-                    <div className="flex items-center justify-center px-3 py-2 border border-gray-700 bg-gray-800/50 text-gray-300 rounded-md w-20 text-sm font-medium cursor-default">
+                    <div className="flex items-center justify-center px-3 py-2 border border-gray-600 bg-[#2d4156] text-gray-200 rounded-md w-20 text-sm font-medium cursor-default">
                       {selectedPair.split('/')[1]}
                     </div>
               </div>
             </div>
 
                 {/* Buy Button */}
-            <Button
-              onClick={handleSubmit}
-              disabled={!buyAmount || !useAmount}
-              className="w-full bg-[#f2c94c] text-black hover:bg-[#e5b73d] font-bold py-6 text-lg shadow-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all"
-            >
-              Mua {selectedPair.split('/')[0]}
-            </Button>
+                <Button
+                  onClick={handleSubmit}
+                  disabled={!buyAmount || !useAmount || parseFloat(buyAmount) <= 0 || parseFloat(useAmount) <= 0}
+                  className="w-full text-white font-bold py-6 text-lg shadow-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all transform hover:scale-[1.02] active:scale-[0.98]"
+                  style={{ 
+                    backgroundColor: '#00bc7d',
+                  }}
+                  onMouseEnter={(e: React.MouseEvent<HTMLButtonElement>) => {
+                    if (!e.currentTarget.disabled) {
+                      e.currentTarget.style.backgroundColor = '#00a66a';
+                    }
+                  }}
+                  onMouseLeave={(e: React.MouseEvent<HTMLButtonElement>) => {
+                    if (!e.currentTarget.disabled) {
+                      e.currentTarget.style.backgroundColor = '#00bc7d';
+                    }
+                  }}
+                  onMouseDown={(e: React.MouseEvent<HTMLButtonElement>) => {
+                    if (!e.currentTarget.disabled) {
+                      e.currentTarget.style.backgroundColor = '#009966';
+                    }
+                  }}
+                  onMouseUp={(e: React.MouseEvent<HTMLButtonElement>) => {
+                    if (!e.currentTarget.disabled) {
+                      e.currentTarget.style.backgroundColor = '#00bc7d';
+                    }
+                  }}
+                >
+                  <TrendingUp className="w-5 h-5 mr-2 inline" />
+                  Mua {selectedPair.split('/')[0]}
+                </Button>
           </div>
             ) : (
               <div className="space-y-4">
@@ -1189,16 +1213,16 @@ export default function Trade({ onNavigate }: TradeProps) {
 
                 {/* You Sell */}
                 <div>
-                  <Label className="text-gray-400 mb-2 block">Bạn bán</Label>
+                  <Label className="text-gray-200 mb-2 block">Bạn bán</Label>
                   <div className="flex gap-2">
                     <Input
                       type="number"
                       placeholder="0"
                       value={sellAmount}
                       onChange={(e) => handleSellAmountChange(e.target.value)}
-                      className="bg-gray-800 border-gray-700 text-white flex-1"
+                      className="bg-[#2d4156] border-gray-600 text-white placeholder:text-gray-400 flex-1 focus:border-red-500 focus:ring-1 focus:ring-red-500"
                     />
-                    <div className="flex items-center justify-center px-3 py-2 border border-gray-700 bg-gray-800/50 text-gray-300 rounded-md w-20 text-sm font-medium cursor-default">
+                    <div className="flex items-center justify-center px-3 py-2 border border-gray-600 bg-[#2d4156] text-gray-200 rounded-md w-20 text-sm font-medium cursor-default">
                       {selectedPair.split('/')[0]}
                     </div>
                   </div>
@@ -1209,16 +1233,16 @@ export default function Trade({ onNavigate }: TradeProps) {
 
                 {/* You Receive */}
                 <div>
-                  <Label className="text-gray-400 mb-2 block">Bạn nhận{orderType === 'LIMIT' ? ' (dự kiến)' : ''}</Label>
+                  <Label className="text-gray-200 mb-2 block">Bạn nhận{orderType === 'LIMIT' ? ' (dự kiến)' : ''}</Label>
                   <div className="flex gap-2">
                     <Input
                       type="number"
                       placeholder="0"
                       value={receiveAmount}
                       onChange={(e) => handleReceiveAmountChange(e.target.value)}
-                      className="bg-gray-800 border-gray-700 text-white flex-1"
+                      className="bg-[#2d4156] border-gray-600 text-white placeholder:text-gray-400 flex-1 focus:border-red-500 focus:ring-1 focus:ring-red-500"
                     />
-                    <div className="flex items-center justify-center px-3 py-2 border border-gray-700 bg-gray-800/50 text-gray-300 rounded-md w-20 text-sm font-medium cursor-default">
+                    <div className="flex items-center justify-center px-3 py-2 border border-gray-600 bg-[#2d4156] text-gray-200 rounded-md w-20 text-sm font-medium cursor-default">
                       {selectedPair.split('/')[1]}
                     </div>
                   </div>
@@ -1227,9 +1251,10 @@ export default function Trade({ onNavigate }: TradeProps) {
                 {/* Sell Button */}
                 <Button
                   onClick={handleSubmit}
-                  disabled={!sellAmount || !receiveAmount}
-                  className="w-full bg-red-500 text-white hover:bg-red-600 font-bold py-6 text-lg shadow-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                  disabled={!sellAmount || !receiveAmount || parseFloat(sellAmount) <= 0 || parseFloat(receiveAmount) <= 0}
+                  className="w-full bg-red-500 hover:bg-red-600 active:bg-red-700 text-white font-bold py-6 text-lg shadow-lg shadow-red-500/30 disabled:opacity-50 disabled:cursor-not-allowed transition-all transform hover:scale-[1.02] active:scale-[0.98]"
                 >
+                  <TrendingDown className="w-5 h-5 mr-2 inline" />
                   Bán {selectedPair.split('/')[0]}
                 </Button>
               </div>
@@ -1237,11 +1262,11 @@ export default function Trade({ onNavigate }: TradeProps) {
         </Card>
 
           {/* Order Book Preview */}
-          <Card className="bg-[#1a1d24] border-gray-800 p-6">
+          <Card className="bg-[#243447] border-gray-700/50 p-6 shadow-lg">
             <h3 className="mb-4 text-white">Order Book Preview</h3>
             <div className="space-y-3">
               <div>
-                <div className="text-sm text-gray-400 mb-2">Sell Orders</div>
+                <div className="text-sm text-gray-200 mb-2 font-medium">Sell Orders</div>
                 {orderBook?.asks?.length ? (
                   orderBook.asks.slice(0, 5).map((ask, i) => (
                     <div key={i} className="flex justify-between text-sm py-1">
@@ -1269,7 +1294,7 @@ export default function Trade({ onNavigate }: TradeProps) {
               </div>
 
               <div>
-                <div className="text-sm text-gray-400 mb-2">Buy Orders</div>
+                <div className="text-sm text-gray-200 mb-2 font-medium">Buy Orders</div>
                 {orderBook?.bids?.length ? (
                   orderBook.bids.slice(0, 5).map((bid, i) => (
                     <div key={i} className="flex justify-between text-sm py-1">
@@ -1285,20 +1310,20 @@ export default function Trade({ onNavigate }: TradeProps) {
           </Card>
 
           {/* Account Balance */}
-          <Card className="bg-[#1a1d24] border-gray-800 p-6">
+          <Card className="bg-[#243447] border-gray-700/50 p-6 shadow-lg">
             <h3 className="mb-4 text-white">Account Balance</h3>
             {balances ? (
               <div className="space-y-3">
                 <div className="flex justify-between">
-                  <span className="text-gray-400">Total Balance</span>
+                  <span className="text-gray-200">Total Balance</span>
                   <span className="text-emerald-500">${(balances?.totalBalance || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-gray-400">Available</span>
+                  <span className="text-gray-200">Available</span>
                   <span className="text-emerald-500">${(balances?.availableBalance || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-gray-400">Locked</span>
+                  <span className="text-gray-200">Locked</span>
                   <span className="text-orange-500">${(balances?.lockedBalance || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                 </div>
               </div>
@@ -1313,34 +1338,37 @@ export default function Trade({ onNavigate }: TradeProps) {
 
       {/* Order Preview Dialog */}
       <Dialog open={showPreview} onOpenChange={setShowPreview}>
-        <DialogContent className="bg-[#1a1d24] border-gray-800 text-white">
+        <DialogContent 
+          className="!bg-black !border-gray-600 text-white shadow-2xl"
+          style={{ backgroundColor: '#0C121E' }}
+        >
           <DialogHeader>
             <DialogTitle>Confirm Order</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
-            <div className="space-y-3 p-4 bg-gray-800 rounded-lg">
+            <div className="space-y-3 p-4 bg-gray-900/50 rounded-lg border border-gray-600/50">
               <div className="flex justify-between">
-                <span className="text-gray-400">Pair</span>
+                <span className="text-gray-300">Pair</span>
                 <span className="text-white">{selectedPair}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-gray-400">Side</span>
+                <span className="text-gray-300">Side</span>
                 <Badge className={side === 'buy' ? "bg-emerald-500/10 text-emerald-500" : "bg-red-500/10 text-red-500"}>
                   {side === 'buy' ? 'BUY' : 'SELL'}
                 </Badge>
               </div>
               <div className="flex justify-between">
-                <span className="text-gray-400">Type</span>
+                <span className="text-gray-300">Type</span>
                 <Badge className="bg-blue-500/10 text-blue-500">{orderType}</Badge>
               </div>
               <div className="flex justify-between">
-                <span className="text-gray-400">Amount</span>
+                <span className="text-gray-300">Amount</span>
                 <span className="text-white">
                   {side === 'buy' ? buyAmount : sellAmount} {selectedPair.split('/')[0]}
                 </span>
               </div>
               <div className="flex justify-between">
-                <span className="text-gray-400">Price</span>
+                <span className="text-gray-300">Price</span>
                 <span className="text-white">
                   {orderType === 'LIMIT' ? formatPrice(parseFloat(limitPrice)) : formatPrice(currentPrice)}
                   {orderType === 'MARKET' && <span className="text-xs text-gray-500 ml-1">(market)</span>}
@@ -1364,17 +1392,196 @@ export default function Trade({ onNavigate }: TradeProps) {
               </div>
             </div>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowPreview(false)} className="border-gray-700">
-              Cancel
+          <DialogFooter className="gap-3">
+            <Button 
+              onClick={() => setShowPreview(false)} 
+              className="flex-1 font-medium py-6 text-lg transition-all text-white"
+              style={{ 
+                backgroundColor: '#c93e43',
+              }}
+              onMouseEnter={(e: React.MouseEvent<HTMLButtonElement>) => {
+                e.currentTarget.style.backgroundColor = '#b5363a';
+              }}
+              onMouseLeave={(e: React.MouseEvent<HTMLButtonElement>) => {
+                e.currentTarget.style.backgroundColor = '#c93e43';
+              }}
+            >
+              Hủy
             </Button>
             <Button
               onClick={confirmOrder}
-              className="bg-[#f2c94c] text-black hover:bg-[#e5b73d]"
+              className="flex-1 font-bold py-6 text-lg shadow-lg transition-all transform hover:scale-[1.02] active:scale-[0.98] text-white"
+              style={side === 'buy' 
+                ? { backgroundColor: '#00ac72' }
+                : { backgroundColor: '#ef4444' }
+              }
+              onMouseEnter={(e: React.MouseEvent<HTMLButtonElement>) => {
+                if (side === 'buy') {
+                  e.currentTarget.style.backgroundColor = '#009966';
+                } else {
+                  e.currentTarget.style.backgroundColor = '#dc2626';
+                }
+              }}
+              onMouseLeave={(e: React.MouseEvent<HTMLButtonElement>) => {
+                if (side === 'buy') {
+                  e.currentTarget.style.backgroundColor = '#00ac72';
+                } else {
+                  e.currentTarget.style.backgroundColor = '#ef4444';
+                }
+              }}
             >
-              Confirm {side === 'buy' ? 'Buy' : 'Sell'}
+              {side === 'buy' ? (
+                <>
+                  <TrendingUp className="w-5 h-5 mr-2 inline" />
+                  Xác nhận Mua
+                </>
+              ) : (
+                <>
+                  <TrendingDown className="w-5 h-5 mr-2 inline" />
+                  Xác nhận Bán
+                </>
+              )}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modern Coin Selector Dialog */}
+      <Dialog open={showCoinSelector} onOpenChange={setShowCoinSelector}>
+        <DialogContent className="bg-black border-gray-800 text-white max-w-2xl max-h-[80vh] flex flex-col">
+          <style>{`
+            .coin-list-scroll::-webkit-scrollbar {
+              width: 8px;
+            }
+            .coin-list-scroll::-webkit-scrollbar-track {
+              background: #000000;
+              border-radius: 4px;
+            }
+            .coin-list-scroll::-webkit-scrollbar-thumb {
+              background: #4b5563;
+              border-radius: 4px;
+            }
+            .coin-list-scroll::-webkit-scrollbar-thumb:hover {
+              background: #6b7280;
+            }
+          `}</style>
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-bold">Chọn cặp giao dịch</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 flex-1 flex flex-col min-h-0">
+            {/* Search Bar */}
+            <div className="relative flex-shrink-0">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+              <Input
+                type="text"
+                placeholder="Tìm kiếm coin (BTC, ETH, ...)"
+                value={coinSearchQuery}
+                onChange={(e) => setCoinSearchQuery(e.target.value)}
+                className="bg-gray-800 border-gray-700 text-white pl-10 h-12"
+              />
+            </div>
+
+            {/* Coin List */}
+            <div 
+              className="coin-list-scroll flex-1 overflow-y-auto overflow-x-hidden space-y-2 pr-2 min-h-0"
+              style={{
+                scrollbarWidth: 'thin',
+                scrollbarColor: '#4b5563 #000000',
+                WebkitOverflowScrolling: 'touch',
+                maxHeight: '500px',
+              }}
+            >
+              {pairs
+                .filter((coin) => {
+                  const query = coinSearchQuery.toLowerCase();
+                  return (
+                    coin.symbol.toLowerCase().includes(query) ||
+                    coin.name.toLowerCase().includes(query)
+                  );
+                })
+                .slice(0, 50)
+                .map((coin) => {
+                  const pair = `${coin.symbol}/USDT`;
+                  const isSelected = selectedPair === pair;
+                  const priceChange = coin.priceChangePercentage24h || 0;
+                  const isPositive = priceChange >= 0;
+
+                  return (
+                    <button
+                      key={coin.id}
+                      onClick={() => {
+                        setSelectedPair(pair);
+                        setSearchParams({ pair });
+                        setShowCoinSelector(false);
+                        setCoinSearchQuery('');
+                      }}
+                      className={`w-full flex items-center gap-4 p-4 rounded-lg border transition-all duration-200 hover:bg-gray-800/50 ${
+                        isSelected
+                          ? 'bg-emerald-500/10 border-emerald-500/50 shadow-lg shadow-emerald-500/10'
+                          : 'bg-gray-800/30 border-gray-700 hover:border-gray-600'
+                      }`}
+                    >
+                      <CoinIcon
+                        symbol={coin.symbol}
+                        image={coin.image}
+                        size="md"
+                      />
+                      <div className="flex-1 text-left">
+                        <div className="flex items-center gap-2">
+                          <span className="font-semibold text-white">
+                            {coin.symbol}
+                          </span>
+                          <span className="text-gray-400 text-sm">
+                            {coin.name}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2 mt-1">
+                          <span className="text-white font-medium">
+                            {formatPrice(coin.currentPrice)}
+                          </span>
+                          <Badge
+                            className={
+                              isPositive
+                                ? 'bg-emerald-500/10 text-emerald-500'
+                                : 'bg-red-500/10 text-red-500'
+                            }
+                          >
+                            {isPositive ? (
+                              <TrendingUp className="w-3 h-3 mr-1" />
+                            ) : (
+                              <TrendingDown className="w-3 h-3 mr-1" />
+                            )}
+                            {isPositive ? '+' : ''}
+                            {priceChange.toFixed(2)}%
+                          </Badge>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-white font-semibold">
+                          {pair}
+                        </div>
+                        {isSelected && (
+                          <div className="text-emerald-500 text-xs mt-1">
+                            Đã chọn
+                          </div>
+                        )}
+                      </div>
+                    </button>
+                  );
+                })}
+              {pairs.filter((coin) => {
+                const query = coinSearchQuery.toLowerCase();
+                return (
+                  coin.symbol.toLowerCase().includes(query) ||
+                  coin.name.toLowerCase().includes(query)
+                );
+              }).length === 0 && (
+                <div className="text-center py-8 text-gray-400">
+                  Không tìm thấy coin nào
+                </div>
+              )}
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
     </div>

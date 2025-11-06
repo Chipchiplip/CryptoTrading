@@ -53,7 +53,18 @@ export async function authFetch(input: RequestInfo | URL, init?: RequestInit) {
   console.log('[http] Fetching:', url, { method: init?.method || 'GET', hasAuth: !!token });
   
   try {
-    const res = await fetch(input, { ...init, headers, credentials: 'include' });
+    // Add timeout controller
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+    
+    const res = await fetch(input, { 
+      ...init, 
+      headers, 
+      credentials: 'include',
+      signal: controller.signal
+    });
+    
+    clearTimeout(timeoutId);
     console.log('[http] Response:', url, { status: res.status, statusText: res.statusText });
     
     // If 401, clear token and redirect to login
@@ -72,7 +83,11 @@ export async function authFetch(input: RequestInfo | URL, init?: RequestInit) {
     }
     
     return res;
-  } catch (e) {
+  } catch (e: any) {
+    if (e.name === 'AbortError') {
+      console.error('[http] Request timeout:', url);
+      throw new Error('Request timeout - server may be unavailable');
+    }
     console.error('[http] Fetch error:', url, e);
     throw e;
   }
