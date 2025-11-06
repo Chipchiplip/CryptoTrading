@@ -235,7 +235,7 @@ export default function OrderDetail({ orderId, onNavigate }: OrderDetailProps) {
                             {trade.quantity} {baseAsset} @ ${trade.price.toFixed(2)}
                           </div>
                           <div className="text-sm text-gray-400">
-                            {new Date(trade.createdAt).toLocaleString('vi-VN')}
+                            {new Date(trade.createdAt).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}
                           </div>
                         </div>
                         <div className="text-right">
@@ -266,11 +266,11 @@ export default function OrderDetail({ orderId, onNavigate }: OrderDetailProps) {
           <div className="grid md:grid-cols-2 gap-4 text-sm">
             <div>
               <div className="text-gray-400 mb-1">Created At</div>
-              <div className="text-white">{new Date(order.createdAt).toLocaleString('vi-VN')}</div>
+              <div className="text-white">{new Date(order.createdAt).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}</div>
             </div>
             <div>
               <div className="text-gray-400 mb-1">Last Updated</div>
-              <div className="text-white">{new Date(order.updatedAt).toLocaleString('vi-VN')}</div>
+              <div className="text-white">{new Date(order.updatedAt).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}</div>
             </div>
           </div>
         </Card>
@@ -292,7 +292,7 @@ export default function OrderDetail({ orderId, onNavigate }: OrderDetailProps) {
                 </div>
                 <div className="flex-1">
                   <div className="text-white mb-1">Order created</div>
-                  <div className="text-sm text-gray-400">{new Date(order.createdAt).toLocaleString('vi-VN')}</div>
+                  <div className="text-sm text-gray-400">{new Date(order.createdAt).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}</div>
                 </div>
               </div>
               
@@ -314,7 +314,7 @@ export default function OrderDetail({ orderId, onNavigate }: OrderDetailProps) {
                     <div className="text-white mb-1">
                       Filled: {trade.quantity} {baseAsset} @ ${trade.price.toFixed(2)}
                     </div>
-                    <div className="text-sm text-gray-400">{new Date(trade.createdAt).toLocaleString('vi-VN')}</div>
+                    <div className="text-sm text-gray-400">{new Date(trade.createdAt).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}</div>
                   </div>
                 </div>
               ))}

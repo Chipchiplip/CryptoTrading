@@ -214,7 +214,7 @@ export default function TradesHistory() {
                         {trade.orderId}
                       </TableCell>
                       <TableCell className="text-gray-400">
-                        {new Date(trade.createdAt).toLocaleString('vi-VN')}
+                        {new Date(trade.createdAt).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}
                       </TableCell>
                       <TableCell className="text-white">{trade.symbol}</TableCell>
                       <TableCell className="text-right text-white">${trade.price.toLocaleString()}</TableCell>
