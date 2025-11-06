@@ -464,8 +464,9 @@ export default function Trade({ onNavigate }: TradeProps) {
     
     fetchCandles();
     
-    // Auto refresh every 30 seconds (reduced frequency to prevent jitter)
-    const intervalId = setInterval(fetchCandles, 30000);
+    // ✅ Tăng refresh rate cho real-time chart (5 giây thay vì 30 giây)
+    const refreshInterval = timeframe === '1D' ? 5000 : 10000; // 1D: 5s, others: 10s
+    const intervalId = setInterval(fetchCandles, refreshInterval);
     return () => clearInterval(intervalId);
   }, [selectedCoin?.symbol, timeframe]); // Removed intervalMap from dependencies
 
@@ -1028,8 +1029,8 @@ export default function Trade({ onNavigate }: TradeProps) {
                 day: '2-digit', 
                 hour: '2-digit', 
                 minute: '2-digit',
-                timeZone: 'UTC'
-              })} (UTC+0)
+                timeZone: 'Asia/Ho_Chi_Minh'
+              })} (UTC+7)
             </div>
           </Card>
             </div>

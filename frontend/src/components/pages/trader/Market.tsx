@@ -190,12 +190,12 @@ export default function Market({ onNavigate }: MarketProps) {
     // Initial fetch
     fetchMarketData();
 
-    // Set up polling every 30 seconds
+    // ✅ Tăng polling rate cho real-time updates (10 giây thay vì 30 giây)
     interval = setInterval(() => {
       if (mounted) {
         fetchMarketData();
       }
-    }, 30000);
+    }, 10000); // 10 giây - fallback nếu SignalR fail
 
     // SignalR connection for real-time updates
     (async () => {

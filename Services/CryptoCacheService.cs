@@ -18,7 +18,10 @@ namespace CryptoTrading.Services
         private readonly ILogger<CryptoCacheService> _logger;
         private const string CRYPTO_DATA_KEY = "crypto_data";
         private const string MARKET_STATS_KEY = "market_stats";
-        private readonly TimeSpan _cacheExpiration = TimeSpan.FromSeconds(2);
+        
+        // ✅ Cache expiration: Market data cần refresh nhanh hơn cho real-time updates
+        private readonly TimeSpan _marketDataCacheExpiration = TimeSpan.FromSeconds(30); // 30s cho real-time updates
+        private readonly TimeSpan _marketStatsCacheExpiration = TimeSpan.FromMinutes(5); // 5 phút cho stats (ít thay đổi)
 
         public CryptoCacheService(IMemoryCache cache, ILogger<CryptoCacheService> logger)
         {
@@ -43,12 +46,13 @@ namespace CryptoTrading.Services
         {
             var cacheOptions = new MemoryCacheEntryOptions
             {
-                AbsoluteExpirationRelativeToNow = _cacheExpiration,
-                Priority = CacheItemPriority.High
+                AbsoluteExpirationRelativeToNow = _marketDataCacheExpiration, // ✅ 30 giây cho real-time
+                Priority = CacheItemPriority.High,
+                SlidingExpiration = TimeSpan.FromSeconds(20) // ✅ Refresh khi cần
             };
             
             _cache.Set(CRYPTO_DATA_KEY, data, cacheOptions);
-            _logger.LogInformation("Cached {Count} crypto coins", data.Count);
+            _logger.LogInformation("Cached {Count} crypto coins (expires in 30 seconds for real-time updates)", data.Count);
         }
 
         public bool TryGetMarketStats(out MarketStats? stats)
@@ -68,12 +72,12 @@ namespace CryptoTrading.Services
         {
             var cacheOptions = new MemoryCacheEntryOptions
             {
-                AbsoluteExpirationRelativeToNow = _cacheExpiration,
-                Priority = CacheItemPriority.High
+                AbsoluteExpirationRelativeToNow = _marketStatsCacheExpiration, // ✅ 15 phút
+                Priority = CacheItemPriority.Normal
             };
             
             _cache.Set(MARKET_STATS_KEY, stats, cacheOptions);
-            _logger.LogInformation("Cached market stats");
+            _logger.LogInformation("Cached market stats (expires in 15 minutes)");
         }
 
         public void ClearAllCache()

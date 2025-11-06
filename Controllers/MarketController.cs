@@ -186,6 +186,9 @@ public class MarketController : ControllerBase
                 normalizedSymbol = normalizedSymbol.Replace("USD", "").Replace("USDT", "") + "USDT";
             }
             
+            // ✅ FIX: Try Binance first (even for stablecoins), fallback to CoinGecko if needed
+            // Note: USDT/USDT doesn't exist on Binance, but we'll try anyway and handle gracefully
+            
             // Map interval to Binance format
             var binanceInterval = interval switch
             {
@@ -233,7 +236,52 @@ public class MarketController : ControllerBase
             {
                 _logger.LogWarning("Binance API returned {StatusCode} for {Symbol}", response.StatusCode, normalizedSymbol);
                 
-                // Fallback: Get current price and generate mock candles
+                // ✅ Fallback 1: Try CoinGecko real historical data (especially for stablecoins)
+                try
+                {
+                    var baseSymbol = normalizedSymbol.Replace("USDT", "").Replace("USD", "").Trim();
+                    var coinIdMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                    {
+                        { "USDT", "tether" },
+                        { "USDC", "usd-coin" },
+                        { "BUSD", "binance-usd" },
+                        { "DAI", "dai" },
+                        { "TUSD", "true-usd" },
+                        { "USDP", "paxos-standard" },
+                        { "USDD", "usdd" },
+                        { "BTC", "bitcoin" },
+                        { "ETH", "ethereum" },
+                        { "BNB", "binancecoin" }
+                    };
+                    
+                    if (coinIdMap.TryGetValue(baseSymbol, out var coinId))
+                    {
+                        var days = interval switch
+                        {
+                            "1m" => 1,
+                            "5m" => 1,
+                            "15m" => 1,
+                            "1h" => 7,
+                            "4h" => 30,
+                            "1d" => 90,
+                            _ => 7
+                        };
+                        
+                        var priceHistory = await _coinGeckoService.GetPriceHistoryAsync(coinId, days);
+                        if (priceHistory != null && priceHistory.Count > 0)
+                        {
+                            var coinGeckoCandles = ConvertPriceHistoryToCandles(priceHistory, interval);
+                            _logger.LogInformation("Using CoinGecko real data as fallback for {Symbol} ({Count} candles)", normalizedSymbol, coinGeckoCandles.Count);
+                            return Ok(coinGeckoCandles);
+                        }
+                    }
+                }
+                catch (Exception coinGeckoEx)
+                {
+                    _logger.LogWarning(coinGeckoEx, "CoinGecko fallback failed for {Symbol}", normalizedSymbol);
+                }
+                
+                // ✅ Fallback 2: Try current price from CoinGecko and generate candles
                 try
                 {
                     var cryptos = await _coinGeckoService.GetMarketDataAsync();
@@ -251,13 +299,13 @@ public class MarketController : ControllerBase
                 }
                 catch (Exception fallbackEx)
                 {
-                    _logger.LogWarning(fallbackEx, "Error getting market data for fallback, using default price");
+                    _logger.LogWarning(fallbackEx, "Error getting market data for fallback");
                 }
                 
-                // Last resort: Use default price
+                // Last resort: Use default price (only if everything fails)
                 var defaultPrice = 50000.0; // Default BTC price
                 var fallbackCandles = GenerateMockCandles(defaultPrice, interval, limit);
-                _logger.LogWarning("Using default price mock candles for {Symbol}", normalizedSymbol);
+                _logger.LogWarning("Using default price mock candles as last resort for {Symbol}", normalizedSymbol);
                 return Ok(fallbackCandles);
             }
             
@@ -392,6 +440,126 @@ public class MarketController : ControllerBase
                 return StatusCode(500, new { message = "Error fetching candlestick data", details = lastResortEx.Message });
             }
         }
+    }
+
+    /// <summary>
+    /// Convert CoinGecko PriceHistory to OHLC candles based on interval
+    /// </summary>
+    private List<object> ConvertPriceHistoryToCandles(List<PriceHistory> priceHistory, string interval)
+    {
+        if (priceHistory == null || priceHistory.Count == 0)
+        {
+            return new List<object>();
+        }
+        
+        // Calculate interval in milliseconds
+        var intervalMs = interval switch
+        {
+            "1m" => 60 * 1000,
+            "5m" => 5 * 60 * 1000,
+            "15m" => 15 * 60 * 1000,
+            "1h" => 60 * 60 * 1000,
+            "4h" => 4 * 60 * 60 * 1000,
+            "1d" => 24 * 60 * 60 * 1000,
+            _ => 60 * 60 * 1000
+        };
+        
+        var candles = new List<object>();
+        var groupedData = new Dictionary<long, List<PriceHistory>>();
+        
+        // Group price history by interval
+        foreach (var price in priceHistory.OrderBy(p => p.Timestamp))
+        {
+            var timestamp = new DateTimeOffset(price.Timestamp, TimeSpan.Zero).ToUnixTimeMilliseconds();
+            var intervalKey = (timestamp / intervalMs) * intervalMs; // Round down to interval boundary
+            
+            if (!groupedData.ContainsKey(intervalKey))
+            {
+                groupedData[intervalKey] = new List<PriceHistory>();
+            }
+            groupedData[intervalKey].Add(price);
+        }
+        
+        // Convert grouped data to OHLC candles
+        foreach (var group in groupedData.OrderBy(g => g.Key))
+        {
+            var prices = group.Value.Select(p => (double)p.Price).ToList();
+            if (prices.Count == 0) continue;
+            
+            var open = prices.First();
+            var close = prices.Last();
+            var high = prices.Max();
+            var low = prices.Min();
+            
+            candles.Add(new
+            {
+                time = (long)(group.Key / 1000), // Convert to seconds
+                open = Math.Round(open, 4),
+                high = Math.Round(high, 4),
+                low = Math.Round(low, 4),
+                close = Math.Round(close, 4),
+                volume = prices.Count * 1000000 // Estimate volume (can be improved)
+            });
+        }
+        
+        return candles;
+    }
+
+    /// <summary>
+    /// Generate stable candles for stablecoins (price stays ~1.0 with minimal variation) - DEPRECATED: Use real data instead
+    /// </summary>
+    private List<object> GenerateStablecoinCandles(double basePrice, string interval, int limit)
+    {
+        var candles = new List<object>();
+        var random = new Random();
+        var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        
+        // Calculate interval in milliseconds
+        var intervalMs = interval switch
+        {
+            "1m" => 60 * 1000,
+            "5m" => 5 * 60 * 1000,
+            "15m" => 15 * 60 * 1000,
+            "1h" => 60 * 60 * 1000,
+            "4h" => 4 * 60 * 60 * 1000,
+            "1d" => 24 * 60 * 60 * 1000,
+            _ => 60 * 60 * 1000
+        };
+        
+        var candlesCount = Math.Min(limit, 500);
+        
+        // Generate stable candles with minimal variation (±0.1%)
+        for (int i = 0; i < candlesCount; i++)
+        {
+            var timestamp = now - ((candlesCount - 1 - i) * intervalMs);
+            
+            // Very small variation for stablecoins (±0.1%)
+            var variation = (random.NextDouble() - 0.5) * 0.002; // ±0.1%
+            var price = basePrice * (1 + variation);
+            
+            // Ensure price stays between 0.999 and 1.001
+            price = Math.Max(price, 0.999);
+            price = Math.Min(price, 1.001);
+            
+            var open = price;
+            var volatility = random.NextDouble() * 0.0002; // Very small volatility (0.02%)
+            var high = Math.Min(open * (1 + volatility), 1.001);
+            var low = Math.Max(open * (1 - volatility), 0.999);
+            var closeChange = (random.NextDouble() - 0.5) * 0.0002;
+            var close = Math.Max(Math.Min(open * (1 + closeChange), 1.001), 0.999);
+            
+            candles.Add(new
+            {
+                time = (long)(timestamp / 1000), // Convert to seconds
+                open = Math.Round(open, 4),
+                high = Math.Round(high, 4),
+                low = Math.Round(low, 4),
+                close = Math.Round(close, 4),
+                volume = random.NextDouble() * 1000000 // Random volume
+            });
+        }
+        
+        return candles;
     }
 
     private List<object> GenerateMockCandles(double currentPrice, string interval, int limit)

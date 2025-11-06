@@ -18,7 +18,8 @@ namespace CryptoTrading.Services
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
-            var baseInterval = TimeSpan.FromSeconds(2);
+            // ✅ Tăng interval lên 5 giây để giảm API calls (vì cache đã 30s)
+            var baseInterval = TimeSpan.FromSeconds(5); // Was 2 seconds
             var backoff = TimeSpan.Zero;
             var maxBackoff = TimeSpan.FromSeconds(60);
             var rand = new Random();
@@ -28,10 +29,11 @@ namespace CryptoTrading.Services
             {
                 try
                 {
+                    // ✅ Force refresh để có data mới nhất cho real-time updates
                     // So le giữa market data và stats để giảm xác suất va chạm hạn mức
                     if (toggle)
                     {
-                        await _coinGecko.GetMarketDataAsync();
+                        await _coinGecko.GetMarketDataAsync(forceRefresh: true); // ✅ Force refresh để bypass cache
                     }
                     else
                     {

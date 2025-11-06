@@ -9,7 +9,7 @@ namespace CryptoTrading.Services
 {
     public interface ICoinGeckoService
     {
-        Task<List<Crypto>> GetMarketDataAsync();
+        Task<List<Crypto>> GetMarketDataAsync(bool forceRefresh = false);
         Task<List<PriceHistory>> GetPriceHistoryAsync(string coinId, int days = 7);
         Task<MarketStats> GetMarketStatsAsync();
     }
@@ -31,12 +31,12 @@ namespace CryptoTrading.Services
             _hubContext = hubContext;
         }
 
-        public async Task<List<Crypto>> GetMarketDataAsync()
+        public async Task<List<Crypto>> GetMarketDataAsync(bool forceRefresh = false)
         {
-            // Try to get from cache first
-            if (_cacheService.TryGetCryptoData(out var cachedData))
+            // ✅ Skip cache if forceRefresh is true (for real-time updates)
+            if (!forceRefresh && _cacheService.TryGetCryptoData(out var cachedData))
             {
-                _logger.LogInformation($"Using cached crypto data ({cachedData?.Count ?? 0} coins)");
+                _logger.LogDebug($"Using cached crypto data ({cachedData?.Count ?? 0} coins)");
                 // Even when using cache, broadcast so clients keep receiving updates
                 if (_hubContext != null && cachedData != null)
                 {

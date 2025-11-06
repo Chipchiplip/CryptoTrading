@@ -508,7 +508,7 @@ public class TradingController : ControllerBase
                 var balance = movements.GetValueOrDefault(wallet.Id, 0m);
                 if (balance <= 0) continue; // Skip empty holdings
                 
-                var symbol = wallet.Cryptocurrency.Symbol.ToUpper();
+                var symbol = wallet.Cryptocurrency!.Symbol.ToUpper();
                 var crypto = marketData.FirstOrDefault(c => c.Symbol.Equals(symbol, StringComparison.OrdinalIgnoreCase));
                 var price = crypto?.CurrentPrice ?? 0m;
                 var valueUsd = balance * price;
@@ -517,7 +517,7 @@ public class TradingController : ControllerBase
                 holdings.Add(new HoldingDto
                 {
                     Symbol = symbol,
-                    Name = wallet.Cryptocurrency.Name ?? symbol,
+                    Name = wallet.Cryptocurrency!.Name ?? symbol,
                     Amount = balance,
                     ValueUsd = valueUsd,
                     Change24h = change24h
