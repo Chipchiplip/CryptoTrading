@@ -65,9 +65,11 @@ export default function ResetPassword({ onNavigate }: ResetPasswordProps) {
         {/* Logo */}
         <div className="text-center mb-8">
           <div className="inline-flex items-center gap-2 mb-4">
-            <div className="w-12 h-12 bg-emerald-500 rounded-lg flex items-center justify-center">
-              <span className="text-black text-xl">CT</span>
-            </div>
+            <img 
+              src="/logo.png" 
+              alt="CryptoTrade Logo" 
+              className="w-20 h-20 object-contain"
+            />
           </div>
           <h1 className="text-3xl mb-2">Reset Password</h1>
           <p className="text-gray-400">

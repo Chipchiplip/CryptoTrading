@@ -66,9 +66,11 @@ export default function Sidebar({
       {/* Logo */}
       <div className="p-6 border-b border-gray-800">
         <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-full bg-emerald-500 flex items-center justify-center">
-            <div className="w-4 h-4 rounded-full border-2 border-black"></div>
-          </div>
+          <img 
+            src="/logo.png" 
+            alt="CryptoAdmin Logo" 
+            className="w-12 h-12 object-contain"
+          />
           <span className="font-semibold">CryptoAdmin</span>
         </div>
       </div>

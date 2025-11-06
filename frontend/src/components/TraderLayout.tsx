@@ -53,9 +53,11 @@ export default function TraderLayout({ children, currentPage, onNavigate }: Trad
       {/* Logo */}
       <div className="p-6 border-b border-gray-800 flex-shrink-0">
         <div className="flex items-center gap-2">
-          <div className="w-8 h-8 bg-emerald-500 rounded-lg flex items-center justify-center">
-            <span className="text-black">CT</span>
-          </div>
+          <img 
+            src="/logo.png" 
+            alt="CryptoTrade Logo" 
+            className="w-12 h-12 object-contain"
+          />
           <span className="text-xl">CryptoTrade</span>
         </div>
       </div>
@@ -106,9 +108,11 @@ export default function TraderLayout({ children, currentPage, onNavigate }: Trad
           <aside className="absolute left-0 top-0 bottom-0 w-64 bg-black border-r border-gray-800 flex flex-col">
             <div className="p-6 border-b border-gray-800 flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <div className="w-8 h-8 bg-emerald-500 rounded-lg flex items-center justify-center">
-                  <span className="text-black">CT</span>
-                </div>
+                <img 
+                  src="/logo.png" 
+                  alt="CryptoTrade Logo" 
+                  className="w-8 h-8 object-contain"
+                />
                 <span className="text-xl">CryptoTrade</span>
               </div>
               <button onClick={() => setSidebarOpen(false)}>
