@@ -15,7 +15,7 @@ public class EmailConfirmationController : ControllerBase
 <head>
     <meta charset='UTF-8'>
     <meta name='viewport' content='width=device-width, initial-scale=1.0'>
-    <title>Email Confirmation - Crypto Trading</title>
+    <title>Email Confirmation - CryptoTrade</title>
     <style>
         * {{
             margin: 0;
@@ -25,30 +25,77 @@ public class EmailConfirmationController : ControllerBase
 
         body {{
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: #000000;
             min-height: 100vh;
             display: flex;
             justify-content: center;
             align-items: center;
             padding: 20px;
+            color: #ffffff;
         }}
 
         .container {{
-            background: white;
-            border-radius: 20px;
-            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
-            max-width: 600px;
+            background: #1a1d24;
+            border: 1px solid #374151;
+            border-radius: 12px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+            max-width: 500px;
             width: 100%;
-            padding: 50px;
+            padding: 48px;
             text-align: center;
         }}
 
-        .icon {{
-            font-size: 80px;
-            margin-bottom: 20px;
+        .logo {{
+            width: 64px;
+            height: 64px;
+            background: #10b981;
+            border-radius: 50%;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 24px;
         }}
 
-        .icon.loading {{
+        .logo-text {{
+            color: #000000;
+            font-size: 20px;
+            font-weight: bold;
+        }}
+
+        h1 {{
+            color: #ffffff;
+            font-size: 24px;
+            font-weight: bold;
+            margin-bottom: 8px;
+        }}
+
+        .subtitle {{
+            color: #9ca3af;
+            font-size: 14px;
+            margin-bottom: 24px;
+        }}
+
+        .icon-container {{
+            width: 64px;
+            height: 64px;
+            background: rgba(16, 185, 129, 0.1);
+            border-radius: 50%;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            margin: 24px auto;
+        }}
+
+        .icon {{
+            font-size: 32px;
+        }}
+
+        .icon-loading {{
+            width: 32px;
+            height: 32px;
+            border: 3px solid rgba(16, 185, 129, 0.2);
+            border-top: 3px solid #10b981;
+            border-radius: 50%;
             animation: spin 1s linear infinite;
         }}
 
@@ -57,96 +104,113 @@ public class EmailConfirmationController : ControllerBase
             100% {{ transform: rotate(360deg); }}
         }}
 
-        h1 {{
-            color: #333;
-            font-size: 32px;
-            margin-bottom: 20px;
-        }}
-
         .message {{
-            color: #666;
-            font-size: 18px;
+            color: #9ca3af;
+            font-size: 16px;
             line-height: 1.6;
-            margin-bottom: 30px;
+            margin-bottom: 24px;
         }}
 
         .status {{
-            padding: 20px;
-            border-radius: 10px;
-            margin: 30px 0;
-            font-size: 16px;
+            padding: 16px;
+            border-radius: 8px;
+            margin: 24px 0;
+            font-size: 14px;
+            text-align: left;
         }}
 
         .status.loading {{
-            background: #d1ecf1;
-            border: 1px solid #bee5eb;
-            color: #0c5460;
+            background: rgba(16, 185, 129, 0.1);
+            border: 1px solid rgba(16, 185, 129, 0.2);
+            color: #10b981;
         }}
 
         .status.success {{
-            background: #d4edda;
-            border: 1px solid #c3e6cb;
-            color: #155724;
+            background: rgba(16, 185, 129, 0.1);
+            border: 1px solid rgba(16, 185, 129, 0.2);
+            color: #10b981;
         }}
 
         .status.error {{
-            background: #f8d7da;
-            border: 1px solid #f5c6cb;
-            color: #721c24;
+            background: rgba(239, 68, 68, 0.1);
+            border: 1px solid rgba(239, 68, 68, 0.2);
+            color: #ef4444;
         }}
 
         .btn {{
             display: inline-block;
-            padding: 15px 40px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
+            width: 100%;
+            padding: 12px 24px;
+            background: #10b981;
+            color: #000000;
             text-decoration: none;
             border-radius: 8px;
-            font-weight: bold;
+            font-weight: 600;
             font-size: 16px;
             transition: all 0.3s;
-            margin-top: 20px;
+            margin-top: 16px;
+            border: none;
+            cursor: pointer;
         }}
 
         .btn:hover {{
-            transform: translateY(-2px);
-            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+            background: #059669;
+        }}
+
+        .btn-secondary {{
+            background: transparent;
+            color: #ffffff;
+            border: 1px solid #374151;
+        }}
+
+        .btn-secondary:hover {{
+            background: #374151;
         }}
 
         .details {{
-            background: #f8f9fa;
-            padding: 20px;
-            border-radius: 10px;
-            margin-top: 30px;
+            background: #111827;
+            padding: 16px;
+            border-radius: 8px;
+            margin-top: 24px;
             text-align: left;
+            border: 1px solid #374151;
         }}
 
         .details h3 {{
-            color: #333;
-            margin-bottom: 15px;
-            font-size: 18px;
+            color: #d1d5db;
+            margin-bottom: 12px;
+            font-size: 14px;
+            font-weight: 600;
         }}
 
         .details p {{
-            color: #666;
+            color: #9ca3af;
             font-size: 14px;
             margin: 8px 0;
         }}
 
-        .details code {{
-            background: white;
-            padding: 2px 8px;
-            border-radius: 4px;
-            color: #667eea;
-            font-size: 13px;
+        .details ul {{
+            color: #9ca3af;
+            font-size: 14px;
+            margin: 8px 0;
+            padding-left: 20px;
+        }}
+
+        .details li {{
+            margin: 4px 0;
+        }}
+
+        .email-highlight {{
+            color: #10b981;
+            font-weight: 600;
         }}
 
         .spinner {{
-            border: 4px solid #f3f3f3;
-            border-top: 4px solid #667eea;
+            border: 3px solid rgba(16, 185, 129, 0.2);
+            border-top: 3px solid #10b981;
             border-radius: 50%;
-            width: 50px;
-            height: 50px;
+            width: 32px;
+            height: 32px;
             animation: spin 1s linear infinite;
             margin: 20px auto;
         }}
@@ -154,10 +218,16 @@ public class EmailConfirmationController : ControllerBase
 </head>
 <body>
     <div class='container'>
+        <div class='logo'>
+            <span class='logo-text'>CT</span>
+        </div>
+        <h1>Verify Your Email</h1>
+        <p class='subtitle'>Check your email for verification instructions</p>
         <div id='content'>
-            <div class='icon loading'>⏳</div>
-            <h1>Confirming Your Email...</h1>
-            <div class='spinner'></div>
+            <div class='icon-container'>
+                <div class='icon-loading'></div>
+            </div>
+            <h2 style='color: #ffffff; font-size: 20px; font-weight: bold; margin-bottom: 8px;'>Confirming Your Email...</h2>
             <div class='status loading'>
                 <strong>Please wait</strong><br>
                 We're verifying your email address
@@ -166,7 +236,10 @@ public class EmailConfirmationController : ControllerBase
     </div>
 
     <script>
-        const API_BASE = 'http://localhost:5000';
+        const API_BASE = '';
+        const FRONTEND_BASE = window.location.port === '5299' || window.location.port === '7154' 
+            ? 'http://localhost:3000' 
+            : window.location.origin;
         const email = '{email}';
         const token = '{token}';
 
@@ -203,32 +276,37 @@ public class EmailConfirmationController : ControllerBase
 
         function showSuccess(email) {{
             document.getElementById('content').innerHTML = `
-                <div class='icon'>✅</div>
-                <h1>Email Confirmed!</h1>
+                <div class='icon-container'>
+                    <div class='icon' style='color: #10b981; font-size: 32px;'>✓</div>
+                </div>
+                <h2 style='color: #ffffff; font-size: 20px; font-weight: bold; margin-bottom: 8px;'>Email Verified Successfully!</h2>
                 <p class='message'>
-                    Your email address has been successfully verified.<br>
-                    You can now log in to your account.
+                    Your account is now active. You can start trading right away.
                 </p>
                 <div class='status success'>
                     <strong>✓ Verification Complete</strong><br>
                     Your account is now active
                 </div>
-                <a href='/auth-test.html' class='btn'>Go to Login</a>
                 <div class='details'>
                     <h3>📧 Confirmed Email:</h3>
-                    <p><code>${{email}}</code></p>
-                    <h3 style='margin-top: 20px;'>🎯 Next Steps:</h3>
-                    <p>1. Click ""Go to Login"" button above</p>
-                    <p>2. Enter your email and password</p>
-                    <p>3. Start trading cryptocurrencies!</p>
+                    <p><span class='email-highlight'>${{email}}</span></p>
+                    <h3 style='margin-top: 16px;'>🎯 Next Steps:</h3>
+                    <ul>
+                        <li>Click ""Go to Login"" button below</li>
+                        <li>Enter your email and password</li>
+                        <li>Start trading cryptocurrencies!</li>
+                    </ul>
                 </div>
+                <a href='#' class='btn' onclick='window.location.href=FRONTEND_BASE + ""/login""; return false;'>Go to Login</a>
             `;
         }}
 
         function showError(title, message) {{
             document.getElementById('content').innerHTML = `
-                <div class='icon'>❌</div>
-                <h1>${{title}}</h1>
+                <div class='icon-container'>
+                    <div class='icon' style='color: #ef4444; font-size: 32px;'>✕</div>
+                </div>
+                <h2 style='color: #ffffff; font-size: 20px; font-weight: bold; margin-bottom: 8px;'>${{title}}</h2>
                 <p class='message'>${{message}}</p>
                 <div class='status error'>
                     <strong>⚠️ Verification Failed</strong><br>
@@ -236,16 +314,20 @@ public class EmailConfirmationController : ControllerBase
                 </div>
                 <div class='details'>
                     <h3>🔍 Possible Reasons:</h3>
-                    <p>• The confirmation link has expired (24 hours)</p>
-                    <p>• The link has already been used</p>
-                    <p>• Invalid or corrupted token</p>
-                    <p>• Email address not found</p>
-                    <h3 style='margin-top: 20px;'>💡 What to do:</h3>
-                    <p>1. Try registering again with a new account</p>
-                    <p>2. Contact support if the problem persists</p>
-                    <p>3. Check if you're using the latest confirmation email</p>
+                    <ul>
+                        <li>The confirmation link has expired (24 hours)</li>
+                        <li>The link has already been used</li>
+                        <li>Invalid or corrupted token</li>
+                        <li>Email address not found</li>
+                    </ul>
+                    <h3 style='margin-top: 16px;'>💡 What to do:</h3>
+                    <ul>
+                        <li>Try registering again with a new account</li>
+                        <li>Contact support if the problem persists</li>
+                        <li>Check if you're using the latest confirmation email</li>
+                    </ul>
                 </div>
-                <a href='/auth-test.html' class='btn'>Back to Registration</a>
+                <a href='#' class='btn btn-secondary' onclick='window.location.href=FRONTEND_BASE + ""/""; return false;'>Back to Home</a>
             `;
         }}
     </script>
@@ -255,4 +337,5 @@ public class EmailConfirmationController : ControllerBase
         return Content(html, "text/html");
     }
 }
+
 

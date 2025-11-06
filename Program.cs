@@ -13,7 +13,12 @@ using System.Text;
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
-builder.Services.AddControllers();
+builder.Services.AddControllers()
+    .AddJsonOptions(options =>
+    {
+        options.JsonSerializerOptions.PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase;
+        options.JsonSerializerOptions.PropertyNameCaseInsensitive = true;
+    });
 builder.Services.AddEndpointsApiExplorer();
 
 // Configure Swagger with JWT
@@ -23,7 +28,7 @@ builder.Services.AddSwaggerGen(c =>
     {
         Title = "Crypto Trading API",
         Version = "v1",
-        Description = "API for Crypto Trading Platform with Authentication and 2FA"
+        Description = "API for Crypto Trading Platform with Authentication, 2FA, and Trading"
     });
 
     c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
@@ -49,12 +54,21 @@ builder.Services.AddSwaggerGen(c =>
             Array.Empty<string>()
         }
     });
+
+    // Enable XML documentation
+    var xmlFile = $"{System.Reflection.Assembly.GetExecutingAssembly().GetName().Name}.xml";
+    var xmlPath = Path.Combine(AppContext.BaseDirectory, xmlFile);
+    if (File.Exists(xmlPath))
+    {
+        c.IncludeXmlComments(xmlPath);
+    }
 });
 
 // Database (MySQL)
 var mysqlConnectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
-    options.UseMySql(mysqlConnectionString, new MySqlServerVersion(new Version(8, 0, 21))));
+    options.UseMySql(mysqlConnectionString, new MySqlServerVersion(new Version(8, 0, 21)),
+        mySqlOptions => mySqlOptions.SchemaBehavior(Pomelo.EntityFrameworkCore.MySql.Infrastructure.MySqlSchemaBehavior.Ignore)));
 
 // JWT Settings
 builder.Services.Configure<JwtSettings>(builder.Configuration.GetSection("JwtSettings"));
@@ -112,7 +126,9 @@ builder.Services.AddHttpClient<ICoinGeckoService, CoinGeckoService>(client =>
     client.BaseAddress = new Uri("https://api.coingecko.com/api/v3/");
     client.DefaultRequestHeaders.Add("User-Agent", "CryptoTrading/1.0");
 });
-builder.Services.AddScoped<ICryptoCacheService, CryptoCacheService>();
+// Cache service must be usable from singleton hosted services (e.g., typed HttpClient in background services),
+// so register it as a singleton to avoid "scoped service from root provider" errors.
+builder.Services.AddSingleton<ICryptoCacheService, CryptoCacheService>();
 builder.Services.AddMemoryCache();
 
 // SignalR
@@ -121,6 +137,13 @@ builder.Services.AddSignalR();
 // Business Services
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IWatchlistService, WatchlistService>();
+builder.Services.AddScoped<ICryptoDataSyncService, CryptoDataSyncService>();
+builder.Services.AddScoped<CryptoTrading.Services.Trading.ITradingService, CryptoTrading.Services.Trading.TradingService>();
+
+// Background Services
+builder.Services.AddHostedService<CryptoSyncBackgroundService>();
+builder.Services.AddHostedService<CryptoTrading.Services.RealtimeBroadcastService>();
+builder.Services.AddHostedService<CryptoTrading.Services.OrderMatchingBackgroundService>();
 
 var app = builder.Build();
 
@@ -186,6 +209,29 @@ app.MapGet("/weatherforecast", () =>
     return forecast;
 })
 .WithName("GetWeatherForecast");
+
+// Ensure database baseline and apply migrations
+using (var scope = app.Services.CreateScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+    try
+    {
+        // Ensure history table exists and mark existing schema as migrated
+        db.Database.ExecuteSqlRaw(@"CREATE TABLE IF NOT EXISTS `__EFMigrationsHistory` (
+            `MigrationId` varchar(150) NOT NULL,
+            `ProductVersion` varchar(32) NOT NULL,
+            PRIMARY KEY (`MigrationId`)
+        ) CHARACTER SET=utf8mb4;");
+
+        db.Database.ExecuteSqlRaw(@"INSERT IGNORE INTO `__EFMigrationsHistory` (`MigrationId`,`ProductVersion`) VALUES
+            ('20251023032323_InitialCreate','9.0.10'),
+            ('20251023070130_AddCryptoMarketTables','9.0.10');");
+
+        // Apply any future migrations automatically
+        db.Database.Migrate();
+    }
+    catch { }
+}
 
 app.Run();
 

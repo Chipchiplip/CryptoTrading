@@ -10,7 +10,7 @@ public class PaymentController : ControllerBase
     /// Get payment info
     /// </summary>
     [HttpGet]
-    public async Task<IActionResult> GetPaymentInfo()
+    public IActionResult GetPaymentInfo()
     {
         return Ok(new { message = "Payment API - Ready for implementation", endpoints = new[] { "plans", "transactions", "deposits", "withdrawals" } });
     }
@@ -19,7 +19,7 @@ public class PaymentController : ControllerBase
     /// Get subscription plans
     /// </summary>
     [HttpGet("plans")]
-    public async Task<IActionResult> GetPlans()
+    public IActionResult GetPlans()
     {
         // TODO: Implement payment service
         var plans = new object[]
@@ -36,7 +36,7 @@ public class PaymentController : ControllerBase
     /// Create checkout session
     /// </summary>
     [HttpPost("checkout")]
-    public async Task<IActionResult> CreateCheckoutSession([FromBody] CreateCheckoutDto dto)
+    public IActionResult CreateCheckoutSession([FromBody] CreateCheckoutDto dto)
     {
         // TODO: Implement payment service
         return Ok(new { message = "Create checkout session endpoint - to be implemented by team member", planType = dto.PlanType });
@@ -46,7 +46,7 @@ public class PaymentController : ControllerBase
     /// Get user subscription
     /// </summary>
     [HttpGet("subscription")]
-    public async Task<IActionResult> GetSubscription()
+    public IActionResult GetSubscription()
     {
         // TODO: Implement payment service
         return Ok(new { message = "Get subscription endpoint - to be implemented by team member" });
@@ -56,7 +56,7 @@ public class PaymentController : ControllerBase
     /// Stripe webhook endpoint
     /// </summary>
     [HttpPost("webhook")]
-    public async Task<IActionResult> StripeWebhook()
+    public IActionResult StripeWebhook()
     {
         // TODO: Implement payment service
         return Ok(new { message = "Stripe webhook endpoint - to be implemented by team member" });

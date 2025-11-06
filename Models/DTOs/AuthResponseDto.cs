@@ -6,6 +6,7 @@ namespace CryptoTrading.Models.DTOs
         public string RefreshToken { get; set; } = string.Empty;
         public DateTime ExpiresAt { get; set; }
         public UserDto User { get; set; } = null!;
+        public bool RequiresTwoFactor { get; set; } = false;
     }
 
     public class UserDto

@@ -14,7 +14,6 @@ namespace CryptoTrading.Controllers;
 public class TestWatchlistController : ControllerBase
 {
     private static List<TestWatchlist> _watchlists = new();
-    private static int _nextId = 1;
 
     /// <summary>
     /// UC 40: Get all watchlists (Mock data)

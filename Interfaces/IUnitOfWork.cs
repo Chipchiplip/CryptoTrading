@@ -1,11 +1,19 @@
 using CryptoTrading.Models;
+using CryptoTrading.Repositories;
 
 namespace CryptoTrading.Interfaces
 {
     public interface IUnitOfWork : IDisposable
     {
+        // Auth
         IRepository<User> Users { get; }
-        // Thêm các repository khác khi cần
+        
+        // Market
+        ICryptocurrencyRepository Cryptocurrencies { get; }
+        ICryptoPriceRepository CryptoPrices { get; }
+        IRepository<MarketStat> MarketStats { get; }
+        
+        // Future repositories
         // IRepository<Portfolio> Portfolios { get; }
         // IRepository<Order> Orders { get; }
         
