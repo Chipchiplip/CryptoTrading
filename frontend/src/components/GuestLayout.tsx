@@ -28,9 +28,11 @@ export default function GuestLayout({ children, currentPage, onNavigate }: Guest
                 onClick={() => onNavigate?.('home')}
                 className="flex items-center gap-2"
               >
-                <div className="w-8 h-8 bg-emerald-500 rounded-lg flex items-center justify-center">
-                  <span className="text-black">CT</span>
-                </div>
+                <img 
+                  src="/logo.png" 
+                  alt="CryptoTrade Logo" 
+                  className="w-12 h-12 object-contain"
+                />
                 <span className="text-xl">CryptoTrade</span>
               </button>
             </div>
@@ -134,9 +136,11 @@ export default function GuestLayout({ children, currentPage, onNavigate }: Guest
           <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
             <div>
               <div className="flex items-center gap-2 mb-4">
-                <div className="w-8 h-8 bg-emerald-500 rounded-lg flex items-center justify-center">
-                  <span className="text-black">CT</span>
-                </div>
+                <img 
+                  src="/logo.png" 
+                  alt="CryptoTrade Logo" 
+                  className="w-12 h-12 object-contain"
+                />
                 <span className="text-xl">CryptoTrade</span>
               </div>
               <p className="text-gray-400 text-sm">

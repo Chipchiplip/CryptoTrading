@@ -1,4 +1,6 @@
 using CryptoTrading.Services.Trading;
+using CryptoTrading.Data;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -7,13 +9,13 @@ namespace CryptoTrading.Services
 {
     /// <summary>
     /// Background service that periodically matches pending limit orders
-    /// Runs every 5 seconds to find matching buy/sell orders
+    /// Runs every 10 seconds to find matching buy/sell orders (optimized with pending check)
     /// </summary>
     public class OrderMatchingBackgroundService : BackgroundService
     {
         private readonly IServiceProvider _serviceProvider;
         private readonly ILogger<OrderMatchingBackgroundService> _logger;
-        private const int MATCHING_INTERVAL_SECONDS = 5;
+        private const int MATCHING_INTERVAL_SECONDS = 10; // ✅ Tăng từ 5 → 10 giây (vì đã có immediate matching)
 
         public OrderMatchingBackgroundService(
             IServiceProvider serviceProvider,
@@ -37,7 +39,25 @@ namespace CryptoTrading.Services
             {
                 try
                 {
-                    await MatchOrdersAsync();
+                    // ✅ Check if there are pending orders first (avoid unnecessary work)
+                    using var scope = _serviceProvider.CreateScope();
+                    var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+                    
+                    var hasPendingOrders = await dbContext.Orders
+                        .AnyAsync(o => o.Type == "LIMIT" && 
+                                      (o.Status == "NEW" || o.Status == "PARTIAL"),
+                                      stoppingToken);
+                    
+                    if (hasPendingOrders)
+                    {
+                        var tradingService = scope.ServiceProvider.GetRequiredService<ITradingService>();
+                        var matchCount = await tradingService.MatchOrdersAsync();
+                        
+                        if (matchCount > 0)
+                        {
+                            _logger.LogInformation("Background matching completed: {Count} matches", matchCount);
+                        }
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -51,28 +71,7 @@ namespace CryptoTrading.Services
             _logger.LogInformation("OrderMatchingBackgroundService is stopping");
         }
 
-        /// <summary>
-        /// Performs order matching using a scoped service instance
-        /// </summary>
-        private async Task MatchOrdersAsync()
-        {
-            using var scope = _serviceProvider.CreateScope();
-            var tradingService = scope.ServiceProvider.GetRequiredService<ITradingService>();
-
-            try
-            {
-                var matchCount = await tradingService.MatchOrdersAsync();
-
-                if (matchCount > 0)
-                {
-                    _logger.LogInformation("Order matching completed: {Count} matches made", matchCount);
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error in MatchOrdersAsync");
-            }
-        }
+        // Note: MatchOrdersAsync() method removed - logic now in ExecuteAsync() for better optimization
 
         /// <summary>
         /// Called when the service is stopping

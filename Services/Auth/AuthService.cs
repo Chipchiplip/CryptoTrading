@@ -18,6 +18,7 @@ namespace CryptoTrading.Services.Auth
         private readonly IDateTimeProvider _dateTimeProvider;
         private readonly ILogger<AuthService> _logger;
         private readonly IHttpContextAccessor _httpContextAccessor;
+        private readonly ICurrentUser _currentUser; // ✅ THÊM
 
         public AuthService(
             IUnitOfWork unitOfWork,
@@ -25,7 +26,8 @@ namespace CryptoTrading.Services.Auth
             IEmailSender emailSender,
             IDateTimeProvider dateTimeProvider,
             ILogger<AuthService> logger,
-            IHttpContextAccessor httpContextAccessor)
+            IHttpContextAccessor httpContextAccessor,
+            ICurrentUser currentUser) // ✅ THÊM
         {
             _unitOfWork = unitOfWork;
             _jwtSettings = jwtSettings.Value;
@@ -33,6 +35,7 @@ namespace CryptoTrading.Services.Auth
             _dateTimeProvider = dateTimeProvider;
             _logger = logger;
             _httpContextAccessor = httpContextAccessor;
+            _currentUser = currentUser; // ✅ THÊM
         }
 
         public async Task<AuthResponseDto> RegisterAsync(RegisterDto registerDto)
@@ -537,9 +540,18 @@ namespace CryptoTrading.Services.Auth
             var key = OtpNet.KeyGeneration.GenerateRandomKey(20);
             var secret = OtpNet.Base32Encoding.ToString(key);
 
-            currentUser.TwoFactorSecret = secret;
-            _unitOfWork.Users.Update(currentUser);
-            await _unitOfWork.SaveChangesAsync();
+            // ✅ Reload user từ database để đảm bảo entity được track đúng
+            var user = await _unitOfWork.Users.GetByIdAsync(currentUser.Id);
+            if (user == null)
+            {
+                throw new Exception("User not found in database");
+            }
+
+            user.TwoFactorSecret = secret;
+            _unitOfWork.Users.Update(user);
+            var saved = await _unitOfWork.SaveChangesAsync();
+            
+            _logger.LogInformation("2FA secret saved: {Saved} rows affected for user {UserId}", saved, user.Id);
 
             // Generate QR code URL
             var qrCodeUrl = $"otpauth://totp/CryptoTrading:{currentUser.Email}?secret={secret}&issuer=CryptoTrading";
@@ -572,9 +584,18 @@ namespace CryptoTrading.Services.Auth
                 throw new Exception("Invalid 2FA code");
             }
 
-            currentUser.TwoFactorEnabled = true;
-            _unitOfWork.Users.Update(currentUser);
-            await _unitOfWork.SaveChangesAsync();
+            // ✅ Reload user từ database để đảm bảo entity được track đúng
+            var user = await _unitOfWork.Users.GetByIdAsync(currentUser.Id);
+            if (user == null)
+            {
+                throw new Exception("User not found in database");
+            }
+
+            user.TwoFactorEnabled = true;
+            _unitOfWork.Users.Update(user);
+            var saved = await _unitOfWork.SaveChangesAsync();
+            
+            _logger.LogInformation("2FA enabled saved: {Saved} rows affected for user {UserId}", saved, user.Id);
 
             _logger.LogInformation("2FA enabled successfully for user: {Email}", currentUser.Email);
 
@@ -608,10 +629,22 @@ namespace CryptoTrading.Services.Auth
 
         private async Task<User?> GetCurrentUserAsync()
         {
-            // This would normally get user from HttpContext.User claims
-            // For testing, we'll get the most recent user
-            var users = await _unitOfWork.Users.GetAllAsync();
-            return users.OrderByDescending(u => u.Id).FirstOrDefault();
+            // ✅ Lấy user từ JWT claims (đúng cách)
+            if (!_currentUser.IsAuthenticated || !_currentUser.UserId.HasValue)
+            {
+                _logger.LogWarning("GetCurrentUserAsync: User not authenticated or no user ID found");
+                return null;
+            }
+
+            var userId = _currentUser.UserId.Value;
+            var user = await _unitOfWork.Users.GetByIdAsync(userId);
+            
+            if (user == null)
+            {
+                _logger.LogWarning("GetCurrentUserAsync: User with ID {UserId} not found in database", userId);
+            }
+            
+            return user;
         }
     }
 }

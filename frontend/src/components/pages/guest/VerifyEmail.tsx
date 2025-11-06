@@ -61,9 +61,11 @@ export default function VerifyEmail({ onNavigate }: VerifyEmailProps) {
         {/* Logo */}
         <div className="text-center mb-8">
           <div className="inline-flex items-center gap-2 mb-4">
-            <div className="w-16 h-16 bg-emerald-500 rounded-full flex items-center justify-center">
-              <span className="text-black text-xl font-bold">CT</span>
-            </div>
+            <img 
+              src="/logo.png" 
+              alt="CryptoTrade Logo" 
+              className="w-24 h-24 object-contain"
+            />
           </div>
           <h1 className="text-3xl font-bold mb-2">Verify Your Email</h1>
           <p className="text-gray-400">

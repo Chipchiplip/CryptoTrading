@@ -13,17 +13,25 @@ namespace CryptoTrading.Services.Trading
     {
         private readonly ApplicationDbContext _context;
         private readonly ICoinGeckoService _coinGeckoService;
+        private readonly ICryptoCacheService _cacheService; // ✅ THÊM
         private readonly ILogger<TradingService> _logger;
         private const decimal FEE_RATE = 0.001m; // 0.1% fee
         private const decimal MARKET_PRICE_BUFFER = 0.05m; // 5% buffer for market orders
+        
+        // ✅ In-memory price cache với TTL khác nhau
+        private readonly Dictionary<string, (decimal Price, DateTime LastUpdated)> _priceCache = new();
+        private readonly TimeSpan _marketOrderCacheTTL = TimeSpan.FromSeconds(30); // MARKET: 30s
+        private readonly TimeSpan _limitOrderCacheTTL = TimeSpan.FromMinutes(5);   // LIMIT: 5 phút
 
         public TradingService(
             ApplicationDbContext context,
             ICoinGeckoService coinGeckoService,
+            ICryptoCacheService cacheService, // ✅ THÊM
             ILogger<TradingService> logger)
         {
             _context = context;
             _coinGeckoService = coinGeckoService;
+            _cacheService = cacheService; // ✅ THÊM
             _logger = logger;
         }
 
@@ -55,15 +63,30 @@ namespace CryptoTrading.Services.Trading
                     throw new InvalidOperationException("Price is required for LIMIT orders");
                 }
 
-                // Get current market price for validation and market orders
-                var marketData = await _coinGeckoService.GetMarketDataAsync();
-                var currentPrice = marketData
-                    .FirstOrDefault(c => c.Symbol.Equals(coinSymbol, StringComparison.OrdinalIgnoreCase))
-                    ?.CurrentPrice ?? 0m;
+                // ✅ SỬ DỤNG CACHE thay vì gọi API mỗi lần
+                decimal currentPrice = 0m;
+                
+                if (request.Type.ToUpper() == "MARKET")
+                {
+                    // MARKET Order: Cần price tương đối fresh (< 30s)
+                    currentPrice = await GetMarketPriceAsync(coinSymbol, _marketOrderCacheTTL);
+                }
+                else
+                {
+                    // LIMIT Order: Chỉ cần validate, có thể dùng cache lâu hơn
+                    currentPrice = await GetMarketPriceAsync(coinSymbol, _limitOrderCacheTTL);
+                }
 
                 if (currentPrice <= 0)
                 {
-                    throw new InvalidOperationException($"Unable to retrieve market price for {coinSymbol}");
+                    // Fallback: Try fresh fetch
+                    _logger.LogWarning("Cache miss for {Symbol}, fetching from API", coinSymbol);
+                    currentPrice = await GetMarketPriceAsync(coinSymbol, TimeSpan.Zero, forceRefresh: true);
+                    
+                    if (currentPrice <= 0)
+                    {
+                        throw new InvalidOperationException($"Unable to retrieve market price for {coinSymbol}");
+                    }
                 }
 
                 // Determine order price with buffer for market orders
@@ -79,11 +102,12 @@ namespace CryptoTrading.Services.Trading
                 {
                     orderPrice = request.Price!.Value;
 
-                    // Validate limit price is reasonable (within 50% of market price)
-                    if (Math.Abs(orderPrice - currentPrice) / currentPrice > 0.50m)
+                    // ✅ Relax validation cho LIMIT orders (không cần check market price quá chặt)
+                    // Chỉ validate reasonable range
+                    if (orderPrice < 0.01m || orderPrice > 1_000_000m)
                     {
                         throw new InvalidOperationException(
-                            $"Limit price ${orderPrice} is too far from market price ${currentPrice}");
+                            $"Limit price ${orderPrice} is out of reasonable range (0.01 - 1,000,000)");
                     }
                 }
 
@@ -133,11 +157,16 @@ namespace CryptoTrading.Services.Trading
                 await LockBalanceAsync(order.Id, wallet.Id, requiredAmount);
                 await _context.SaveChangesAsync(); // Save the lock within transaction
 
-                // If market order, execute immediately within the same transaction
+                // ✅ Execute order based on type
                 if (request.Type.ToUpper() == "MARKET")
                 {
-                    // Execute market order within the same transaction
+                    // MARKET order: Execute immediately
                     await ExecuteMarketOrderInTransactionAsync(order, currentPrice, transaction);
+                }
+                else
+                {
+                    // ✅ LIMIT order: Try immediate matching
+                    await TryImmediateMatchAsync(order, transaction);
                 }
 
                 await transaction.CommitAsync();
@@ -298,7 +327,7 @@ namespace CryptoTrading.Services.Trading
                     .FirstOrDefaultAsync(o => o.Id == order.Id)
                     ?? throw new InvalidOperationException($"Order {order.Id} not found");
 
-                // Use cached price if available, otherwise fetch from CoinGecko
+                // ✅ Use cached price if available, otherwise fetch from cache/API
                 decimal executionPrice;
                 if (cachedPrice.HasValue && cachedPrice.Value > 0)
                 {
@@ -307,11 +336,22 @@ namespace CryptoTrading.Services.Trading
                 }
                 else
                 {
-                    var marketData = await _coinGeckoService.GetMarketDataAsync();
-                    executionPrice = marketData
-                        .FirstOrDefault(c => c.Symbol.Equals(order.Cryptocurrency.Symbol, StringComparison.OrdinalIgnoreCase))
-                        ?.CurrentPrice ?? 0m;
-                    _logger.LogDebug("Fetched fresh market price {Price} for order {OrderId}", executionPrice, order.Id);
+                    // Try to get from cache first
+                    executionPrice = await GetMarketPriceAsync(
+                        order.Cryptocurrency.Symbol, 
+                        _marketOrderCacheTTL);
+                    
+                    if (executionPrice <= 0)
+                    {
+                        // Fallback to API only if cache miss
+                        _logger.LogWarning("Cache miss for market order execution, fetching from API");
+                        executionPrice = await GetMarketPriceAsync(
+                            order.Cryptocurrency.Symbol, 
+                            TimeSpan.Zero, 
+                            forceRefresh: true);
+                    }
+                    
+                    _logger.LogDebug("Using market price {Price} for order {OrderId} (from cache/API)", executionPrice, order.Id);
                 }
 
                 if (executionPrice <= 0)
@@ -404,14 +444,24 @@ namespace CryptoTrading.Services.Trading
                     .FirstOrDefaultAsync(o => o.Id == order.Id)
                     ?? throw new InvalidOperationException($"Order {order.Id} not found");
 
-                // Use cached price
+                // ✅ Use cached price or fetch from cache
                 decimal executionPrice = cachedPrice ?? 0m;
                 if (executionPrice <= 0)
                 {
-                    var marketData = await _coinGeckoService.GetMarketDataAsync();
-                    executionPrice = marketData
-                        .FirstOrDefault(c => c.Symbol.Equals(order.Cryptocurrency.Symbol, StringComparison.OrdinalIgnoreCase))
-                        ?.CurrentPrice ?? 0m;
+                    // Try to get from cache first
+                    executionPrice = await GetMarketPriceAsync(
+                        order.Cryptocurrency.Symbol, 
+                        _marketOrderCacheTTL);
+                    
+                    if (executionPrice <= 0)
+                    {
+                        // Fallback to API only if cache miss
+                        _logger.LogWarning("Cache miss for market order execution, fetching from API");
+                        executionPrice = await GetMarketPriceAsync(
+                            order.Cryptocurrency.Symbol, 
+                            TimeSpan.Zero, 
+                            forceRefresh: true);
+                    }
                 }
 
                 if (executionPrice <= 0)
@@ -718,7 +768,7 @@ namespace CryptoTrading.Services.Trading
         {
             var matchCount = 0;
 
-            // Get open buy orders (highest price first, then FIFO)
+            // ✅ Single optimized query
             var buyOrders = await _context.Orders
                 .Where(o =>
                     o.CryptocurrencyId == cryptoId &&
@@ -729,7 +779,6 @@ namespace CryptoTrading.Services.Trading
                 .ThenBy(o => o.CreatedAt)
                 .ToListAsync();
 
-            // Get open sell orders (lowest price first, then FIFO)
             var sellOrders = await _context.Orders
                 .Where(o =>
                     o.CryptocurrencyId == cryptoId &&
@@ -740,29 +789,52 @@ namespace CryptoTrading.Services.Trading
                 .ThenBy(o => o.CreatedAt)
                 .ToListAsync();
 
-            // Match orders where buy price >= sell price
-            foreach (var buyOrder in buyOrders)
+            // ✅ TỐI ƯU: O(n log n) thay vì O(n²) - Two pointers approach
+            int buyIndex = 0;
+            int sellIndex = 0;
+            
+            while (buyIndex < buyOrders.Count && sellIndex < sellOrders.Count)
             {
-                foreach (var sellOrder in sellOrders)
+                var buyOrder = buyOrders[buyIndex];
+                var sellOrder = sellOrders[sellIndex];
+                
+                // Check if prices match
+                if (buyOrder.PriceUsd < sellOrder.PriceUsd)
                 {
-                    if (buyOrder.PriceUsd >= sellOrder.PriceUsd)
+                    // No more matches possible
+                    break;
+                }
+                
+                var buyRemaining = buyOrder.QuantityCoin - buyOrder.FilledQty;
+                var sellRemaining = sellOrder.QuantityCoin - sellOrder.FilledQty;
+                
+                if (buyRemaining > 0 && sellRemaining > 0)
+                {
+                    var matchQty = Math.Min(buyRemaining, sellRemaining);
+                    
+                    // Execute at maker's price (earlier order)
+                    var executionPrice = buyOrder.CreatedAt < sellOrder.CreatedAt
+                        ? buyOrder.PriceUsd!.Value
+                        : sellOrder.PriceUsd!.Value;
+                    
+                    await ExecuteTradeAsync(buyOrder, sellOrder, matchQty, executionPrice);
+                    matchCount++;
+                    
+                    // Move pointers based on fill status
+                    if (buyOrder.FilledQty >= buyOrder.QuantityCoin)
                     {
-                        var buyRemaining = buyOrder.QuantityCoin - buyOrder.FilledQty;
-                        var sellRemaining = sellOrder.QuantityCoin - sellOrder.FilledQty;
-
-                        if (buyRemaining > 0 && sellRemaining > 0)
-                        {
-                            var matchQty = Math.Min(buyRemaining, sellRemaining);
-
-                            // Execute at the maker's price (earlier order)
-                            var executionPrice = buyOrder.CreatedAt < sellOrder.CreatedAt
-                                ? buyOrder.PriceUsd!.Value
-                                : sellOrder.PriceUsd!.Value;
-
-                            await ExecuteTradeAsync(buyOrder, sellOrder, matchQty, executionPrice);
-                            matchCount++;
-                        }
+                        buyIndex++;
                     }
+                    if (sellOrder.FilledQty >= sellOrder.QuantityCoin)
+                    {
+                        sellIndex++;
+                    }
+                }
+                else
+                {
+                    // Move to next order
+                    if (buyRemaining <= 0) buyIndex++;
+                    if (sellRemaining <= 0) sellIndex++;
                 }
             }
 
@@ -995,14 +1067,31 @@ namespace CryptoTrading.Services.Trading
                 throw new InvalidOperationException($"Cryptocurrency '{coinSymbol}' not found");
             }
 
-            // Get current market price from CoinGecko
-            var marketData = await _coinGeckoService.GetMarketDataAsync();
-            var cryptoData = marketData.FirstOrDefault(c =>
-                c.Symbol.Equals(coinSymbol, StringComparison.OrdinalIgnoreCase));
-
-            var currentPrice = cryptoData?.CurrentPrice ?? 0m;
-            var priceChange24h = cryptoData?.PriceChange24h ?? 0m;
-            var priceChangePercentage24h = cryptoData?.PriceChangePercentage24h ?? 0m;
+            // ✅ SỬ DỤNG CACHE thay vì gọi API
+            decimal currentPrice = 0m;
+            decimal priceChange24h = 0m;
+            decimal priceChangePercentage24h = 0m;
+            
+            // Try cache first
+            if (_cacheService.TryGetCryptoData(out var marketData) && marketData != null)
+            {
+                var coin = marketData.FirstOrDefault(c => 
+                    c.Symbol.Equals(coinSymbol, StringComparison.OrdinalIgnoreCase));
+                if (coin != null && coin.CurrentPrice > 0)
+                {
+                    currentPrice = coin.CurrentPrice ?? 0m; // Handle nullable
+                    priceChange24h = coin.PriceChange24h ?? 0m;
+                    priceChangePercentage24h = coin.PriceChangePercentage24h ?? 0m;
+                    _logger.LogDebug("Using cached data for order book: {Symbol}", coinSymbol);
+                }
+            }
+            
+            // If cache miss, still proceed (order book can work without current price)
+            if (currentPrice <= 0)
+            {
+                _logger.LogDebug("Cache miss for order book, will use default price");
+                // Order book will still show orders even without current market price
+            }
 
             // Get open sell orders (asks)
             var sellOrders = await _context.Orders
@@ -1057,6 +1146,113 @@ namespace CryptoTrading.Services.Trading
         #endregion
 
         #region Helper Methods
+
+        /// <summary>
+        /// Smart price fetching with multi-layer cache strategy
+        /// </summary>
+        private async Task<decimal> GetMarketPriceAsync(
+            string symbol, 
+            TimeSpan cacheTTL, 
+            bool forceRefresh = false)
+        {
+            // ✅ LAYER 1: Check in-memory cache first
+            if (!forceRefresh && _priceCache.TryGetValue(symbol, out var cached))
+            {
+                var age = DateTime.UtcNow - cached.LastUpdated;
+                if (age < cacheTTL)
+                {
+                    _logger.LogDebug("Using in-memory cache for {Symbol}: {Price} (age: {Age}s)", 
+                        symbol, cached.Price, age.TotalSeconds);
+                    return cached.Price;
+                }
+            }
+            
+            // ✅ LAYER 2: Check service cache (from RealtimeBroadcastService)
+            if (!forceRefresh && _cacheService.TryGetCryptoData(out var cachedMarketData) && cachedMarketData != null)
+            {
+                var coin = cachedMarketData.FirstOrDefault(c => 
+                    c.Symbol.Equals(symbol, StringComparison.OrdinalIgnoreCase));
+                if (coin != null && coin.CurrentPrice.HasValue && coin.CurrentPrice.Value > 0)
+                {
+                    var price = coin.CurrentPrice.Value;
+                    // Update in-memory cache
+                    _priceCache[symbol] = (price, DateTime.UtcNow);
+                    _logger.LogDebug("Using service cache for {Symbol}: {Price}", symbol, price);
+                    return price;
+                }
+            }
+            
+            // ✅ LAYER 3: Only fetch from API when needed
+            if (forceRefresh || cacheTTL == TimeSpan.Zero)
+            {
+                _logger.LogWarning("Cache miss for {Symbol}, fetching from API", symbol);
+                var freshMarketData = await _coinGeckoService.GetMarketDataAsync();
+                var coin = freshMarketData.FirstOrDefault(c => 
+                    c.Symbol.Equals(symbol, StringComparison.OrdinalIgnoreCase));
+                var price = coin?.CurrentPrice ?? 0m;
+                
+                if (price > 0)
+                {
+                    _priceCache[symbol] = (price, DateTime.UtcNow);
+                }
+                
+                return price;
+            }
+            
+            // Return cached price even if slightly stale
+            if (_priceCache.TryGetValue(symbol, out var stale))
+            {
+                _logger.LogDebug("Using slightly stale cache for {Symbol}: {Price}", symbol, stale.Price);
+                return stale.Price;
+            }
+            
+            return 0m;
+        }
+
+        /// <summary>
+        /// Immediate matching for LIMIT orders when placed
+        /// </summary>
+        private async Task TryImmediateMatchAsync(Order newOrder, Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction transaction)
+        {
+            var opposingSide = newOrder.Side == "BUY" ? "SELL" : "BUY";
+            var remainingQty = newOrder.QuantityCoin;
+            
+            // Get best matching orders (single query, sorted)
+            var opposingOrders = await _context.Orders
+                .Where(o =>
+                    o.CryptocurrencyId == newOrder.CryptocurrencyId &&
+                    o.Side == opposingSide &&
+                    o.Type == "LIMIT" &&
+                    (o.Status == "NEW" || o.Status == "PARTIAL") &&
+                    (newOrder.Side == "BUY" 
+                        ? o.PriceUsd <= newOrder.PriceUsd  // BUY matches with SELL <= buy price
+                        : o.PriceUsd >= newOrder.PriceUsd)) // SELL matches with BUY >= sell price
+                .OrderBy(o => newOrder.Side == "BUY" ? o.PriceUsd : -o.PriceUsd) // Best price first
+                .ThenBy(o => o.CreatedAt) // FIFO
+                .Take(10) // Limit to top 10
+                .ToListAsync();
+            
+            foreach (var opposingOrder in opposingOrders)
+            {
+                if (remainingQty <= 0) break;
+                
+                var buyRemaining = newOrder.Side == "BUY" 
+                    ? newOrder.QuantityCoin - newOrder.FilledQty
+                    : opposingOrder.QuantityCoin - opposingOrder.FilledQty;
+                var sellRemaining = newOrder.Side == "SELL"
+                    ? newOrder.QuantityCoin - newOrder.FilledQty
+                    : opposingOrder.QuantityCoin - opposingOrder.FilledQty;
+                
+                if (buyRemaining > 0 && sellRemaining > 0)
+                {
+                    var matchQty = Math.Min(buyRemaining, sellRemaining);
+                    var executionPrice = opposingOrder.PriceUsd!.Value; // Maker's price
+                    
+                    await ExecuteTradeAsync(newOrder, opposingOrder, matchQty, executionPrice);
+                    remainingQty -= matchQty;
+                }
+            }
+        }
 
         /// <summary>
         /// Parses trading pair symbol (e.g., "BTC/USDT" -> ("BTC", "USDT"))

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { 
   LayoutDashboard, 
   Star, 
@@ -16,12 +16,16 @@ import {
   ChevronDown,
   Menu,
   X,
-  BarChart3 
+  BarChart3,
+  LogOut,
+  User
 } from 'lucide-react';
 import { Input } from './ui/input';
 import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
+import { setAccessToken } from '../api/http';
+import { useNavigate } from 'react-router-dom';
 
 interface TraderLayoutProps {
   children: React.ReactNode;
@@ -31,6 +35,33 @@ interface TraderLayoutProps {
 
 export default function TraderLayout({ children, currentPage, onNavigate }: TraderLayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const userMenuRef = useRef<HTMLDivElement>(null);
+  const navigate = useNavigate();
+
+  // ✅ Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (userMenuRef.current && !userMenuRef.current.contains(event.target as Node)) {
+        setUserMenuOpen(false);
+      }
+    };
+
+    if (userMenuOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [userMenuOpen]);
+
+  // ✅ Handle logout
+  const handleLogout = () => {
+    setAccessToken(null);
+    setUserMenuOpen(false);
+    navigate('/login');
+  };
 
   const menuItems = [
     { id: 'trader-dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -53,9 +84,11 @@ export default function TraderLayout({ children, currentPage, onNavigate }: Trad
       {/* Logo */}
       <div className="p-6 border-b border-gray-800 flex-shrink-0">
         <div className="flex items-center gap-2">
-          <div className="w-8 h-8 bg-emerald-500 rounded-lg flex items-center justify-center">
-            <span className="text-black">CT</span>
-          </div>
+          <img 
+            src="/logo.png" 
+            alt="CryptoTrade Logo" 
+            className="w-12 h-12 object-contain"
+          />
           <span className="text-xl">CryptoTrade</span>
         </div>
       </div>
@@ -106,9 +139,11 @@ export default function TraderLayout({ children, currentPage, onNavigate }: Trad
           <aside className="absolute left-0 top-0 bottom-0 w-64 bg-black border-r border-gray-800 flex flex-col">
             <div className="p-6 border-b border-gray-800 flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <div className="w-8 h-8 bg-emerald-500 rounded-lg flex items-center justify-center">
-                  <span className="text-black">CT</span>
-                </div>
+                <img 
+                  src="/logo.png" 
+                  alt="CryptoTrade Logo" 
+                  className="w-8 h-8 object-contain"
+                />
                 <span className="text-xl">CryptoTrade</span>
               </div>
               <button onClick={() => setSidebarOpen(false)}>
@@ -146,13 +181,56 @@ export default function TraderLayout({ children, currentPage, onNavigate }: Trad
                 <Bell className="w-5 h-5" />
                 <span className="absolute top-1 right-1 w-2 h-2 bg-emerald-500 rounded-full"></span>
               </button>
-              <div className="flex items-center gap-2 cursor-pointer hover:bg-gray-900 rounded-lg px-2 py-1 transition-colors">
-                <Avatar className="w-8 h-8">
-                  <AvatarImage src="https://api.dicebear.com/7.x/avataaars/svg?seed=trader" />
-                  <AvatarFallback>TR</AvatarFallback>
-                </Avatar>
-                <span className="hidden sm:inline">Trader</span>
-                <ChevronDown className="w-4 h-4 text-gray-400" />
+              
+              {/* ✅ User Menu with Dropdown */}
+              <div className="relative" ref={userMenuRef}>
+                <div 
+                  onClick={() => setUserMenuOpen(!userMenuOpen)}
+                  className="flex items-center gap-2 cursor-pointer hover:bg-gray-900 rounded-lg px-2 py-1 transition-colors"
+                >
+                  <Avatar className="w-8 h-8">
+                    <AvatarImage src="https://api.dicebear.com/7.x/avataaars/svg?seed=trader" />
+                    <AvatarFallback>TR</AvatarFallback>
+                  </Avatar>
+                  <span className="hidden sm:inline">Trader</span>
+                  <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${userMenuOpen ? 'rotate-180' : ''}`} />
+                </div>
+                
+                {/* ✅ Dropdown Menu */}
+                {userMenuOpen && (
+                  <div className="absolute right-0 mt-2 w-48 bg-gray-900 border border-gray-800 rounded-lg shadow-xl z-50">
+                    <div className="py-1">
+                      <button
+                        onClick={() => {
+                          onNavigate('settings');
+                          setUserMenuOpen(false);
+                        }}
+                        className="w-full flex items-center gap-3 px-4 py-2 text-left text-gray-300 hover:bg-gray-800 hover:text-white transition-colors"
+                      >
+                        <User className="w-4 h-4" />
+                        <span>Profile</span>
+                      </button>
+                      <button
+                        onClick={() => {
+                          onNavigate('settings');
+                          setUserMenuOpen(false);
+                        }}
+                        className="w-full flex items-center gap-3 px-4 py-2 text-left text-gray-300 hover:bg-gray-800 hover:text-white transition-colors"
+                      >
+                        <Settings className="w-4 h-4" />
+                        <span>Settings</span>
+                      </button>
+                      <div className="border-t border-gray-800 my-1"></div>
+                      <button
+                        onClick={handleLogout}
+                        className="w-full flex items-center gap-3 px-4 py-2 text-left text-red-400 hover:bg-red-500/10 hover:text-red-300 transition-colors"
+                      >
+                        <LogOut className="w-4 h-4" />
+                        <span>Logout</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>
