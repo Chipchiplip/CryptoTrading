@@ -2,6 +2,7 @@ using CryptoTrading.Models.DTOs;
 using CryptoTrading.Services.Auth;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using CryptoTrading.Interfaces;
 
 namespace CryptoTrading.Controllers;
 
@@ -10,10 +11,129 @@ namespace CryptoTrading.Controllers;
 public class AuthController : ControllerBase
 {
     private readonly IAuthService _authService;
+    private readonly ICurrentUser _currentUser;
+    private readonly IUserService _userService;
 
-    public AuthController(IAuthService authService)
+    public AuthController(IAuthService authService, ICurrentUser currentUser, IUserService userService)
     {
         _authService = authService;
+        _currentUser = currentUser;
+        _userService = userService;
+    }
+
+    /// <summary>
+    /// Get current user's profile
+    /// </summary>
+    [Authorize]
+    [HttpGet("profile")]
+    public async Task<IActionResult> GetProfile()
+    {
+        try
+        {
+            var userId = _currentUser.UserId;
+            if (userId == null)
+            {
+                return Unauthorized(new { message = "User not authenticated" });
+            }
+
+            var profile = await _authService.GetProfileAsync(userId.Value);
+            if (profile == null)
+            {
+                return NotFound(new { message = "Profile not found" });
+            }
+            return Ok(profile);
+        }
+        catch (Exception ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// Change current user's password
+    /// </summary>
+    [Authorize]
+    [HttpPost("change-password")] 
+    public async Task<IActionResult> ChangePassword([FromBody] ChangePasswordDto dto)
+    {
+        try
+        {
+            var userId = _currentUser.UserId;
+            if (userId == null)
+            {
+                return Unauthorized(new { message = "User not authenticated" });
+            }
+
+            var success = await _authService.ChangePasswordAsync(userId.Value, dto);
+
+            if (!success)
+            {
+                return BadRequest(new { message = "Invalid current password" });
+            }
+
+            return Ok(new { message = "Password changed successfully" });
+        }
+        catch (Exception ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// Update current user's profile
+    /// </summary>
+    [Authorize]
+    [HttpPut("profile")]
+    public async Task<IActionResult> UpdateProfile([FromBody] UpdateProfileDto dto)
+    {
+        try
+        {
+            var userId = _currentUser.UserId;
+            if (userId == null)
+            {
+                return Unauthorized(new { message = "User not authenticated" });
+            }
+
+            // Gọi UpdateProfileAsync từ IAuthService
+            var profile = await _authService.UpdateProfileAsync(userId.Value, dto);
+            if (profile == null)
+            {
+                return NotFound(new { message = "Profile update failed or user not found" });
+            }
+
+            // Trả về thông tin profile đã được cập nhật
+            return Ok(profile);
+        }
+        catch (Exception ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+    }
+    
+    /// <summary>
+    /// Get current user's login activity
+    /// </summary>
+    [Authorize]
+    [HttpGet("activity")]
+    [ProducesResponseType(typeof(List<LoginActivityDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> GetLoginActivity()
+    {
+        var userId = _currentUser.UserId;
+        if (userId == null)
+        {
+            return Unauthorized(new { message = "User not authenticated" });
+        }
+
+        try
+        {
+            var activity = await _userService.GetLoginActivityAsync(userId.Value, 5);
+            return Ok(activity);
+        }
+        catch (Exception ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
     }
 
     /// <summary>
@@ -213,6 +333,25 @@ public class AuthController : ControllerBase
         try
         {
             var result = await _authService.Verify2FAAsync(twoFactorDto.Code);
+            return Ok(result);
+        }
+        catch (Exception ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// Disable 2FA for user
+    /// </summary>
+    [Authorize]
+    [HttpPost("disable-2fa")]
+    public async Task<IActionResult> Disable2FA([FromBody] DisableTwoFactorDto dto)
+    {
+      
+   try
+        {
+            var result = await _authService.Disable2FAAsync(dto);
             return Ok(result);
         }
         catch (Exception ex)

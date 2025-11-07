@@ -6,7 +6,7 @@ import { Label } from '../../ui/label';
 import { Card } from '../../ui/card';
 import { Alert, AlertDescription } from '../../ui/alert';
 import { Checkbox } from '../../ui/checkbox';
-import { AuthApi } from '../../../api/auth';
+import { AuthApi, UserInfo } from '../../../api/auth';
 import { setAccessToken } from '../../../api/http';
 
 interface LoginProps {
@@ -60,7 +60,9 @@ export default function Login({ onNavigate }: LoginProps) {
       }
 
       console.log('[Login] Login successful, setting access token');
-      setAccessToken(res.data.accessToken);
+      
+      setAccessToken(res.data.accessToken, res.data.user || null);
+      
       onNavigate?.('trader-dashboard');
     } catch (err: any) {
       console.error('[Login] Unexpected error:', err);
@@ -100,7 +102,9 @@ export default function Login({ onNavigate }: LoginProps) {
       }
 
       console.log('[Login] 2FA verification successful');
-      setAccessToken(res.data.accessToken);
+      
+      setAccessToken(res.data.accessToken, res.data.user || null);
+
       onNavigate?.('trader-dashboard');
     } catch (err: any) {
       console.error('[Login] Unexpected error during 2FA:', err);
@@ -113,7 +117,6 @@ export default function Login({ onNavigate }: LoginProps) {
   return (
     <div className="min-h-screen bg-black text-white flex items-center justify-center px-4 py-12">
       <div className="w-full max-w-md">
-        {/* Logo */}
         <div className="text-center mb-8">
           <div className="inline-flex items-center gap-2 mb-4">
             <img 
@@ -135,7 +138,6 @@ export default function Login({ onNavigate }: LoginProps) {
               </Alert>
             )}
 
-            {/* Email */}
             <div className="space-y-2">
               <Label htmlFor="email">Email Address</Label>
               <div className="relative">
@@ -152,7 +154,6 @@ export default function Login({ onNavigate }: LoginProps) {
               </div>
             </div>
 
-            {/* Password */}
             <div className="space-y-2">
               <Label htmlFor="password">Password</Label>
               <div className="relative">
@@ -191,13 +192,12 @@ export default function Login({ onNavigate }: LoginProps) {
               </div>
             )}
 
-            {/* Remember Me & Forgot Password */}
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Checkbox
                   id="remember"
                   checked={rememberMe}
-                  onCheckedChange={(checked) => setRememberMe(checked as boolean)}
+                  onCheckedChange={(checked: boolean | "indeterminate") => setRememberMe(checked as boolean)}
                 />
                 <Label htmlFor="remember" className="text-sm text-gray-400 cursor-pointer">
                   Remember me
@@ -212,7 +212,6 @@ export default function Login({ onNavigate }: LoginProps) {
               </button>
             </div>
 
-            {/* Submit Button */}
             <Button
               type="submit"
               className="w-full bg-emerald-500 text-black hover:bg-emerald-600"
@@ -221,7 +220,6 @@ export default function Login({ onNavigate }: LoginProps) {
               {loading ? (twoFARequired ? 'Verifying...' : 'Signing in...') : (twoFARequired ? 'Verify 2FA' : 'Sign In')}
             </Button>
 
-            {/* Divider */}
             <div className="relative">
               <div className="absolute inset-0 flex items-center">
                 <div className="w-full border-t border-gray-800"></div>
@@ -231,7 +229,6 @@ export default function Login({ onNavigate }: LoginProps) {
               </div>
             </div>
 
-            {/* Social Login */}
             <div className="grid grid-cols-2 gap-4">
               <Button
                 type="button"
@@ -260,7 +257,6 @@ export default function Login({ onNavigate }: LoginProps) {
           </form>
         </Card>
 
-        {/* Sign Up Link */}
         <div className="text-center mt-6">
           <span className="text-gray-400">Don't have an account? </span>
           <button
