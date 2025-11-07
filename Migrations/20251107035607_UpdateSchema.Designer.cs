@@ -12,8 +12,8 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace CryptoTrading.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    [Migration("20251107020807_InitialSchema")]
-    partial class InitialSchema
+    [Migration("20251107035607_UpdateSchema")]
+    partial class UpdateSchema
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
