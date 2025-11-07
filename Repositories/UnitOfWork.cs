@@ -13,9 +13,10 @@ namespace CryptoTrading.Repositories
         public UnitOfWork(ApplicationDbContext context)
         {
             _context = context;
-            
+
             // Auth
             Users = new Repository<User>(_context);
+            LoginActivities = new Repository<LoginActivity>(_context);
             
             // Market
             Cryptocurrencies = new CryptocurrencyRepository(_context);
@@ -25,6 +26,7 @@ namespace CryptoTrading.Repositories
 
         // Auth
         public IRepository<User> Users { get; private set; }
+        public IRepository<LoginActivity> LoginActivities { get; private set; }
         
         // Market
         public ICryptocurrencyRepository Cryptocurrencies { get; private set; }

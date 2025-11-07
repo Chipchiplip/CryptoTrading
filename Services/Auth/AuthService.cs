@@ -1,5 +1,6 @@
 using CryptoTrading.Interfaces;
 using CryptoTrading.Models;
+using CryptoTrading.Services;
 using CryptoTrading.Models.DTOs;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
@@ -18,7 +19,8 @@ namespace CryptoTrading.Services.Auth
         private readonly IDateTimeProvider _dateTimeProvider;
         private readonly ILogger<AuthService> _logger;
         private readonly IHttpContextAccessor _httpContextAccessor;
-        private readonly ICurrentUser _currentUser; // ✅ THÊM
+        private readonly IRoleService _roleService;
+        private readonly ILevelService _levelService;
 
         public AuthService(
             IUnitOfWork unitOfWork,
@@ -27,7 +29,8 @@ namespace CryptoTrading.Services.Auth
             IDateTimeProvider dateTimeProvider,
             ILogger<AuthService> logger,
             IHttpContextAccessor httpContextAccessor,
-            ICurrentUser currentUser) // ✅ THÊM
+            IRoleService roleService,
+            ILevelService levelService)
         {
             _unitOfWork = unitOfWork;
             _jwtSettings = jwtSettings.Value;
@@ -35,9 +38,11 @@ namespace CryptoTrading.Services.Auth
             _dateTimeProvider = dateTimeProvider;
             _logger = logger;
             _httpContextAccessor = httpContextAccessor;
-            _currentUser = currentUser; // ✅ THÊM
+            _roleService = roleService;
+            _levelService = levelService;
         }
 
+        // ====== ĐĂNG KÝ (REGISTER) - MẶC ĐỊNH ROLE/LEVEL ======
         public async Task<AuthResponseDto> RegisterAsync(RegisterDto registerDto)
         {
             try
@@ -57,15 +62,21 @@ namespace CryptoTrading.Services.Auth
                     PasswordHash = passwordHash,
                     FullName = registerDto.FullName,
                     CreatedAt = _dateTimeProvider.UtcNow,
-                    EmailConfirmed = false, // Auto-confirm for development
+                    EmailConfirmed = false,
                     EmailConfirmationToken = emailConfirmToken,
-                    EmailConfirmationTokenExpiry = _dateTimeProvider.UtcNow.AddHours(24)
+                    EmailConfirmationTokenExpiry = _dateTimeProvider.UtcNow.AddHours(24),
+
+                    // ========== MẶC ĐỊNH ==========
+                    Role = "User",
+                    Level = "Beginner",
+                    IsActive = true
+                    // ==============================
                 };
 
                 await _unitOfWork.Users.AddAsync(user);
                 await _unitOfWork.SaveChangesAsync();
 
-                // Send confirmation email
+                // Gửi mail xác nhận
                 await SendEmailConfirmationAsync(user.Email, emailConfirmToken);
 
                 _logger.LogInformation("User registered successfully: {Email}", registerDto.Email);
@@ -80,7 +91,9 @@ namespace CryptoTrading.Services.Auth
                         Id = user.Id,
                         Email = user.Email,
                         FullName = user.FullName,
-                        TwoFactorEnabled = false
+                        TwoFactorEnabled = false,
+                        Role = user.Role,
+                        Level = user.Level
                     }
                 };
             }
@@ -97,14 +110,10 @@ namespace CryptoTrading.Services.Auth
                 u => u.Email == email && u.EmailConfirmationToken == token);
 
             if (user == null)
-            {
                 throw new Exception("Invalid confirmation token");
-            }
 
             if (user.EmailConfirmationTokenExpiry < _dateTimeProvider.UtcNow)
-            {
                 throw new Exception("Confirmation token has expired");
-            }
 
             user.EmailConfirmed = true;
             user.EmailConfirmationToken = null;
@@ -125,147 +134,257 @@ namespace CryptoTrading.Services.Auth
 
                 if (user == null || !BCrypt.Net.BCrypt.Verify(loginDto.Password, user.PasswordHash))
                 {
-                    _logger.LogWarning("Login attempt failed for email: {Email}", loginDto.Email);
-                    throw new Exception("Invalid email or password");
+                    if (user != null)
+                    {
+                        await _unitOfWork.LoginActivities.AddAsync(new LoginActivity
+                        {
+                            UserId = user.Id,
+                            Ip = _httpContextAccessor.HttpContext?.Connection?.RemoteIpAddress?.ToString() ?? "unknown",
+                            UserAgent = _httpContextAccessor.HttpContext?.Request.Headers["User-Agent"].ToString(),
+                            Success = false,
+                            CreatedAt = DateTime.UtcNow
+                        });
+                        await _unitOfWork.SaveChangesAsync();
+                    }
+
+                    _logger.LogWarning("Login failed for {Email}", loginDto.Email);
+                    throw new Exception("Invalid credentials");
                 }
+
+                if (!user.IsActive)
+                    throw new Exception("Account is locked. Contact admin.");
 
                 if (!user.EmailConfirmed)
-                {
-                    _logger.LogWarning("Login attempt with unconfirmed email: {Email}", loginDto.Email);
-                    throw new Exception("Please confirm your email before logging in");
-                }
-
-                // Only check 2FA if user has enabled it
-                // If TwoFactorCode is provided but 2FA is not enabled, it will be ignored
-                if (user.TwoFactorEnabled)
-                {
-                    if (string.IsNullOrEmpty(loginDto.TwoFactorCode))
-                    {
-                        // Return response indicating 2FA is required
-                        _logger.LogInformation("2FA required for user: {Email}", loginDto.Email);
-                        return new AuthResponseDto
-                        {
-                            RequiresTwoFactor = true,
-                            AccessToken = string.Empty,
-                            RefreshToken = string.Empty,
-                            ExpiresAt = DateTime.MinValue,
-                            User = new UserDto
-                            {
-                                Id = user.Id,
-                                Email = user.Email,
-                                FullName = user.FullName,
-                                TwoFactorEnabled = user.TwoFactorEnabled
-                            }
-                        };
-                    }
-
-                    if (!VerifyTwoFactorCode(user.TwoFactorSecret!, loginDto.TwoFactorCode))
-                    {
-                        _logger.LogWarning("Invalid 2FA code for user: {Email}", loginDto.Email);
-                        throw new Exception("Invalid two-factor authentication code");
-                    }
-                }
-                else if (!string.IsNullOrEmpty(loginDto.TwoFactorCode))
-                {
-                    // User provided 2FA code but 2FA is not enabled - ignore it
-                    _logger.LogDebug("2FA code provided but 2FA not enabled for user: {Email}, ignoring code", loginDto.Email);
-                }
+                    throw new Exception("Please confirm your email before logging in.");
 
                 user.LastLoginAt = _dateTimeProvider.UtcNow;
+                await _unitOfWork.LoginActivities.AddAsync(new LoginActivity
+                {
+                    UserId = user.Id,
+                    Ip = _httpContextAccessor.HttpContext?.Connection?.RemoteIpAddress?.ToString() ?? "unknown",
+                    UserAgent = _httpContextAccessor.HttpContext?.Request.Headers["User-Agent"].ToString(),
+                    Success = true,
+                    CreatedAt = DateTime.UtcNow
+                });
+
+                await _unitOfWork.SaveChangesAsync();
+
+                if (user.TwoFactorEnabled)
+                {
+                    _logger.LogInformation("Login successful, 2FA required for: {Email}", loginDto.Email);
+
+                    return new AuthResponseDto
+                    {
+                        RequiresTwoFactor = true,
+                        AccessToken = string.Empty,
+                        RefreshToken = string.Empty,
+                        ExpiresAt = DateTime.MinValue,
+                        User = new UserDto
+                        {
+                            Id = user.Id,
+                            Email = user.Email,
+                            FullName = user.FullName,
+                            Role = user.Role,
+                            Level = user.Level,
+                            TwoFactorEnabled = user.TwoFactorEnabled
+                        }
+                    };
+                }
+
+                _logger.LogInformation("User logged in successfully (2FA disabled): {Email}", loginDto.Email);
+
+                var token = GenerateJwtToken(user);
+                var refreshToken = GenerateRefreshToken();
+
+                user.RefreshToken = refreshToken;
+                user.RefreshTokenExpiryTime = DateTime.UtcNow.AddDays(_jwtSettings.RefreshTokenExpirationDays);
                 _unitOfWork.Users.Update(user);
                 await _unitOfWork.SaveChangesAsync();
 
-                _logger.LogInformation("User logged in successfully: {Email}", loginDto.Email);
-
-                return await GenerateAuthResponse(user);
+                return new AuthResponseDto
+                {
+                    AccessToken = token,
+                    RefreshToken = refreshToken,
+                    ExpiresAt = DateTime.UtcNow.AddMinutes(_jwtSettings.AccessTokenExpirationMinutes),
+                    User = new UserDto
+                    {
+                        Id = user.Id,
+                        Email = user.Email,
+                        FullName = user.FullName,
+                        Role = user.Role,
+                        Level = user.Level,
+                        TwoFactorEnabled = user.TwoFactorEnabled
+                    },
+                    RequiresTwoFactor = false
+                };
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Login failed for email: {Email}", loginDto.Email);
+                _logger.LogError(ex, "Login failed for {Email}", loginDto.Email);
                 throw;
             }
         }
 
+        // ====== REFRESH TOKEN ======
         public async Task<AuthResponseDto> RefreshTokenAsync(string refreshToken)
         {
-            var user = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.RefreshToken == refreshToken);
-
-            if (user == null || user.RefreshTokenExpiryTime <= _dateTimeProvider.UtcNow)
+            try
             {
-                throw new Exception("Invalid or expired refresh token");
-            }
+                var user = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.RefreshToken == refreshToken);
 
-            return await GenerateAuthResponse(user);
+                if (user == null || user.RefreshTokenExpiryTime <= DateTime.UtcNow)
+                {
+                    _logger.LogWarning("Invalid or expired refresh token");
+                    throw new Exception("Invalid or expired refresh token");
+                }
+
+                var newAccessToken = GenerateJwtToken(user);
+                var newRefreshToken = GenerateRefreshToken();
+
+                user.RefreshToken = newRefreshToken;
+                user.RefreshTokenExpiryTime = DateTime.UtcNow.AddDays(_jwtSettings.RefreshTokenExpirationDays);
+                _unitOfWork.Users.Update(user);
+                await _unitOfWork.SaveChangesAsync();
+
+                _logger.LogInformation("Token refreshed for user: {Email}", user.Email);
+
+                return new AuthResponseDto
+                {
+                    AccessToken = newAccessToken,
+                    RefreshToken = newRefreshToken,
+                    ExpiresAt = DateTime.UtcNow.AddMinutes(_jwtSettings.AccessTokenExpirationMinutes),
+                    User = new UserDto
+                    {
+                        Id = user.Id,
+                        Email = user.Email,
+                        FullName = user.FullName,
+                        Role = user.Role,
+                        Level = user.Level,
+                        TwoFactorEnabled = user.TwoFactorEnabled
+                    }
+                };
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Token refresh failed");
+                throw;
+            }
         }
 
+        // ====== REVOKE TOKEN ======
         public async Task<bool> RevokeTokenAsync(string refreshToken)
         {
-            var user = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.RefreshToken == refreshToken);
+            try
+            {
+                var user = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.RefreshToken == refreshToken);
 
-            if (user == null) return false;
+                if (user == null)
+                {
+                    return false;
+                }
 
-            user.RefreshToken = null;
-            user.RefreshTokenExpiryTime = null;
-            _unitOfWork.Users.Update(user);
-            await _unitOfWork.SaveChangesAsync();
+                user.RefreshToken = null;
+                user.RefreshTokenExpiryTime = null;
+                _unitOfWork.Users.Update(user);
+                await _unitOfWork.SaveChangesAsync();
 
-            return true;
+                _logger.LogInformation("Token revoked for user: {Email}", user.Email);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Token revocation failed");
+                throw;
+            }
         }
 
+        // ====== PASSWORD RESET ======
         public async Task<string> GeneratePasswordResetTokenAsync(string email)
         {
-            var user = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Email == email);
+            try
+            {
+                var user = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Email == email);
 
-            if (user == null)
-                throw new Exception("User not found");
+                if (user == null)
+                {
+                    // Don't reveal if email exists
+                    _logger.LogWarning("Password reset requested for non-existent email: {Email}", email);
+                    return "If the email exists, a reset link will be sent.";
+                }
 
-            var token = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32));
+                var resetToken = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32));
 
-            user.PasswordResetToken = token;
-            user.PasswordResetTokenExpiry = _dateTimeProvider.UtcNow.AddHours(1);
+                user.PasswordResetToken = resetToken;
+                user.PasswordResetTokenExpiry = _dateTimeProvider.UtcNow.AddHours(1);
+                _unitOfWork.Users.Update(user);
+                await _unitOfWork.SaveChangesAsync();
 
-            _unitOfWork.Users.Update(user);
-            await _unitOfWork.SaveChangesAsync();
+                await SendPasswordResetEmailAsync(user.Email, resetToken);
 
-            await SendPasswordResetEmailAsync(email, token);
-
-            return token;
+                _logger.LogInformation("Password reset token generated for: {Email}", email);
+                return "Password reset link has been sent to your email.";
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Password reset token generation failed");
+                throw;
+            }
         }
 
         public async Task<bool> ResetPasswordAsync(ResetPasswordDto resetDto)
         {
-            var user = await _unitOfWork.Users.FirstOrDefaultAsync(
-                u => u.Email == resetDto.Email && u.PasswordResetToken == resetDto.Token);
+            try
+            {
+                var user = await _unitOfWork.Users.FirstOrDefaultAsync(
+                    u => u.Email == resetDto.Email && u.PasswordResetToken == resetDto.Token);
 
-            if (user == null || user.PasswordResetTokenExpiry < _dateTimeProvider.UtcNow)
-                throw new Exception("Invalid or expired reset token");
+                if (user == null)
+                {
+                    throw new Exception("Invalid reset token");
+                }
 
-            user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(resetDto.NewPassword);
-            user.PasswordResetToken = null;
-            user.PasswordResetTokenExpiry = null;
+                if (user.PasswordResetTokenExpiry < _dateTimeProvider.UtcNow)
+                {
+                    throw new Exception("Reset token has expired");
+                }
 
-            _unitOfWork.Users.Update(user);
-            await _unitOfWork.SaveChangesAsync();
+                user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(resetDto.NewPassword);
+                user.PasswordResetToken = null;
+                user.PasswordResetTokenExpiry = null;
 
-            _logger.LogInformation("Password reset successfully for user: {Email}", resetDto.Email);
+                // Revoke all refresh tokens for security
+                user.RefreshToken = null;
+                user.RefreshTokenExpiryTime = null;
 
-            return true;
+                _unitOfWork.Users.Update(user);
+                await _unitOfWork.SaveChangesAsync();
+
+                _logger.LogInformation("Password reset successfully for: {Email}", resetDto.Email);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Password reset failed");
+                throw;
+            }
         }
 
+        // ====== LOGIN WITH 2FA ======
         public async Task<AuthResponseDto> LoginWith2FAAsync(string email, string code)
         {
             try
             {
                 var user = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Email == email);
 
-                if (user == null || !user.TwoFactorEnabled)
+                if (user == null)
                 {
-                    _logger.LogWarning("2FA login attempt for invalid user: {Email}", email);
-                    throw new Exception("Invalid request");
+                    throw new Exception("User not found");
                 }
 
-                if (string.IsNullOrEmpty(user.TwoFactorSecret))
-                    throw new Exception("2FA not properly configured");
+                if (!user.TwoFactorEnabled || string.IsNullOrEmpty(user.TwoFactorSecret))
+                {
+                    throw new Exception("2FA is not enabled for this account");
+                }
 
                 if (!VerifyTwoFactorCode(user.TwoFactorSecret, code))
                 {
@@ -274,52 +393,456 @@ namespace CryptoTrading.Services.Auth
                 }
 
                 user.LastLoginAt = _dateTimeProvider.UtcNow;
+
+                await _unitOfWork.LoginActivities.AddAsync(new LoginActivity
+                {
+                    UserId = user.Id,
+                    Ip = _httpContextAccessor.HttpContext?.Connection?.RemoteIpAddress?.ToString() ?? "unknown",
+                    UserAgent = _httpContextAccessor.HttpContext?.Request.Headers["User-Agent"].ToString(),
+                    Success = true,
+                    CreatedAt = DateTime.UtcNow
+                });
+
+                await _unitOfWork.SaveChangesAsync();
+
+                var token = GenerateJwtToken(user);
+                var refreshToken = GenerateRefreshToken();
+
+                user.RefreshToken = refreshToken;
+                user.RefreshTokenExpiryTime = DateTime.UtcNow.AddDays(_jwtSettings.RefreshTokenExpirationDays);
                 _unitOfWork.Users.Update(user);
                 await _unitOfWork.SaveChangesAsync();
 
-                _logger.LogInformation("User logged in with 2FA successfully: {Email}", email);
+                _logger.LogInformation("User logged in with 2FA: {Email}", email);
 
-                return await GenerateAuthResponse(user);
+                return new AuthResponseDto
+                {
+                    AccessToken = token,
+                    RefreshToken = refreshToken,
+                    ExpiresAt = DateTime.UtcNow.AddMinutes(_jwtSettings.AccessTokenExpirationMinutes),
+                    User = new UserDto
+                    {
+                        Id = user.Id,
+                        Email = user.Email,
+                        FullName = user.FullName,
+                        Role = user.Role,
+                        Level = user.Level,
+                        TwoFactorEnabled = user.TwoFactorEnabled
+                    }
+                };
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "2FA login failed for email: {Email}", email);
+                _logger.LogError(ex, "2FA login failed for {Email}", email);
                 throw;
             }
         }
 
-        private async Task<AuthResponseDto> GenerateAuthResponse(User user)
+        // ====== USER PROFILE ======
+        public async Task<UserProfileDto> GetProfileAsync(int userId)
         {
-            var accessToken = GenerateAccessToken(user);
-            var refreshToken = GenerateRefreshToken();
-
-            user.RefreshToken = refreshToken;
-            user.RefreshTokenExpiryTime = _dateTimeProvider.UtcNow.AddDays(_jwtSettings.RefreshTokenExpirationDays);
-            _unitOfWork.Users.Update(user);
-            await _unitOfWork.SaveChangesAsync();
-
-            return new AuthResponseDto
+            try
             {
-                AccessToken = accessToken,
-                RefreshToken = refreshToken,
-                ExpiresAt = _dateTimeProvider.UtcNow.AddMinutes(_jwtSettings.AccessTokenExpirationMinutes),
-                User = new UserDto
+                var user = await _unitOfWork.Users.GetByIdAsync(userId);
+
+                if (user == null)
+                {
+                    throw new Exception("User not found");
+                }
+
+                return new UserProfileDto
                 {
                     Id = user.Id,
                     Email = user.Email,
                     FullName = user.FullName,
-                    TwoFactorEnabled = user.TwoFactorEnabled
+                    Role = user.Role,
+                    Level = user.Level,
+                    IsActive = user.IsActive,
+                    EmailConfirmed = user.EmailConfirmed,
+                    TwoFactorEnabled = user.TwoFactorEnabled,
+                    CreatedAt = user.CreatedAt,
+                    LastLoginAt = user.LastLoginAt,
+                    PhoneNumber = user.PhoneNumber,
+                    Timezone = user.Timezone
+                };
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Get profile failed for userId: {UserId}", userId);
+                throw;
+            }
+        }
+
+        public async Task<UserProfileDto> UpdateProfileAsync(int userId, UpdateProfileDto dto)
+        {
+            try
+            {
+                var user = await _unitOfWork.Users.GetByIdAsync(userId);
+
+                if (user == null)
+                {
+                    throw new Exception("User not found");
                 }
+
+                if (!string.IsNullOrWhiteSpace(dto.FullName))
+                {
+                    user.FullName = dto.FullName;
+                }
+                if (dto.AvatarUrl != null)
+                {
+                    user.AvatarUrl = dto.AvatarUrl;
+                }
+                if (dto.Bio != null)
+                {
+                    user.Bio = dto.Bio;
+                }
+                if (dto.PhoneNumber != null)
+                {
+                    user.PhoneNumber = dto.PhoneNumber;
+                }
+                if (dto.Timezone != null)
+                {
+                    user.Timezone = dto.Timezone;
+                }
+
+                _unitOfWork.Users.Update(user);
+                await _unitOfWork.SaveChangesAsync();
+
+                _logger.LogInformation("Profile updated for userId: {UserId}", userId);
+
+                return await GetProfileAsync(userId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Update profile failed for userId: {UserId}", userId);
+                throw;
+            }
+        }
+
+        public async Task<bool> ChangePasswordAsync(int userId, ChangePasswordDto dto)
+        {
+            try
+            {
+                var user = await _unitOfWork.Users.GetByIdAsync(userId);
+
+                if (user == null)
+                {
+                    throw new Exception("User not found");
+                }
+
+                if (!BCrypt.Net.BCrypt.Verify(dto.CurrentPassword, user.PasswordHash))
+                {
+                    throw new Exception("Current password is incorrect");
+                }
+
+                user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(dto.NewPassword);
+
+                // Revoke all refresh tokens for security
+                user.RefreshToken = null;
+                user.RefreshTokenExpiryTime = null;
+
+                _unitOfWork.Users.Update(user);
+                await _unitOfWork.SaveChangesAsync();
+
+                _logger.LogInformation("Password changed for userId: {UserId}", userId);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Change password failed for userId: {UserId}", userId);
+                throw;
+            }
+        }
+
+        // ====== ADMIN - USER MANAGEMENT ======
+        public async Task<IEnumerable<UserListDto>> GetAllUsersAsync()
+        {
+            try
+            {
+                var users = await _unitOfWork.Users.GetAllAsync();
+
+                return users.Select(u => new UserListDto
+                {
+                    Id = u.Id,
+                    Email = u.Email,
+                    FullName = u.FullName,
+                    Role = u.Role,
+                    Level = u.Level,
+                    IsActive = u.IsActive,
+                    EmailConfirmed = u.EmailConfirmed,
+                    TwoFactorEnabled = u.TwoFactorEnabled,
+                    CreatedAt = u.CreatedAt,
+                    LastLoginAt = u.LastLoginAt
+                }).ToList();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Get all users failed");
+                throw;
+            }
+        }
+
+        public async Task<bool> UpdateUserRoleAsync(int userId, UpdateUserRoleDto dto)
+        {
+            try
+            {
+                var user = await _unitOfWork.Users.GetByIdAsync(userId);
+
+                if (user == null)
+                {
+                    throw new Exception("User not found");
+                }
+
+                var role = await _roleService.GetRoleByIdAsync(dto.RoleId);
+                if (role == null)
+                {
+                    throw new Exception($"Role with ID {dto.RoleId} not found.");
+                }
+
+                user.Role = role.Name;
+
+                _unitOfWork.Users.Update(user);
+                await _unitOfWork.SaveChangesAsync();
+
+                _logger.LogInformation("Role updated for userId: {UserId} to {Role}", userId, user.Role);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Update role failed for userId: {UserId}", userId);
+                throw;
+            }
+        }
+
+        public async Task<bool> UpdateUserLevelAsync(int userId, UpdateLevelDtoUser dto)
+        {
+            try
+            {
+                var user = await _unitOfWork.Users.GetByIdAsync(userId);
+
+                if (user == null)
+                {
+                    throw new Exception("User not found");
+                }
+
+                var level = await _levelService.GetLevelByIdAsync(dto.LevelId);
+                if (level == null)
+                {
+                    throw new Exception($"Level with ID {dto.LevelId} not found.");
+                }
+
+                user.Level = level.Name;
+
+                _unitOfWork.Users.Update(user);
+                await _unitOfWork.SaveChangesAsync();
+
+                _logger.LogInformation("Level updated for userId: {UserId} to {Level}", userId, user.Level);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Update level failed for userId: {UserId}", userId);
+                throw;
+            }
+        }
+
+        public async Task<bool> UpdateUserStatusAsync(int userId, UpdateUserStatusDto dto)
+        {
+            try
+            {
+                var user = await _unitOfWork.Users.GetByIdAsync(userId);
+
+                if (user == null)
+                {
+                    throw new Exception("User not found");
+                }
+
+                user.IsActive = dto.IsActive;
+
+                // If deactivating, revoke all tokens
+                if (!dto.IsActive)
+                {
+                    user.RefreshToken = null;
+                    user.RefreshTokenExpiryTime = null;
+                }
+
+                _unitOfWork.Users.Update(user);
+                await _unitOfWork.SaveChangesAsync();
+
+                _logger.LogInformation("Status updated for userId: {UserId} to {Status}",
+                    userId, dto.IsActive ? "Active" : "Inactive");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Update status failed for userId: {UserId}", userId);
+                throw;
+            }
+        }
+
+        // ====== 2FA MANAGEMENT ======
+        public async Task<object> Enable2FAAsync()
+        {
+            var currentUser = await GetCurrentUserAsync();
+            if (currentUser == null)
+            {
+                throw new Exception("User not found");
+            }
+
+            if (currentUser.TwoFactorEnabled)
+            {
+                throw new Exception("2FA is already enabled");
+            }
+
+            // Generate secret key
+            var key = OtpNet.KeyGeneration.GenerateRandomKey(20);
+            var secret = OtpNet.Base32Encoding.ToString(key);
+
+            currentUser.TwoFactorSecret = secret;
+            _unitOfWork.Users.Update(currentUser);
+            await _unitOfWork.SaveChangesAsync();
+
+            // Generate QR code URL
+            var qrCodeUrl = $"otpauth://totp/CryptoTrading:{currentUser.Email}?secret={secret}&issuer=CryptoTrading";
+
+            _logger.LogInformation("2FA setup initiated for user: {Email}", currentUser.Email);
+
+            return new
+            {
+                secret = secret,
+                qrCodeUrl = qrCodeUrl,
+                message = "Scan the QR code with your authenticator app and verify with a code"
             };
         }
 
-        private string GenerateAccessToken(User user)
+        public async Task<object> Verify2FAAsync(string code)
+        {
+            var currentUser = await GetCurrentUserAsync();
+            if (currentUser == null)
+            {
+                throw new Exception("User not found");
+            }
+
+            if (string.IsNullOrEmpty(currentUser.TwoFactorSecret))
+            {
+                throw new Exception("2FA setup not initiated. Please enable 2FA first.");
+            }
+
+            if (!VerifyTwoFactorCode(currentUser.TwoFactorSecret, code))
+            {
+                throw new Exception("Invalid 2FA code");
+            }
+
+            currentUser.TwoFactorEnabled = true;
+            _unitOfWork.Users.Update(currentUser);
+            await _unitOfWork.SaveChangesAsync();
+
+            _logger.LogInformation("2FA enabled successfully for user: {Email}", currentUser.Email);
+
+            return new
+            {
+                message = "2FA has been enabled successfully",
+                twoFactorEnabled = true
+            };
+        }
+
+        public async Task<bool> Disable2FAAsync(DisableTwoFactorDto dto)
+        {
+            // Lấy người dùng hiện tại từ token
+            var user = await GetCurrentUserAsync();
+
+            if (!user.TwoFactorEnabled)
+            {
+                throw new Exception("2FA is not currently enabled");
+            }
+
+            // Yêu cầu xác nhận mật khẩu trước khi tắt 2FA
+            if (!BCrypt.Net.BCrypt.Verify(dto.Password, user.PasswordHash))
+            {
+                _logger.LogWarning("Failed 2FA disable attempt (wrong password) for user: {Email}", user.Email);
+                throw new Exception("Invalid password");
+            }
+
+            // Tắt 2FA
+            user.TwoFactorEnabled = false;
+            user.TwoFactorSecret = null;
+
+            _unitOfWork.Users.Update(user);
+            await _unitOfWork.SaveChangesAsync();
+
+            _logger.LogInformation("2FA disabled for user: {Email}", user.Email);
+            return true;
+        }
+
+        // ====== TESTING METHODS ======
+        public async Task TestConfirmEmailAsync(string email)
+        {
+            var user = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Email == email);
+            if (user == null)
+            {
+                throw new Exception("User not found");
+            }
+
+            user.EmailConfirmed = true;
+            user.EmailConfirmationToken = null;
+            user.EmailConfirmationTokenExpiry = null;
+
+            _unitOfWork.Users.Update(user);
+            await _unitOfWork.SaveChangesAsync();
+
+            _logger.LogInformation("Email confirmed for testing: {Email}", email);
+        }
+
+        public async Task<string> TestGetResetTokenAsync(string email)
+        {
+            var user = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Email == email);
+            if (user == null)
+            {
+                throw new Exception("User not found");
+            }
+
+            if (string.IsNullOrEmpty(user.PasswordResetToken))
+            {
+                throw new Exception("No reset token found. Please request password reset first.");
+            }
+
+            _logger.LogInformation("Reset token retrieved for testing: {Email}", email);
+            return user.PasswordResetToken;
+        }
+
+        public async Task<string> TestGenerate2FACodeAsync(string email)
+        {
+            var user = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Email == email);
+            if (user == null)
+            {
+                throw new Exception("User not found");
+            }
+
+            if (string.IsNullOrEmpty(user.TwoFactorSecret))
+            {
+                throw new Exception("2FA not setup for this user");
+            }
+
+            var key = OtpNet.Base32Encoding.ToBytes(user.TwoFactorSecret);
+            var totp = new OtpNet.Totp(key);
+            var code = totp.ComputeTotp();
+
+            _logger.LogInformation("2FA code generated for testing: {Email}", email);
+            return code;
+        }
+
+        // ====== PRIVATE HELPER METHODS ======
+        private string GenerateJwtToken(User user)
         {
             var claims = new[]
             {
                 new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
                 new Claim(ClaimTypes.Email, user.Email),
-                new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
+                new Claim(ClaimTypes.Name, user.FullName ?? user.Email),
+                new Claim(ClaimTypes.Role, user.Role),
+                new Claim("level", user.Level),
+                new Claim("is_active", user.IsActive.ToString().ToLower()),
+                new Claim("email_confirmed", user.EmailConfirmed.ToString().ToLower())
             };
 
             var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_jwtSettings.Secret));
@@ -329,7 +852,7 @@ namespace CryptoTrading.Services.Auth
                 issuer: _jwtSettings.Issuer,
                 audience: _jwtSettings.Audience,
                 claims: claims,
-                expires: _dateTimeProvider.UtcNow.AddMinutes(_jwtSettings.AccessTokenExpirationMinutes),
+                expires: DateTime.UtcNow.AddMinutes(_jwtSettings.AccessTokenExpirationMinutes),
                 signingCredentials: creds
             );
 
@@ -360,14 +883,13 @@ namespace CryptoTrading.Services.Auth
 
         private async Task SendEmailConfirmationAsync(string email, string token)
         {
-            // Use current request base URL if available; fallback to env/config
             var request = _httpContextAccessor.HttpContext?.Request;
             var baseUrl = request != null
                 ? $"{request.Scheme}://{request.Host}"
                 : (Environment.GetEnvironmentVariable("BACKEND_BASE_URL") ?? "https://localhost:7154");
 
             var confirmUrl = $"{baseUrl}/confirm-email?email={Uri.EscapeDataString(email)}&token={Uri.EscapeDataString(token)}";
-            
+
             var subject = "Confirm Your Email - Crypto Trading";
             var body = $@"
                 <html>
@@ -418,21 +940,20 @@ namespace CryptoTrading.Services.Auth
                 </body>
                 </html>
             ";
-            
+
             await _emailSender.SendEmailAsync(email, subject, body, true);
             _logger.LogInformation("Email confirmation sent to {Email}", email);
         }
 
         private async Task SendPasswordResetEmailAsync(string email, string token)
         {
-            // Use current request base URL if available; fallback to env/config
             var request = _httpContextAccessor.HttpContext?.Request;
             var baseUrl = request != null
                 ? $"{request.Scheme}://{request.Host}"
                 : (Environment.GetEnvironmentVariable("BACKEND_BASE_URL") ?? "https://localhost:7154");
 
             var resetUrl = $"{baseUrl}/reset-password?email={Uri.EscapeDataString(email)}&token={Uri.EscapeDataString(token)}";
-            
+
             var subject = "Reset Your Password - Crypto Trading";
             var body = $@"
                 <html>
@@ -483,167 +1004,27 @@ namespace CryptoTrading.Services.Auth
                 </body>
                 </html>
             ";
-            
+
             await _emailSender.SendEmailAsync(email, subject, body, true);
             _logger.LogInformation("Password reset email sent to {Email}", email);
         }
 
-        public async Task TestConfirmEmailAsync(string email)
+        private async Task<User> GetCurrentUserAsync()
         {
-            var user = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Email == email);
-            if (user == null)
+            var userIdClaim = _httpContextAccessor.HttpContext?.User?.FindFirst(ClaimTypes.NameIdentifier);
+            if (userIdClaim == null || !int.TryParse(userIdClaim.Value, out var userId))
             {
-                throw new Exception("User not found");
+                _logger.LogWarning("GetCurrentUserAsync failed: Could not find or parse UserID from token.");
+                throw new UnauthorizedAccessException("Invalid user token");
             }
 
-            user.EmailConfirmed = true;
-            user.EmailConfirmationToken = null;
-            user.EmailConfirmationTokenExpiry = null;
-
-            _unitOfWork.Users.Update(user);
-            await _unitOfWork.SaveChangesAsync();
-
-            _logger.LogInformation("Email confirmed for testing: {Email}", email);
-        }
-
-        public async Task<string> TestGetResetTokenAsync(string email)
-        {
-            var user = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Email == email);
-            if (user == null)
-            {
-                throw new Exception("User not found");
-            }
-
-            if (string.IsNullOrEmpty(user.PasswordResetToken))
-            {
-                throw new Exception("No reset token found. Please request password reset first.");
-            }
-
-            _logger.LogInformation("Reset token retrieved for testing: {Email}", email);
-            return user.PasswordResetToken;
-        }
-
-        public async Task<object> Enable2FAAsync()
-        {
-            var currentUser = await GetCurrentUserAsync();
-            if (currentUser == null)
-            {
-                throw new Exception("User not found");
-            }
-
-            if (currentUser.TwoFactorEnabled)
-            {
-                throw new Exception("2FA is already enabled");
-            }
-
-            // Generate secret key
-            var key = OtpNet.KeyGeneration.GenerateRandomKey(20);
-            var secret = OtpNet.Base32Encoding.ToString(key);
-
-            // ✅ Reload user từ database để đảm bảo entity được track đúng
-            var user = await _unitOfWork.Users.GetByIdAsync(currentUser.Id);
-            if (user == null)
-            {
-                throw new Exception("User not found in database");
-            }
-
-            user.TwoFactorSecret = secret;
-            _unitOfWork.Users.Update(user);
-            var saved = await _unitOfWork.SaveChangesAsync();
-            
-            _logger.LogInformation("2FA secret saved: {Saved} rows affected for user {UserId}", saved, user.Id);
-
-            // Generate QR code URL
-            var qrCodeUrl = $"otpauth://totp/CryptoTrading:{currentUser.Email}?secret={secret}&issuer=CryptoTrading";
-
-            _logger.LogInformation("2FA setup initiated for user: {Email}", currentUser.Email);
-
-            return new
-            {
-                secret = secret,
-                qrCodeUrl = qrCodeUrl,
-                message = "Scan the QR code with your authenticator app and verify with a code"
-            };
-        }
-
-        public async Task<object> Verify2FAAsync(string code)
-        {
-            var currentUser = await GetCurrentUserAsync();
-            if (currentUser == null)
-            {
-                throw new Exception("User not found");
-            }
-
-            if (string.IsNullOrEmpty(currentUser.TwoFactorSecret))
-            {
-                throw new Exception("2FA setup not initiated. Please enable 2FA first.");
-            }
-
-            if (!VerifyTwoFactorCode(currentUser.TwoFactorSecret, code))
-            {
-                throw new Exception("Invalid 2FA code");
-            }
-
-            // ✅ Reload user từ database để đảm bảo entity được track đúng
-            var user = await _unitOfWork.Users.GetByIdAsync(currentUser.Id);
-            if (user == null)
-            {
-                throw new Exception("User not found in database");
-            }
-
-            user.TwoFactorEnabled = true;
-            _unitOfWork.Users.Update(user);
-            var saved = await _unitOfWork.SaveChangesAsync();
-            
-            _logger.LogInformation("2FA enabled saved: {Saved} rows affected for user {UserId}", saved, user.Id);
-
-            _logger.LogInformation("2FA enabled successfully for user: {Email}", currentUser.Email);
-
-            return new
-            {
-                message = "2FA has been enabled successfully",
-                twoFactorEnabled = true
-            };
-        }
-
-        public async Task<string> TestGenerate2FACodeAsync(string email)
-        {
-            var user = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Email == email);
-            if (user == null)
-            {
-                throw new Exception("User not found");
-            }
-
-            if (string.IsNullOrEmpty(user.TwoFactorSecret))
-            {
-                throw new Exception("2FA not setup for this user");
-            }
-
-            var key = OtpNet.Base32Encoding.ToBytes(user.TwoFactorSecret);
-            var totp = new OtpNet.Totp(key);
-            var code = totp.ComputeTotp();
-
-            _logger.LogInformation("2FA code generated for testing: {Email}", email);
-            return code;
-        }
-
-        private async Task<User?> GetCurrentUserAsync()
-        {
-            // ✅ Lấy user từ JWT claims (đúng cách)
-            if (!_currentUser.IsAuthenticated || !_currentUser.UserId.HasValue)
-            {
-                _logger.LogWarning("GetCurrentUserAsync: User not authenticated or no user ID found");
-                return null;
-            }
-
-            var userId = _currentUser.UserId.Value;
             var user = await _unitOfWork.Users.GetByIdAsync(userId);
-            
             if (user == null)
             {
-                _logger.LogWarning("GetCurrentUserAsync: User with ID {UserId} not found in database", userId);
+                _logger.LogWarning("GetCurrentUserAsync failed: User {UserId} not found in database", userId);
+                throw new Exception("User not found");
             }
-            
+
             return user;
         }
     }

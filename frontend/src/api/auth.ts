@@ -1,4 +1,4 @@
-import { authFetch } from './http';
+import { authFetch, authGetJson, authPutJson } from './http';
 
 export type ApiResult<T> = { ok: true; data: T } | { ok: false; error: string };
 
@@ -17,7 +17,6 @@ async function postJson<T>(url: string, body: unknown): Promise<ApiResult<T>> {
     return { ok: false, error: e?.message || 'Network error' };
   }
 }
-
 async function authPostJson<T>(url: string, body: unknown): Promise<ApiResult<T>> {
   try {
     const res = await authFetch(url, {
@@ -45,6 +44,10 @@ export interface UserInfo {
   email: string;
   fullName?: string;
   twoFactorEnabled: boolean;
+  // Thêm mới
+  role?: string;
+  level?: number;
+  status?: number; 
 }
 
 export interface AuthResponse {
@@ -55,22 +58,79 @@ export interface AuthResponse {
   user?: UserInfo;
 }
 
-export interface Enable2FAResponse {
-  secret: string;
-  qrCodeUrl: string;
-  message: string;
+export interface LoginActivityDto {
+  id: number;
+  ip: string | null;
+  userAgent: string | null;
+  success: boolean;
+  createdAt: string;
 }
 
-export interface Verify2FAResponse {
-  message: string;
+export interface Enable2FAResponse { secret: string; qrCodeUrl: string; message: string; }
+export interface Verify2FAResponse { message: string; twoFactorEnabled: boolean; }
+export interface VerifyTwoFactorDto { code: string; }
+export interface DisableTwoFactorDto { password: string; }
+
+
+// Profile
+export interface UserProfileDto {
+  id: number;
+  email: string;
+  fullName: string;
+  role: string;
+  level: number;
+  status: number;
+  createdAt: string;
+  emailConfirmed: boolean;
   twoFactorEnabled: boolean;
+  lastLoginAt?: string;
+  avatarUrl?: string;
+  bio?: string;
+  phoneNumber?: string;
+  timezone?: string;
+}
+export interface UpdateProfileDto {
+  fullName?: string;
+  email: string;
+  avatarUrl?: string;
+  bio?: string;
+  phoneNumber?: string;
+  timezone?: string;
+}
+export interface ChangePasswordDto {
+  currentPassword: string;
+  newPassword: string;
 }
 
-export interface VerifyTwoFactorDto { 
-  code: string; 
+// Admin
+export interface UserListDto {
+  id: number;
+  fullName: string;
+  email: string;
+  role: string;
+  roleId: number;
+  level: number;
+  levelId: number;
+  status: string;
+  isActive: boolean;
+  createdAt?: string;
+  lastLogin?: string;
 }
+
+export interface UpdateUserRoleDto {
+  role: string;
+}
+export interface UpdateLevelDtoUser {
+  level: number;
+}
+export interface UpdateUserStatusDto {
+  status: number;
+}
+// ======================================
+
 
 export const AuthApi = {
+  // Auth
   login: (dto: LoginDto) => postJson<AuthResponse>('/api/auth/login', dto),
   login2fa: (dto: TwoFactorDto) => postJson<AuthResponse>('/api/auth/login-2fa', dto),
   register: (dto: RegisterDto) => postJson<AuthResponse>('/api/auth/register', dto),
@@ -80,13 +140,24 @@ export const AuthApi = {
   refresh: (refreshToken: string) => postJson<AuthResponse>('/api/auth/refresh', { refreshToken }),
   revoke: (refreshToken: string) => authPostJson<{ message: string }>('/api/auth/revoke', { refreshToken }),
   
-  // 2FA Management (require authentication)
+  // 2FA Management
   enable2FA: () => authPostJson<Enable2FAResponse>('/api/auth/enable-2fa', {}),
   verify2FA: (dto: VerifyTwoFactorDto) => authPostJson<Verify2FAResponse>('/api/auth/verify-2fa', dto),
+  disable2FA: (dto: DisableTwoFactorDto) => authPostJson<{ message: string; twoFactorEnabled: boolean }>('/api/auth/disable-2fa', dto),
   
-  // Test endpoints (for development)
+  // Test endpoints
   testGenerate2FACode: (email: string) => postJson<{ code: string }>('/api/auth/test-generate-2fa-code', { email }),
+
+
+  // Profile Management
+  getProfile: () => authGetJson<UserProfileDto>('/api/auth/profile'),
+  updateProfile: (dto: UpdateProfileDto) => authPutJson<UserProfileDto>('/api/auth/profile', dto),
+  changePassword: (dto: ChangePasswordDto) => authPostJson<{ message: string }>('/api/auth/change-password', dto),
+  getLoginActivity: () => authGetJson<LoginActivityDto[]>('/api/auth/activity'),
+
+  // Admin Management
+  adminGetAllUsers: () => authGetJson<UserListDto[]>('/api/admin/users'),
+  adminUpdateUserRole: (userId: number, dto: UpdateUserRoleDto) => authPutJson<{ message: string }>(`/api/admin/users/${userId}/role`, dto),
+  adminUpdateUserLevel: (userId: number, dto: UpdateLevelDtoUser) => authPutJson<{ message: string }>(`/api/admin/users/${userId}/level`, dto),
+  adminUpdateUserStatus: (userId: number, dto: UpdateUserStatusDto) => authPutJson<{ message: string }>(`/api/admin/users/${userId}/status`, dto),
 };
-
-
-
