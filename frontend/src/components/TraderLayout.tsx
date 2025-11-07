@@ -87,7 +87,7 @@ export default function TraderLayout({ children, currentPage, onNavigate }: Trad
           <img 
             src="/logo.png" 
             alt="CryptoTrade Logo" 
-            className="w-12 h-12 object-contain"
+            className="w-10 h-10 object-contain"
           />
           <span className="text-xl">CryptoTrade</span>
         </div>
