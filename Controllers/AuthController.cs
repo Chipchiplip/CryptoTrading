@@ -50,6 +50,36 @@ public class AuthController : ControllerBase
     }
 
     /// <summary>
+    /// Change current user's password
+    /// </summary>
+    [Authorize]
+    [HttpPost("change-password")] 
+    public async Task<IActionResult> ChangePassword([FromBody] ChangePasswordDto dto)
+    {
+        try
+        {
+            var userId = _currentUser.UserId;
+            if (userId == null)
+            {
+                return Unauthorized(new { message = "User not authenticated" });
+            }
+
+            var success = await _authService.ChangePasswordAsync(userId.Value, dto);
+
+            if (!success)
+            {
+                return BadRequest(new { message = "Invalid current password" });
+            }
+
+            return Ok(new { message = "Password changed successfully" });
+        }
+        catch (Exception ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+    }
+
+    /// <summary>
     /// Update current user's profile
     /// </summary>
     [Authorize]

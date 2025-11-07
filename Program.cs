@@ -219,9 +219,6 @@ app.MapGet("/weatherforecast", () =>
 })
 .WithName("GetWeatherForecast");
 
-// ===============================================
-// LOCAL FUNCTION DECLARATIONS - MUST BE BEFORE THEY ARE CALLED
-// ===============================================
 
 async Task SeedDatabase(IServiceProvider serviceProvider, ILogger logger)
 {
@@ -268,10 +265,6 @@ async Task SeedDatabase(IServiceProvider serviceProvider, ILogger logger)
     }
 }
 
-// ===============================================
-// DATABASE MIGRATION AND SEEDING - NOW AFTER FUNCTION DECLARATION
-// ===============================================
-
 using (var scope = app.Services.CreateScope())
 {
     var services = scope.ServiceProvider;
@@ -291,11 +284,6 @@ using (var scope = app.Services.CreateScope())
 }
 
 app.Run();
-
-// ===============================================
-// TYPE DECLARATIONS - AFTER app.Run()
-// ===============================================
-
 record WeatherForecast(DateOnly Date, int TemperatureC, string? Summary)
 {
     public int TemperatureF => 32 + (int)(TemperatureC / 0.5556);

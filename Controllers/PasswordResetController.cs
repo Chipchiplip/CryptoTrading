@@ -193,7 +193,7 @@ public class PasswordResetController : ControllerBase
     </div>
 
     <script>
-        const API_BASE = 'http://localhost:5000';
+        const API_BASE = 'http://localhost:5299';
         const email = '{email}';
         const token = '{token}';
 
