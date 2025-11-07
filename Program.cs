@@ -9,8 +9,12 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using System.Text;
+using System;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Thêm dịch vụ HttpClient
+builder.Services.AddHttpClient();
 
 // Add services to the container.
 builder.Services.AddControllers()

@@ -29,9 +29,6 @@ frontend/.turbo/
 frontend/.eslintcache
 
 # Environment files
-*.env
-*.env.*
-
 # Coverage
 coverage/
 
