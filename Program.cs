@@ -9,8 +9,12 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using System.Text;
+using System;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Thêm dịch vụ HttpClient
+builder.Services.AddHttpClient();
 
 // Add services to the container.
 builder.Services.AddControllers()
@@ -35,6 +39,7 @@ builder.Services.AddSwaggerGen(c =>
     {
         Description = "JWT Authorization header using the Bearer scheme. Enter 'Bearer' [space] and then your token",
         Name = "Authorization",
+      
         In = ParameterLocation.Header,
         Type = SecuritySchemeType.ApiKey,
         Scheme = "Bearer"
@@ -51,6 +56,7 @@ builder.Services.AddSwaggerGen(c =>
                     Id = "Bearer"
                 }
             },
+           
             Array.Empty<string>()
         }
     });
@@ -89,6 +95,7 @@ if (jwtSettings != null)
             ValidateIssuer = true,
             ValidateAudience = true,
             ValidateLifetime = true,
+ 
             ValidateIssuerSigningKey = true,
             ValidIssuer = jwtSettings.Issuer,
             ValidAudience = jwtSettings.Audience,
@@ -121,7 +128,8 @@ builder.Services.AddScoped<ICurrentUser, CurrentUserService>();
 builder.Services.AddScoped<ILoggingService, LoggingService>();
 
 // Crypto Services
-builder.Services.AddHttpClient<ICoinGeckoService, CoinGeckoService>(client =>
+builder.Services.AddHttpClient<ICoinGeckoService, 
+    CoinGeckoService>(client =>
 {
     client.BaseAddress = new Uri("https://api.coingecko.com/api/v3/");
     client.DefaultRequestHeaders.Add("User-Agent", "CryptoTrading/1.0");
@@ -139,6 +147,9 @@ builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IWatchlistService, WatchlistService>();
 builder.Services.AddScoped<ICryptoDataSyncService, CryptoDataSyncService>();
 builder.Services.AddScoped<CryptoTrading.Services.Trading.ITradingService, CryptoTrading.Services.Trading.TradingService>();
+builder.Services.AddScoped<IRoleService, RoleService>();
+builder.Services.AddScoped<ILevelService, LevelService>();
+builder.Services.AddScoped<IUserService, UserService>();
 
 // Background Services
 builder.Services.AddHostedService<CryptoSyncBackgroundService>();
@@ -177,6 +188,7 @@ app.MapGet("/", () => Results.Ok(new {
     endpoints = new {
         swagger = "/swagger",
         health = "/health",
+      
         weatherforecast = "/weatherforecast",
         auth = "/api/auth",
         market = "/api/market",
@@ -206,35 +218,76 @@ app.MapGet("/weatherforecast", () =>
             summaries[Random.Shared.Next(summaries.Length)]
         ))
         .ToArray();
+   
     return forecast;
 })
 .WithName("GetWeatherForecast");
 
-// Ensure database baseline and apply migrations
+
+async Task SeedDatabase(IServiceProvider serviceProvider, ILogger logger)
+{
+    using var scope = serviceProvider.CreateScope();
+    var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+    
+    // --- 1. Seed Default Roles ---
+    var defaultRoles = new List<string> { "Admin", "User", "Manager" };
+    var existingRoles = await context.Set<Role>().Select(r => r.Name).ToListAsync();
+    var rolesToSeed = defaultRoles.Except(existingRoles, StringComparer.OrdinalIgnoreCase).ToList();
+
+    if (rolesToSeed.Any())
+    {
+        logger.LogInformation("Seeding default roles: {Roles}", string.Join(", ", rolesToSeed));
+        var newRoles = rolesToSeed.Select(name => new Role { Id = 0, Name = name, Description = $"Default system role: {name}" });
+        await context.Set<Role>().AddRangeAsync(newRoles);
+    }
+    
+    // --- 2. Seed Default Levels ---
+    var defaultLevels = new List<string> { "Beginner" };
+    var existingLevels = await context.Set<Level>().Select(l => l.Name).ToListAsync();
+    var levelsToSeed = defaultLevels.Except(existingLevels, StringComparer.OrdinalIgnoreCase).ToList();
+
+    if (levelsToSeed.Any())
+    {
+        logger.LogInformation("Seeding default levels: {Levels}", string.Join(", ", levelsToSeed));
+        var maxLevelNumber = await context.Set<Level>().AnyAsync() ? await context.Set<Level>().MaxAsync(l => l.Number) : 0;
+        
+        var newLevels = levelsToSeed.Select((name, index) => new Level 
+        { 
+            Id = 0,
+            Name = name, 
+            Number = maxLevelNumber + index + 1,
+            Description = $"Default starting level: {name}",
+            MinBalance = 0
+        });
+        await context.Set<Level>().AddRangeAsync(newLevels);
+    }
+
+    if (rolesToSeed.Any() || levelsToSeed.Any())
+    {
+        await context.SaveChangesAsync();
+        logger.LogInformation("Default data seeding complete. Total new entries: {Count}", rolesToSeed.Count + levelsToSeed.Count);
+    }
+}
+
 using (var scope = app.Services.CreateScope())
 {
-    var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+    var services = scope.ServiceProvider;
+    var db = services.GetRequiredService<ApplicationDbContext>();
+    var logger = services.GetRequiredService<ILogger<Program>>();
+
     try
     {
-        // Ensure history table exists and mark existing schema as migrated
-        db.Database.ExecuteSqlRaw(@"CREATE TABLE IF NOT EXISTS `__EFMigrationsHistory` (
-            `MigrationId` varchar(150) NOT NULL,
-            `ProductVersion` varchar(32) NOT NULL,
-            PRIMARY KEY (`MigrationId`)
-        ) CHARACTER SET=utf8mb4;");
-
-        db.Database.ExecuteSqlRaw(@"INSERT IGNORE INTO `__EFMigrationsHistory` (`MigrationId`,`ProductVersion`) VALUES
-            ('20251023032323_InitialCreate','9.0.10'),
-            ('20251023070130_AddCryptoMarketTables','9.0.10');");
-
-        // Apply any future migrations automatically
+        logger.LogInformation("Applying database migrations...");
         db.Database.Migrate();
+        await SeedDatabase(services, logger);
     }
-    catch { }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "An error occurred while migrating or seeding the database.");
+    }
 }
 
 app.Run();
-
 record WeatherForecast(DateOnly Date, int TemperatureC, string? Summary)
 {
     public int TemperatureF => 32 + (int)(TemperatureC / 0.5556);

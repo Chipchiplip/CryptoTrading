@@ -12,6 +12,8 @@ namespace CryptoTrading.Interfaces
         ICryptocurrencyRepository Cryptocurrencies { get; }
         ICryptoPriceRepository CryptoPrices { get; }
         IRepository<MarketStat> MarketStats { get; }
+
+        IRepository<LoginActivity> LoginActivities { get; }
         
         // Future repositories
         // IRepository<Portfolio> Portfolios { get; }

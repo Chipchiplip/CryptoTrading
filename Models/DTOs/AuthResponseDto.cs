@@ -15,5 +15,8 @@ namespace CryptoTrading.Models.DTOs
         public string Email { get; set; } = string.Empty;
         public string? FullName { get; set; }
         public bool TwoFactorEnabled { get; set; }
+
+        public string Role { get; set; } = string.Empty;
+        public string Level { get; set; } = string.Empty;
     }
 }
