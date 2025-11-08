@@ -199,56 +199,137 @@ namespace CryptoTrading.Migrations
                 ) CHARACTER SET=utf8mb4;
             ");
 
-            migrationBuilder.CreateIndex(
-                name: "IX_OrderHolds_OrderId",
-                table: "OrderHolds",
-                column: "OrderId");
+            // Tạo index với kiểm tra tồn tại
+            migrationBuilder.Sql(@"
+                SET @exist := (SELECT COUNT(*) FROM information_schema.statistics 
+                               WHERE table_schema = DATABASE() 
+                               AND table_name = 'OrderHolds' 
+                               AND index_name = 'IX_OrderHolds_OrderId');
+                SET @sqlstmt := IF(@exist = 0, 
+                    'CREATE INDEX `IX_OrderHolds_OrderId` ON `OrderHolds` (`OrderId`)', 
+                    'SELECT ''Index IX_OrderHolds_OrderId already exists''');
+                PREPARE stmt FROM @sqlstmt;
+                EXECUTE stmt;
+                DEALLOCATE PREPARE stmt;
+            ");
 
-            migrationBuilder.CreateIndex(
-                name: "IX_OrderHolds_WalletId",
-                table: "OrderHolds",
-                column: "WalletId");
+            migrationBuilder.Sql(@"
+                SET @exist := (SELECT COUNT(*) FROM information_schema.statistics 
+                               WHERE table_schema = DATABASE() 
+                               AND table_name = 'OrderHolds' 
+                               AND index_name = 'IX_OrderHolds_WalletId');
+                SET @sqlstmt := IF(@exist = 0, 
+                    'CREATE INDEX `IX_OrderHolds_WalletId` ON `OrderHolds` (`WalletId`)', 
+                    'SELECT ''Index IX_OrderHolds_WalletId already exists''');
+                PREPARE stmt FROM @sqlstmt;
+                EXECUTE stmt;
+                DEALLOCATE PREPARE stmt;
+            ");
 
-            migrationBuilder.CreateIndex(
-                name: "IX_Orders_CryptocurrencyId_Status",
-                table: "Orders",
-                columns: new[] { "CryptocurrencyId", "Status" });
+            // Tạo tất cả index với kiểm tra tồn tại
+            migrationBuilder.Sql(@"
+                SET @exist := (SELECT COUNT(*) FROM information_schema.statistics 
+                               WHERE table_schema = DATABASE() 
+                               AND table_name = 'Orders' 
+                               AND index_name = 'IX_Orders_CryptocurrencyId_Status');
+                SET @sqlstmt := IF(@exist = 0, 
+                    'CREATE INDEX `IX_Orders_CryptocurrencyId_Status` ON `Orders` (`CryptocurrencyId`, `Status`)', 
+                    'SELECT ''Index IX_Orders_CryptocurrencyId_Status already exists''');
+                PREPARE stmt FROM @sqlstmt;
+                EXECUTE stmt;
+                DEALLOCATE PREPARE stmt;
+            ");
 
-            migrationBuilder.CreateIndex(
-                name: "IX_Orders_UserId_CreatedAt",
-                table: "Orders",
-                columns: new[] { "UserId", "CreatedAt" });
+            migrationBuilder.Sql(@"
+                SET @exist := (SELECT COUNT(*) FROM information_schema.statistics 
+                               WHERE table_schema = DATABASE() 
+                               AND table_name = 'Orders' 
+                               AND index_name = 'IX_Orders_UserId_CreatedAt');
+                SET @sqlstmt := IF(@exist = 0, 
+                    'CREATE INDEX `IX_Orders_UserId_CreatedAt` ON `Orders` (`UserId`, `CreatedAt`)', 
+                    'SELECT ''Index IX_Orders_UserId_CreatedAt already exists''');
+                PREPARE stmt FROM @sqlstmt;
+                EXECUTE stmt;
+                DEALLOCATE PREPARE stmt;
+            ");
 
-            migrationBuilder.CreateIndex(
-                name: "IX_Trades_CryptocurrencyId",
-                table: "Trades",
-                column: "CryptocurrencyId");
+            migrationBuilder.Sql(@"
+                SET @exist := (SELECT COUNT(*) FROM information_schema.statistics 
+                               WHERE table_schema = DATABASE() 
+                               AND table_name = 'Trades' 
+                               AND index_name = 'IX_Trades_CryptocurrencyId');
+                SET @sqlstmt := IF(@exist = 0, 
+                    'CREATE INDEX `IX_Trades_CryptocurrencyId` ON `Trades` (`CryptocurrencyId`)', 
+                    'SELECT ''Index IX_Trades_CryptocurrencyId already exists''');
+                PREPARE stmt FROM @sqlstmt;
+                EXECUTE stmt;
+                DEALLOCATE PREPARE stmt;
+            ");
 
-            migrationBuilder.CreateIndex(
-                name: "IX_Trades_OrderId_CreatedAt",
-                table: "Trades",
-                columns: new[] { "OrderId", "CreatedAt" });
+            migrationBuilder.Sql(@"
+                SET @exist := (SELECT COUNT(*) FROM information_schema.statistics 
+                               WHERE table_schema = DATABASE() 
+                               AND table_name = 'Trades' 
+                               AND index_name = 'IX_Trades_OrderId_CreatedAt');
+                SET @sqlstmt := IF(@exist = 0, 
+                    'CREATE INDEX `IX_Trades_OrderId_CreatedAt` ON `Trades` (`OrderId`, `CreatedAt`)', 
+                    'SELECT ''Index IX_Trades_OrderId_CreatedAt already exists''');
+                PREPARE stmt FROM @sqlstmt;
+                EXECUTE stmt;
+                DEALLOCATE PREPARE stmt;
+            ");
 
-            migrationBuilder.CreateIndex(
-                name: "IX_UserWatchlist_CryptocurrencyId",
-                table: "UserWatchlist",
-                column: "CryptocurrencyId");
+            migrationBuilder.Sql(@"
+                SET @exist := (SELECT COUNT(*) FROM information_schema.statistics 
+                               WHERE table_schema = DATABASE() 
+                               AND table_name = 'UserWatchlist' 
+                               AND index_name = 'IX_UserWatchlist_CryptocurrencyId');
+                SET @sqlstmt := IF(@exist = 0, 
+                    'CREATE INDEX `IX_UserWatchlist_CryptocurrencyId` ON `UserWatchlist` (`CryptocurrencyId`)', 
+                    'SELECT ''Index IX_UserWatchlist_CryptocurrencyId already exists''');
+                PREPARE stmt FROM @sqlstmt;
+                EXECUTE stmt;
+                DEALLOCATE PREPARE stmt;
+            ");
 
-            migrationBuilder.CreateIndex(
-                name: "IX_WalletMovements_WalletId_CreatedAt",
-                table: "WalletMovements",
-                columns: new[] { "WalletId", "CreatedAt" });
+            migrationBuilder.Sql(@"
+                SET @exist := (SELECT COUNT(*) FROM information_schema.statistics 
+                               WHERE table_schema = DATABASE() 
+                               AND table_name = 'WalletMovements' 
+                               AND index_name = 'IX_WalletMovements_WalletId_CreatedAt');
+                SET @sqlstmt := IF(@exist = 0, 
+                    'CREATE INDEX `IX_WalletMovements_WalletId_CreatedAt` ON `WalletMovements` (`WalletId`, `CreatedAt`)', 
+                    'SELECT ''Index IX_WalletMovements_WalletId_CreatedAt already exists''');
+                PREPARE stmt FROM @sqlstmt;
+                EXECUTE stmt;
+                DEALLOCATE PREPARE stmt;
+            ");
 
-            migrationBuilder.CreateIndex(
-                name: "IX_Wallets_CryptocurrencyId",
-                table: "Wallets",
-                column: "CryptocurrencyId");
+            migrationBuilder.Sql(@"
+                SET @exist := (SELECT COUNT(*) FROM information_schema.statistics 
+                               WHERE table_schema = DATABASE() 
+                               AND table_name = 'Wallets' 
+                               AND index_name = 'IX_Wallets_CryptocurrencyId');
+                SET @sqlstmt := IF(@exist = 0, 
+                    'CREATE INDEX `IX_Wallets_CryptocurrencyId` ON `Wallets` (`CryptocurrencyId`)', 
+                    'SELECT ''Index IX_Wallets_CryptocurrencyId already exists''');
+                PREPARE stmt FROM @sqlstmt;
+                EXECUTE stmt;
+                DEALLOCATE PREPARE stmt;
+            ");
 
-            migrationBuilder.CreateIndex(
-                name: "IX_Wallets_UserId_AssetType_CurrencyCode_CryptocurrencyId",
-                table: "Wallets",
-                columns: new[] { "UserId", "AssetType", "CurrencyCode", "CryptocurrencyId" },
-                unique: true);
+            migrationBuilder.Sql(@"
+                SET @exist := (SELECT COUNT(*) FROM information_schema.statistics 
+                               WHERE table_schema = DATABASE() 
+                               AND table_name = 'Wallets' 
+                               AND index_name = 'IX_Wallets_UserId_AssetType_CurrencyCode_CryptocurrencyId');
+                SET @sqlstmt := IF(@exist = 0, 
+                    'CREATE UNIQUE INDEX `IX_Wallets_UserId_AssetType_CurrencyCode_CryptocurrencyId` ON `Wallets` (`UserId`, `AssetType`, `CurrencyCode`, `CryptocurrencyId`)', 
+                    'SELECT ''Index IX_Wallets_UserId_AssetType_CurrencyCode_CryptocurrencyId already exists''');
+                PREPARE stmt FROM @sqlstmt;
+                EXECUTE stmt;
+                DEALLOCATE PREPARE stmt;
+            ");
         }
 
         /// <inheritdoc />

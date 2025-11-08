@@ -26,6 +26,9 @@ namespace CryptoTrading.Data
         public DbSet<OrderHold> OrderHolds { get; set; }
         public DbSet<Trade> Trades { get; set; }
 
+        // Payment
+        public DbSet<DepositTransaction> DepositTransactions { get; set; }
+
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
@@ -187,6 +190,21 @@ namespace CryptoTrading.Data
                 entity.HasOne(e => e.Cryptocurrency)
                     .WithMany()
                     .HasForeignKey(e => e.CryptocurrencyId)
+                    .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            // DepositTransaction entity configuration
+            modelBuilder.Entity<DepositTransaction>(entity =>
+            {
+                entity.ToTable("DepositTransactions");
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.Id).ValueGeneratedOnAdd();
+                entity.HasIndex(e => new { e.UserId, e.CreatedAt });
+                entity.HasIndex(e => e.OrderId).IsUnique();
+                
+                entity.HasOne(e => e.User)
+                    .WithMany()
+                    .HasForeignKey(e => e.UserId)
                     .OnDelete(DeleteBehavior.Cascade);
             });
         }
