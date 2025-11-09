@@ -144,16 +144,26 @@ public class TradingController : ControllerBase
 
         var marketData = await _coinGeckoService.GetMarketDataAsync();
         
+        // Get locked balances from active order holds
+        var orderHolds = await _db.OrderHolds
+            .Where(h => walletIds.Contains(h.WalletId) && h.ReleasedAt == null)
+            .GroupBy(h => h.WalletId)
+            .Select(g => new { WalletId = g.Key, LockedAmount = g.Sum(h => h.Amount) })
+            .ToDictionaryAsync(x => x.WalletId, x => x.LockedAmount);
+        
         // Calculate USD balance from wallet movements
         var usdWallet = wallets.FirstOrDefault(w => w.AssetType == "FIAT" && w.CurrencyCode == "USD");
         var usdBalance = 0m;
+        var usdLocked = 0m;
         if (usdWallet != null)
         {
             usdBalance = movements.GetValueOrDefault(usdWallet.Id, 0m);
+            usdLocked = orderHolds.GetValueOrDefault(usdWallet.Id, 0m);
         }
 
         var totalBalance = usdBalance;
-        var availableBalance = usdBalance;
+        // Available Balance = USD available for trading (not locked in orders)
+        var availableBalance = usdBalance - usdLocked;
         
         // Calculate crypto balances and their USD values
         foreach (var wallet in wallets.Where(w => w.AssetType == "COIN" && w.Cryptocurrency != null))
@@ -165,7 +175,7 @@ public class TradingController : ControllerBase
             var valueUsd = balance * price;
             
             totalBalance += valueUsd;
-            availableBalance += valueUsd;
+            // Note: Available Balance does NOT include crypto value, only USD available for trading
         }
 
         // Calculate previous day's total balance for change calculation
