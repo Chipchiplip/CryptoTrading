@@ -232,5 +232,14 @@ export const TradingApi = {
     const encodedSymbol = encodeURIComponent(symbol);
     return apiGet<OrderBook>(`/api/trading/orderbook?symbolQuery=${encodedSymbol}`);
   },
+  
+  // Holdings (portfolio positions)
+  getHoldings: () => apiGet<Array<{
+    symbol: string;
+    name: string;
+    amount: number;
+    valueUsd: number;
+    change24h: number;
+  }>>('/api/trading/holdings'),
 };
 

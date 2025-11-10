@@ -270,7 +270,7 @@ export default function Orders({ onNavigate }: OrdersProps) {
                       {order.id}
                     </TableCell>
                     <TableCell className="text-gray-400">
-                      {new Date(order.createdAt).toLocaleString('vi-VN')}
+                      {new Date(order.createdAt).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}
                     </TableCell>
                     <TableCell className="text-white">{order.symbol}</TableCell>
                     <TableCell>

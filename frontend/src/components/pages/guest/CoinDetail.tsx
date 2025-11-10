@@ -53,7 +53,7 @@ export default function CoinDetail({ coinId = 'btc', onBack, onNavigate }: CoinD
         });
 
         const mapped: Array<{ time: string; price: number }> = (hist as any[]).map((h) => ({
-          time: new Date(h.timestamp || h.Time || h.time || Date.now()).toLocaleTimeString(),
+          time: new Date(h.timestamp || h.Time || h.time || Date.now()).toLocaleTimeString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' }),
           price: Number(h.price ?? h.Price ?? 0),
         }));
         setHistory(mapped);

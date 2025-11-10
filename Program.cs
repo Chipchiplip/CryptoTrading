@@ -9,8 +9,12 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using System.Text;
+using System;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Thêm dịch vụ HttpClient
+builder.Services.AddHttpClient();
 
 // Add services to the container.
 builder.Services.AddControllers()
@@ -55,13 +59,23 @@ builder.Services.AddSwaggerGen(c =>
         }
     });
 
-    // Enable XML documentation
-    var xmlFile = $"{System.Reflection.Assembly.GetExecutingAssembly().GetName().Name}.xml";
-    var xmlPath = Path.Combine(AppContext.BaseDirectory, xmlFile);
-    if (File.Exists(xmlPath))
-    {
-        c.IncludeXmlComments(xmlPath);
-    }
+    // Enable XML documentation (temporarily disabled for debugging)
+    // var xmlFile = $"{System.Reflection.Assembly.GetExecutingAssembly().GetName().Name}.xml";
+    // var xmlPath = Path.Combine(AppContext.BaseDirectory, xmlFile);
+    // if (File.Exists(xmlPath))
+    // {
+    //     c.IncludeXmlComments(xmlPath);
+    // }
+
+    // Handle ambiguous actions (multiple endpoints with same HTTP method and route)
+    c.ResolveConflictingActions(apiDescriptions => apiDescriptions.First());
+
+    // Ignore obsolete warnings
+    c.IgnoreObsoleteActions();
+    c.IgnoreObsoleteProperties();
+
+    // Add schema filter to handle Dictionary<string, object> and object types
+    c.SchemaFilter<CryptoTrading.Infrastructure.DictionaryObjectSchemaFilter>();
 });
 
 // Database (MySQL)
@@ -89,6 +103,7 @@ if (jwtSettings != null)
             ValidateIssuer = true,
             ValidateAudience = true,
             ValidateLifetime = true,
+ 
             ValidateIssuerSigningKey = true,
             ValidIssuer = jwtSettings.Issuer,
             ValidAudience = jwtSettings.Audience,
@@ -121,7 +136,8 @@ builder.Services.AddScoped<ICurrentUser, CurrentUserService>();
 builder.Services.AddScoped<ILoggingService, LoggingService>();
 
 // Crypto Services
-builder.Services.AddHttpClient<ICoinGeckoService, CoinGeckoService>(client =>
+builder.Services.AddHttpClient<ICoinGeckoService, 
+    CoinGeckoService>(client =>
 {
     client.BaseAddress = new Uri("https://api.coingecko.com/api/v3/");
     client.DefaultRequestHeaders.Add("User-Agent", "CryptoTrading/1.0");
@@ -139,11 +155,27 @@ builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IWatchlistService, WatchlistService>();
 builder.Services.AddScoped<ICryptoDataSyncService, CryptoDataSyncService>();
 builder.Services.AddScoped<CryptoTrading.Services.Trading.ITradingService, CryptoTrading.Services.Trading.TradingService>();
+builder.Services.AddScoped<IRoleService, RoleService>();
+builder.Services.AddScoped<ILevelService, LevelService>();
+builder.Services.AddScoped<IUserService, UserService>();
+
+// Bot Trading Services
+builder.Services.AddSingleton<CryptoTrading.Interfaces.Bot.IStrategyRegistry, CryptoTrading.Services.Bot.StrategyRegistry>();
+builder.Services.AddScoped<CryptoTrading.Interfaces.Bot.IBotApplicationService, CryptoTrading.Services.Bot.BotApplicationService>();
+builder.Services.AddScoped<CryptoTrading.Interfaces.Bot.IMarketDataProvider, CryptoTrading.Services.Bot.MarketDataProvider>();
+builder.Services.AddScoped<CryptoTrading.Interfaces.Bot.IPortfolioService, CryptoTrading.Services.Bot.PortfolioService>();
+builder.Services.AddScoped<CryptoTrading.Interfaces.Bot.IRiskManager, CryptoTrading.Services.Bot.RiskManager>();
+builder.Services.AddSingleton<CryptoTrading.Services.Bot.BotSignalRDispatcher>();
+
+// Bot Strategies
+builder.Services.AddTransient<CryptoTrading.Services.Bot.Strategies.GridTradingStrategy>();
 
 // Background Services
 builder.Services.AddHostedService<CryptoSyncBackgroundService>();
 builder.Services.AddHostedService<CryptoTrading.Services.RealtimeBroadcastService>();
 builder.Services.AddHostedService<CryptoTrading.Services.OrderMatchingBackgroundService>();
+builder.Services.AddHostedService<CryptoTrading.Services.Bot.BotExecutionHostedService>();
+builder.Services.AddHostedService<CryptoTrading.Services.Bot.BotMonitorHostedService>();
 
 var app = builder.Build();
 
@@ -167,8 +199,9 @@ app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
 
-// SignalR Hub
+// SignalR Hubs
 app.MapHub<CryptoTrading.Hubs.MarketHub>("/marketHub");
+app.MapHub<CryptoTrading.Hubs.BotHub>("/botHub");
 
 // Root endpoint
 app.MapGet("/", () => Results.Ok(new { 
@@ -177,6 +210,7 @@ app.MapGet("/", () => Results.Ok(new {
     endpoints = new {
         swagger = "/swagger",
         health = "/health",
+      
         weatherforecast = "/weatherforecast",
         auth = "/api/auth",
         market = "/api/market",
@@ -206,35 +240,108 @@ app.MapGet("/weatherforecast", () =>
             summaries[Random.Shared.Next(summaries.Length)]
         ))
         .ToArray();
+   
     return forecast;
 })
 .WithName("GetWeatherForecast");
 
-// Ensure database baseline and apply migrations
+
+async Task SeedDatabase(IServiceProvider serviceProvider, ILogger logger)
+{
+    using var scope = serviceProvider.CreateScope();
+    var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+    var strategyRegistry = scope.ServiceProvider.GetRequiredService<CryptoTrading.Interfaces.Bot.IStrategyRegistry>();
+    
+    // --- 1. Seed Default Roles ---
+    var defaultRoles = new List<string> { "Admin", "User", "Manager" };
+    var existingRoles = await context.Set<Role>().Select(r => r.Name).ToListAsync();
+    var rolesToSeed = defaultRoles.Except(existingRoles, StringComparer.OrdinalIgnoreCase).ToList();
+
+    if (rolesToSeed.Any())
+    {
+        logger.LogInformation("Seeding default roles: {Roles}", string.Join(", ", rolesToSeed));
+        var newRoles = rolesToSeed.Select(name => new Role { Id = 0, Name = name, Description = $"Default system role: {name}" });
+        await context.Set<Role>().AddRangeAsync(newRoles);
+    }
+    
+    // --- 2. Seed Default Levels ---
+    var defaultLevels = new List<string> { "Beginner" };
+    var existingLevels = await context.Set<Level>().Select(l => l.Name).ToListAsync();
+    var levelsToSeed = defaultLevels.Except(existingLevels, StringComparer.OrdinalIgnoreCase).ToList();
+
+    if (levelsToSeed.Any())
+    {
+        logger.LogInformation("Seeding default levels: {Levels}", string.Join(", ", levelsToSeed));
+        var maxLevelNumber = await context.Set<Level>().AnyAsync() ? await context.Set<Level>().MaxAsync(l => l.Number) : 0;
+        
+        var newLevels = levelsToSeed.Select((name, index) => new Level 
+        { 
+            Id = 0,
+            Name = name, 
+            Number = maxLevelNumber + index + 1,
+            Description = $"Default starting level: {name}",
+            MinBalance = 0
+        });
+        await context.Set<Level>().AddRangeAsync(newLevels);
+    }
+
+    // --- 3. Seed Built-in Bot Strategies ---
+    var gridStrategy = scope.ServiceProvider.GetRequiredService<CryptoTrading.Services.Bot.Strategies.GridTradingStrategy>();
+    var existingStrategy = await context.BotStrategyDefinitions
+        .FirstOrDefaultAsync(s => s.StrategyKey == gridStrategy.Key);
+    
+    if (existingStrategy == null)
+    {
+        logger.LogInformation("Seeding built-in strategy: {StrategyKey}", gridStrategy.Key);
+        var strategyDef = new CryptoTrading.Models.BotStrategyDefinition
+        {
+            Id = Guid.NewGuid(),
+            StrategyKey = gridStrategy.Key,
+            Version = gridStrategy.Metadata.Version,
+            DisplayName = gridStrategy.Metadata.DisplayName,
+            Description = gridStrategy.Metadata.Description,
+            ParametersSchema = gridStrategy.Metadata.ParametersSchemaJson,
+            MaxConcurrency = gridStrategy.Metadata.MaxConcurrency,
+            IsActive = true,
+            CreatedAt = DateTime.UtcNow
+        };
+        await context.BotStrategyDefinitions.AddAsync(strategyDef);
+        
+        // Register strategy in registry
+        strategyRegistry.RegisterStrategy(gridStrategy);
+    }
+    else
+    {
+        // Make sure strategy is registered
+        strategyRegistry.RegisterStrategy(gridStrategy);
+    }
+
+    if (rolesToSeed.Any() || levelsToSeed.Any() || existingStrategy == null)
+    {
+        await context.SaveChangesAsync();
+        logger.LogInformation("Default data seeding complete");
+    }
+}
+
 using (var scope = app.Services.CreateScope())
 {
-    var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+    var services = scope.ServiceProvider;
+    var db = services.GetRequiredService<ApplicationDbContext>();
+    var logger = services.GetRequiredService<ILogger<Program>>();
+
     try
     {
-        // Ensure history table exists and mark existing schema as migrated
-        db.Database.ExecuteSqlRaw(@"CREATE TABLE IF NOT EXISTS `__EFMigrationsHistory` (
-            `MigrationId` varchar(150) NOT NULL,
-            `ProductVersion` varchar(32) NOT NULL,
-            PRIMARY KEY (`MigrationId`)
-        ) CHARACTER SET=utf8mb4;");
-
-        db.Database.ExecuteSqlRaw(@"INSERT IGNORE INTO `__EFMigrationsHistory` (`MigrationId`,`ProductVersion`) VALUES
-            ('20251023032323_InitialCreate','9.0.10'),
-            ('20251023070130_AddCryptoMarketTables','9.0.10');");
-
-        // Apply any future migrations automatically
+        logger.LogInformation("Applying database migrations...");
         db.Database.Migrate();
+        await SeedDatabase(services, logger);
     }
-    catch { }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "An error occurred while migrating or seeding the database.");
+    }
 }
 
 app.Run();
-
 record WeatherForecast(DateOnly Date, int TemperatureC, string? Summary)
 {
     public int TemperatureF => 32 + (int)(TemperatureC / 0.5556);

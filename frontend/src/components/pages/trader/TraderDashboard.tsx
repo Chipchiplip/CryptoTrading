@@ -6,15 +6,26 @@ import { Badge } from '../../ui/badge';
 import { Alert, AlertDescription } from '../../ui/alert';
 import { AreaChart, Area, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { DashboardApi, DashboardSummary, NavHistory, PnlHistory } from '../../../services/dashboard';
+import { TradingApi } from '../../../api/trading';
 
 interface TraderDashboardProps {
   onNavigate?: (page: string) => void;
+}
+
+interface Holding {
+  symbol: string;
+  name: string;
+  amount: number;
+  valueUsd: number;
+  change24h: number;
 }
 
 export default function TraderDashboard({ onNavigate }: TraderDashboardProps) {
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [navHistory, setNavHistory] = useState<NavHistory | null>(null);
   const [pnlHistory, setPnlHistory] = useState<PnlHistory | null>(null);
+  const [holdings, setHoldings] = useState<Holding[]>([]);
+  const [recentOrders, setRecentOrders] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -28,11 +39,13 @@ export default function TraderDashboard({ onNavigate }: TraderDashboardProps) {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 8000); // 8 second timeout
       
-      // Fetch summary, NAV history, and PnL history in parallel with timeout
-      const [summaryRes, navRes, pnlRes] = await Promise.all([
+      // Fetch all dashboard data in parallel with timeout
+      const [summaryRes, navRes, pnlRes, holdingsRes, ordersRes] = await Promise.all([
         DashboardApi.getSummary().catch(() => ({ ok: false, error: 'Network error', data: null })),
         DashboardApi.getNavHistory().catch(() => ({ ok: false, error: 'Network error', data: null })),
-        DashboardApi.getPnlHistory('hourly').catch(() => ({ ok: false, error: 'Network error', data: null }))
+        DashboardApi.getPnlHistory('hourly').catch(() => ({ ok: false, error: 'Network error', data: null })),
+        TradingApi.getHoldings().catch(() => ({ ok: false, error: 'Network error', data: [] })),
+        TradingApi.getOrders({ page: 1, pageSize: 5 }).catch(() => ({ ok: false, error: 'Network error', data: { data: [] } }))
       ]);
       
       clearTimeout(timeoutId);
@@ -79,7 +92,23 @@ export default function TraderDashboard({ onNavigate }: TraderDashboardProps) {
         setPnlHistory({ data: [] });
       }
       
-      console.log('[Dashboard] Data loaded:', { summary: summaryRes.data, nav: navRes.data, pnl: pnlRes.data });
+      // Set holdings data
+      if (holdingsRes.ok) {
+        setHoldings(holdingsRes.data);
+      } else {
+        console.warn('[Dashboard] Holdings failed:', holdingsRes.error);
+        setHoldings([]);
+      }
+      
+      // Set recent orders data
+      if (ordersRes.ok && ordersRes.data) {
+        setRecentOrders(ordersRes.data.data || []);
+      } else {
+        console.warn('[Dashboard] Recent orders failed:', ordersRes.error);
+        setRecentOrders([]);
+      }
+      
+      console.log('[Dashboard] Data loaded:', { summary: summaryRes.data, nav: navRes.data, pnl: pnlRes.data, holdings: holdingsRes.data, orders: ordersRes.data });
     } catch (e: any) {
       console.error('[Dashboard] Fetch error:', e);
       if (e.name === 'AbortError') {
@@ -232,12 +261,12 @@ export default function TraderDashboard({ onNavigate }: TraderDashboardProps) {
       </div>
 
       <div className="grid lg:grid-cols-3 gap-6">
-        {/* NAV Chart */}
+        {/* NAV Chart - Biểu đồ hiển thị tổng giá trị tài sản ròng (NAV) trong 30 ngày qua */}
         <Card className="lg:col-span-2 bg-gray-900 border-gray-800 p-6">
           <div className="flex items-center justify-between mb-6">
             <div>
               <h2 className="text-xl mb-1">Net Asset Value (NAV)</h2>
-              <p className="text-gray-400 text-sm">Last 30 days performance</p>
+              <p className="text-gray-400 text-sm">Last 30 days performance - Tổng giá trị tài sản ròng (tất cả crypto + USD) theo thời gian</p>
             </div>
             <Button
               size="sm"
@@ -247,72 +276,126 @@ export default function TraderDashboard({ onNavigate }: TraderDashboardProps) {
               View Portfolio
             </Button>
           </div>
-          <ResponsiveContainer width="100%" height={250}>
-            <AreaChart data={navData}>
-              <defs>
-                <linearGradient id="navGradient" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#22c55e" stopOpacity={0.3}/>
-                  <stop offset="95%" stopColor="#22c55e" stopOpacity={0}/>
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-              <XAxis dataKey="date" stroke="#9ca3af" />
-              <YAxis stroke="#9ca3af" />
-              <Tooltip 
-                contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #374151', borderRadius: '8px' }}
-                labelStyle={{ color: '#9ca3af' }}
-              />
-              <Area type="monotone" dataKey="value" stroke="#22c55e" fillOpacity={1} fill="url(#navGradient)" />
-            </AreaChart>
-          </ResponsiveContainer>
+          {navData.length === 0 ? (
+            <div className="flex items-center justify-center h-[250px] text-gray-400">
+              <div className="text-center">
+                <p className="mb-2">Chưa có dữ liệu NAV</p>
+                <p className="text-sm">Dữ liệu sẽ xuất hiện sau khi bạn bắt đầu giao dịch</p>
+              </div>
+            </div>
+          ) : (
+            <ResponsiveContainer width="100%" height={250}>
+              <AreaChart data={navData}>
+                <defs>
+                  <linearGradient id="navGradient" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#22c55e" stopOpacity={0.3}/>
+                    <stop offset="95%" stopColor="#22c55e" stopOpacity={0}/>
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                <XAxis dataKey="date" stroke="#9ca3af" />
+                <YAxis stroke="#9ca3af" />
+                <Tooltip 
+                  contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #374151', borderRadius: '8px' }}
+                  labelStyle={{ color: '#9ca3af' }}
+                  formatter={(value: any) => formatCurrency(value)}
+                />
+                <Area type="monotone" dataKey="value" stroke="#22c55e" fillOpacity={1} fill="url(#navGradient)" />
+              </AreaChart>
+            </ResponsiveContainer>
+          )}
         </Card>
 
-        {/* PnL Chart */}
+        {/* PnL Chart - Biểu đồ hiển thị lợi nhuận/lỗ theo giờ trong ngày hôm nay */}
         <Card className="bg-gray-900 border-gray-800 p-6">
           <div className="mb-6">
             <h2 className="text-xl mb-1">Today's PnL</h2>
-            <p className="text-gray-400 text-sm">Hourly breakdown</p>
+            <p className="text-gray-400 text-sm">Hourly breakdown - Lợi nhuận/lỗ theo từng giờ trong ngày</p>
           </div>
-          <ResponsiveContainer width="100%" height={250}>
-            <LineChart data={pnlData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-              <XAxis dataKey="time" stroke="#9ca3af" />
-              <YAxis stroke="#9ca3af" />
-              <Tooltip 
-                contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #374151', borderRadius: '8px' }}
-                labelStyle={{ color: '#9ca3af' }}
-              />
-              <Line type="monotone" dataKey="pnl" stroke="#22c55e" strokeWidth={2} />
-            </LineChart>
-          </ResponsiveContainer>
+          {pnlData.length === 0 ? (
+            <div className="flex items-center justify-center h-[250px] text-gray-400">
+              <div className="text-center">
+                <p className="mb-2">Chưa có dữ liệu PnL hôm nay</p>
+                <p className="text-sm">Dữ liệu sẽ xuất hiện sau khi có giao dịch</p>
+              </div>
+            </div>
+          ) : (
+            <ResponsiveContainer width="100%" height={250}>
+              <LineChart data={pnlData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                <XAxis dataKey="time" stroke="#9ca3af" />
+                <YAxis stroke="#9ca3af" />
+                <Tooltip 
+                  contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #374151', borderRadius: '8px' }}
+                  labelStyle={{ color: '#9ca3af' }}
+                  formatter={(value: any) => formatCurrency(value)}
+                />
+                <Line 
+                  type="monotone" 
+                  dataKey="pnl" 
+                  stroke={displaySummary.todayPnl >= 0 ? "#22c55e" : "#ef4444"} 
+                  strokeWidth={2} 
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          )}
         </Card>
       </div>
 
       <div className="grid lg:grid-cols-2 gap-6">
-        {/* Holdings - Placeholder (can be added later with separate API) */}
+        {/* Top Holdings - Hiển thị các tài sản crypto mà user đang nắm giữ nhiều nhất */}
         <Card className="bg-gray-900 border-gray-800 p-6">
           <div className="flex items-center justify-between mb-6">
-            <h2 className="text-xl">Top Holdings</h2>
+            <div>
+              <h2 className="text-xl">Top Holdings</h2>
+              <p className="text-gray-400 text-sm">Các tài sản crypto bạn đang nắm giữ, sắp xếp theo giá trị USD</p>
+            </div>
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => onNavigate?.('wallets')}
+              onClick={() => onNavigate?.('portfolio')}
               className="text-emerald-500 hover:text-emerald-400"
             >
               View All
             </Button>
           </div>
-          <div className="space-y-4">
-            <div className="text-gray-400 text-sm text-center py-8">
-              Holdings data will be available soon
-            </div>
+          <div className="space-y-3">
+            {holdings.length === 0 ? (
+              <div className="text-gray-400 text-sm text-center py-8">
+                Chưa có holdings. Bắt đầu mua crypto để xem ở đây!
+              </div>
+            ) : (
+              holdings.slice(0, 5).map((holding, index) => (
+                <div key={holding.symbol} className="flex items-center justify-between p-3 bg-gray-800/50 rounded-lg hover:bg-gray-800 transition-colors">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 bg-emerald-500/10 rounded-full flex items-center justify-center text-emerald-500 font-bold text-sm">
+                      {index + 1}
+                    </div>
+                    <div>
+                      <div className="text-white font-medium">{holding.symbol}</div>
+                      <div className="text-gray-400 text-xs">{holding.name}</div>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-white font-medium">{formatAmount(holding.amount, 4)} {holding.symbol}</div>
+                    <div className="text-gray-400 text-sm">{formatCurrency(holding.valueUsd)}</div>
+                    <div className={`text-xs ${holding.change24h >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
+                      {holding.change24h >= 0 ? '+' : ''}{holding.change24h.toFixed(2)}%
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
           </div>
         </Card>
 
-        {/* Recent Orders - Placeholder (can be added later with separate API) */}
+        {/* Recent Orders - Hiển thị 5 lệnh giao dịch gần đây nhất */}
         <Card className="bg-gray-900 border-gray-800 p-6">
           <div className="flex items-center justify-between mb-6">
-            <h2 className="text-xl">Recent Orders</h2>
+            <div>
+              <h2 className="text-xl">Recent Orders</h2>
+              <p className="text-gray-400 text-sm">5 lệnh giao dịch gần đây nhất của bạn</p>
+            </div>
             <Button
               variant="ghost"
               size="sm"
@@ -323,9 +406,39 @@ export default function TraderDashboard({ onNavigate }: TraderDashboardProps) {
             </Button>
           </div>
           <div className="space-y-3">
-            <div className="text-gray-400 text-sm text-center py-8">
-              Recent orders data will be available soon
-            </div>
+            {recentOrders.length === 0 ? (
+              <div className="text-gray-400 text-sm text-center py-8">
+                Chưa có lệnh nào. Bắt đầu giao dịch để xem ở đây!
+              </div>
+            ) : (
+              recentOrders.map((order) => (
+                <div 
+                  key={order.id} 
+                  className="flex items-center justify-between p-3 bg-gray-800/50 rounded-lg hover:bg-gray-800 transition-colors cursor-pointer"
+                  onClick={() => onNavigate?.('order-detail', order.id)}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className={`w-2 h-2 rounded-full ${order.side === 'BUY' ? 'bg-emerald-500' : 'bg-red-500'}`} />
+                    <div>
+                      <div className="text-white font-medium">{order.symbol}</div>
+                      <div className="text-gray-400 text-xs">
+                        {order.side} • {order.type} • {order.status}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-white text-sm">{formatAmount(order.quantity, 4)}</div>
+                    <div className="text-gray-400 text-xs">
+                      {order.price ? `@ ${formatCurrency(order.price)}` : 'Market'}
+                    </div>
+                    <div className="text-gray-500 text-xs mt-1">
+                      <Clock className="w-3 h-3 inline mr-1" />
+                      {formatTimeAgo(order.createdAt)}
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
           </div>
         </Card>
       </div>

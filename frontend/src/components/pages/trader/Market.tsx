@@ -394,7 +394,7 @@ export default function Market({ onNavigate }: MarketProps) {
 
         {/* Update Indicator */}
         <div className="mt-4 text-xs text-gray-500 text-center">
-          Last updated: {new Date().toLocaleTimeString()}
+          Last updated: {new Date().toLocaleTimeString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}
         </div>
       </Card>
     </div>

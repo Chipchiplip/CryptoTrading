@@ -9,6 +9,7 @@ import { Alert, AlertDescription } from '../../ui/alert';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '../../ui/dialog';
 import { Badge } from '../../ui/badge';
 import { CoinIcon } from '../../ui/CoinIcon';
+import { Tooltip, TooltipTrigger, TooltipContent } from '../../ui/tooltip';
 import { createChart, ColorType, IChartApi, ISeriesApi, CandlestickSeries } from 'lightweight-charts';
 import * as signalR from '@microsoft/signalr';
 import { TradingApi, OrderBook, TradingBalances } from '../../../api/trading';
@@ -31,7 +32,7 @@ const timeframeDays: Record<Timeframe, number> = {
 export default function Trade({ onNavigate }: TradeProps) {
   const [searchParams, setSearchParams] = useSearchParams();
   const urlPair = searchParams.get('pair');
-  const [selectedPair, setSelectedPair] = useState(urlPair || 'BTC/USDT');
+  const [selectedPair, setSelectedPair] = useState(urlPair || 'BTC/USD');
   const [side, setSide] = useState<'buy' | 'sell'>('buy');
   const [orderType, setOrderType] = useState<'MARKET' | 'LIMIT'>('MARKET');
   const [buyAmount, setBuyAmount] = useState('');
@@ -150,6 +151,9 @@ export default function Trade({ onNavigate }: TradeProps) {
     setReceiveAmount('');
     setLimitPrice('');
   }, [side]);
+
+  // Recalculate amounts when limitPrice changes (for LIMIT orders only)
+  // Note: This is handled by the individual change handlers, so this effect is not needed
 
   // Initialize chart - only once on mount (exact copy from ChartTest)
   useLayoutEffect(() => {
@@ -464,8 +468,9 @@ export default function Trade({ onNavigate }: TradeProps) {
     
     fetchCandles();
     
-    // Auto refresh every 30 seconds (reduced frequency to prevent jitter)
-    const intervalId = setInterval(fetchCandles, 30000);
+    // ✅ Tăng refresh rate cho real-time chart (5 giây thay vì 30 giây)
+    const refreshInterval = timeframe === '1D' ? 5000 : 10000; // 1D: 5s, others: 10s
+    const intervalId = setInterval(fetchCandles, refreshInterval);
     return () => clearInterval(intervalId);
   }, [selectedCoin?.symbol, timeframe]); // Removed intervalMap from dependencies
 
@@ -773,6 +778,21 @@ export default function Trade({ onNavigate }: TradeProps) {
     return `$${numValue.toFixed(4)}`;
   };
 
+  // Get balance for a specific symbol
+  const getBalanceBySymbol = (symbol: string): { available: number; locked: number; total: number } | null => {
+    if (!balances?.wallets) return null;
+    const wallet = balances.wallets.find(w => w.symbol.toUpperCase() === symbol.toUpperCase());
+    return wallet ? { available: wallet.available, locked: wallet.locked, total: wallet.total } : null;
+  };
+
+  // Format balance based on symbol (BTC: 4 decimals, USDT: 2 decimals)
+  const formatBalance = (value: number, symbol: string): string => {
+    if (symbol.toUpperCase() === 'USDT' || symbol.toUpperCase() === 'USD') {
+      return value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+    return value.toLocaleString('en-US', { minimumFractionDigits: 4, maximumFractionDigits: 4 });
+  };
+
   // Calculate conversion
   const currentPrice = selectedCoin?.currentPrice || orderBook?.currentPrice || 0;
   
@@ -796,10 +816,19 @@ export default function Trade({ onNavigate }: TradeProps) {
     }
   }, [useAmount, currentPrice]);
 
+  // Get effective price for calculation (use limitPrice if LIMIT order, otherwise currentPrice)
+  const getEffectivePrice = (): number => {
+    if (orderType === 'LIMIT' && limitPrice && parseFloat(limitPrice) > 0) {
+      return parseFloat(limitPrice);
+    }
+    return currentPrice;
+  };
+
   const handleUseAmountChange = (value: string) => {
     setUseAmount(value);
-    if (value && currentPrice > 0) {
-      const calculated = (parseFloat(value) / currentPrice).toFixed(8);
+    const price = getEffectivePrice();
+    if (value && price > 0) {
+      const calculated = (parseFloat(value) / price).toFixed(8);
       setBuyAmount(calculated);
     } else {
       setBuyAmount('');
@@ -808,8 +837,9 @@ export default function Trade({ onNavigate }: TradeProps) {
 
   const handleBuyAmountChange = (value: string) => {
     setBuyAmount(value);
-    if (value && currentPrice > 0) {
-      const calculated = (parseFloat(value) * currentPrice).toFixed(2);
+    const price = getEffectivePrice();
+    if (value && price > 0) {
+      const calculated = (parseFloat(value) * price).toFixed(2);
       setUseAmount(calculated);
     } else {
       setUseAmount('');
@@ -818,8 +848,9 @@ export default function Trade({ onNavigate }: TradeProps) {
 
   const handleSellAmountChange = (value: string) => {
     setSellAmount(value);
-    if (value && currentPrice > 0) {
-      const calculated = (parseFloat(value) * currentPrice).toFixed(2);
+    const price = getEffectivePrice();
+    if (value && price > 0) {
+      const calculated = (parseFloat(value) * price).toFixed(2);
       setReceiveAmount(calculated);
     } else {
       setReceiveAmount('');
@@ -828,8 +859,9 @@ export default function Trade({ onNavigate }: TradeProps) {
 
   const handleReceiveAmountChange = (value: string) => {
     setReceiveAmount(value);
-    if (value && currentPrice > 0) {
-      const calculated = (parseFloat(value) / currentPrice).toFixed(8);
+    const price = getEffectivePrice();
+    if (value && price > 0) {
+      const calculated = (parseFloat(value) / price).toFixed(8);
       setSellAmount(calculated);
     } else {
       setSellAmount('');
@@ -1028,8 +1060,8 @@ export default function Trade({ onNavigate }: TradeProps) {
                 day: '2-digit', 
                 hour: '2-digit', 
                 minute: '2-digit',
-                timeZone: 'UTC'
-              })} (UTC+0)
+                timeZone: 'Asia/Ho_Chi_Minh'
+              })} (UTC+7)
             </div>
           </Card>
             </div>
@@ -1093,6 +1125,39 @@ export default function Trade({ onNavigate }: TradeProps) {
               </Button>
             </div>
 
+            {/* Balance Display */}
+            {(() => {
+              const baseAsset = selectedPair.split('/')[0];
+              const quoteAsset = selectedPair.split('/')[1];
+              const displaySymbol = side === 'buy' ? quoteAsset : baseAsset;
+              const balance = getBalanceBySymbol(displaySymbol);
+              
+              if (!balance) return null;
+              
+              return (
+                <div className="mb-4">
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <p className="text-sm text-gray-400 cursor-help">
+                        Bạn có{' '}
+                        <span className="text-green-400 font-medium">
+                          {formatBalance(balance.available, displaySymbol)} {displaySymbol}
+                        </span>
+                        {' '}khả dụng
+                      </p>
+                    </TooltipTrigger>
+                    <TooltipContent className="bg-gray-800 text-white border-gray-700">
+                      <div className="space-y-1 text-xs">
+                        <div>Tổng: {formatBalance(balance.total, displaySymbol)} {displaySymbol}</div>
+                        <div>Khả dụng: {formatBalance(balance.available, displaySymbol)} {displaySymbol}</div>
+                        <div>Đang mở lệnh: {formatBalance(balance.locked, displaySymbol)} {displaySymbol}</div>
+                      </div>
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
+              );
+            })()}
+
             {side === 'buy' ? (
               <div className="space-y-4">
                 {/* Limit Price (only for LIMIT orders) */}
@@ -1139,7 +1204,7 @@ export default function Trade({ onNavigate }: TradeProps) {
 
                 {/* You Use */}
             <div>
-                  <Label className="text-gray-200 mb-2 block">Bạn sử dụng{orderType === 'LIMIT' ? ' (dự kiến)' : ''}</Label>
+                  <Label className="text-gray-200 mb-2 block">Bạn sử dụng</Label>
                   <div className="flex gap-2">
               <Input
                 type="number"
@@ -1233,7 +1298,7 @@ export default function Trade({ onNavigate }: TradeProps) {
 
                 {/* You Receive */}
                 <div>
-                  <Label className="text-gray-200 mb-2 block">Bạn nhận{orderType === 'LIMIT' ? ' (dự kiến)' : ''}</Label>
+                  <Label className="text-gray-200 mb-2 block">Bạn nhận</Label>
                   <div className="flex gap-2">
                     <Input
                       type="number"
@@ -1501,7 +1566,7 @@ export default function Trade({ onNavigate }: TradeProps) {
                 })
                 .slice(0, 50)
                 .map((coin) => {
-                  const pair = `${coin.symbol}/USDT`;
+                  const pair = `${coin.symbol}/USD`;
                   const isSelected = selectedPair === pair;
                   const priceChange = coin.priceChangePercentage24h || 0;
                   const isPositive = priceChange >= 0;
