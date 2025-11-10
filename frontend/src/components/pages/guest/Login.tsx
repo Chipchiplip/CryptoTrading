@@ -62,7 +62,7 @@ export default function Login({ onNavigate }: LoginProps) {
       }
 
       console.log('[Login] Login successful, setting access token');
-      setAccessToken(res.data.accessToken, res.data.user || null);
+      setAccessToken(res.data.accessToken, res.data.user || null, res.data.refreshToken || null);
       onNavigate?.('trader-dashboard');
     } catch (err: any) {
       console.error('[Login] Unexpected error:', err);
@@ -137,7 +137,7 @@ export default function Login({ onNavigate }: LoginProps) {
         throw new Error(data.message || "Google login failed on server.");
       }
 
-      setAccessToken(data.accessToken, data.user);
+      setAccessToken(data.accessToken, data.user, data.refreshToken || null);
       onNavigate?.('trader-dashboard');
     } catch (err: any) {
         console.error('[Login] Google login error:', err);
