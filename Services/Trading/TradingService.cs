@@ -406,6 +406,9 @@ namespace CryptoTrading.Services.Trading
                 if (order.FilledQty >= order.QuantityCoin)
                 {
                     order.Status = "FILLED";
+                    // ✅ FIX: Release any remaining locked balance when order is fully filled
+                    // This handles cases where locked amount differs from actual fill amount (price difference)
+                    await ReleaseBalanceAsync(order.Id); // Release all remaining holds
                 }
                 else if (order.FilledQty > 0)
                 {
@@ -515,6 +518,9 @@ namespace CryptoTrading.Services.Trading
                 if (order.FilledQty >= order.QuantityCoin)
                 {
                     order.Status = "FILLED";
+                    // ✅ FIX: Release any remaining locked balance when order is fully filled
+                    // This handles cases where locked amount differs from actual fill amount (price difference)
+                    await ReleaseBalanceAsync(order.Id); // Release all remaining holds
                 }
                 else if (order.FilledQty > 0)
                 {
@@ -606,6 +612,19 @@ namespace CryptoTrading.Services.Trading
                 await ReleaseBalanceAsync(makerOrder.Id, quantity);
             }
 
+            // ✅ FIX: Release any remaining locked balance when orders are fully filled
+            // This handles cases where locked amount differs from actual fill amount (price difference)
+            // Check based on FilledQty, not Status, as Status may not be updated yet for takerOrder
+            if (takerOrder.FilledQty >= takerOrder.QuantityCoin)
+            {
+                await ReleaseBalanceAsync(takerOrder.Id); // Release all remaining holds
+            }
+
+            if (makerOrder.FilledQty >= makerOrder.QuantityCoin)
+            {
+                await ReleaseBalanceAsync(makerOrder.Id); // Release all remaining holds
+            }
+
             await _context.SaveChangesAsync();
         }
 
@@ -645,6 +664,13 @@ namespace CryptoTrading.Services.Trading
             else
             {
                 await ReleaseBalanceAsync(order.Id, quantity);
+            }
+
+            // ✅ FIX: Release any remaining locked balance when order is fully filled
+            // This handles cases where locked amount differs from actual fill amount (price difference)
+            if (order.FilledQty >= order.QuantityCoin)
+            {
+                await ReleaseBalanceAsync(order.Id); // Release all remaining holds
             }
 
             await _context.SaveChangesAsync();

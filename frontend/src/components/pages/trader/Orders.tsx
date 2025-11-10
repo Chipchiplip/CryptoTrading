@@ -8,12 +8,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../../ui/table';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '../../ui/alert-dialog';
 import { TradingApi, Order, OrderStatus } from '../../../api/trading';
+import { useUserRole } from '../../../hooks/useUserRole';
 
 interface OrdersProps {
   onNavigate?: (page: string, orderId?: string) => void;
 }
 
 export default function Orders({ onNavigate }: OrdersProps) {
+  const { isAdmin } = useUserRole();
   const [searchQuery, setSearchQuery] = useState('');
   const [filterPair, setFilterPair] = useState('all');
   const [filterStatus, setFilterStatus] = useState('all');
@@ -112,8 +114,14 @@ export default function Orders({ onNavigate }: OrdersProps) {
   const filteredOrders = orders.filter(order => {
     if (!searchQuery) return true;
     const searchLower = searchQuery.toLowerCase();
-    return order.id.toLowerCase().includes(searchLower) ||
-           order.symbol.toLowerCase().includes(searchLower);
+    
+    // Admin can search by ID or symbol, User can only search by symbol
+    if (isAdmin) {
+      return order.id.toLowerCase().includes(searchLower) ||
+             order.symbol.toLowerCase().includes(searchLower);
+    } else {
+      return order.symbol.toLowerCase().includes(searchLower);
+    }
   });
 
   const stats = {
@@ -250,7 +258,7 @@ export default function Orders({ onNavigate }: OrdersProps) {
             <Table>
               <TableHeader>
                 <TableRow className="border-gray-800 hover:bg-transparent">
-                  <TableHead className="text-gray-400">Order ID</TableHead>
+                  {isAdmin && <TableHead className="text-gray-400">Order ID</TableHead>}
                   <TableHead className="text-gray-400">Time</TableHead>
                   <TableHead className="text-gray-400">Pair</TableHead>
                   <TableHead className="text-gray-400">Type</TableHead>
@@ -266,9 +274,11 @@ export default function Orders({ onNavigate }: OrdersProps) {
               <TableBody>
                 {filteredOrders.map((order) => (
                   <TableRow key={order.id} className="border-gray-800 hover:bg-gray-800/50">
-                    <TableCell className="text-emerald-500 cursor-pointer" onClick={() => onNavigate?.('order-detail', order.id)}>
-                      {order.id}
-                    </TableCell>
+                    {isAdmin && (
+                      <TableCell className="text-emerald-500 cursor-pointer" onClick={() => onNavigate?.('order-detail', order.id)}>
+                        {order.id}
+                      </TableCell>
+                    )}
                     <TableCell className="text-gray-400">
                       {new Date(order.createdAt).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}
                     </TableCell>

@@ -9,8 +9,10 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 import { Calendar } from '../../ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '../../ui/popover';
 import { TradingApi, Trade } from '../../../api/trading';
+import { useUserRole } from '../../../hooks/useUserRole';
 
 export default function TradesHistory() {
+  const { isAdmin } = useUserRole();
   const [searchQuery, setSearchQuery] = useState('');
   const [filterPair, setFilterPair] = useState('all');
   const [dateRange, setDateRange] = useState<any>(null);
@@ -66,9 +68,15 @@ export default function TradesHistory() {
   const filteredTrades = trades.filter(trade => {
     if (!searchQuery) return true;
     const searchLower = searchQuery.toLowerCase();
-    return trade.id.toLowerCase().includes(searchLower) ||
-           trade.symbol.toLowerCase().includes(searchLower) ||
-           trade.orderId.toLowerCase().includes(searchLower);
+    
+    // Admin can search by ID, Order ID, or symbol, User can only search by symbol
+    if (isAdmin) {
+      return trade.id.toLowerCase().includes(searchLower) ||
+             trade.orderId.toLowerCase().includes(searchLower) ||
+             trade.symbol.toLowerCase().includes(searchLower);
+    } else {
+      return trade.symbol.toLowerCase().includes(searchLower);
+    }
   });
 
   const stats = {
@@ -79,17 +87,29 @@ export default function TradesHistory() {
 
   const exportTrades = () => {
     // Export functionality - convert trades to CSV
+    // Admin gets IDs in CSV, User doesn't
+    const headers = isAdmin 
+      ? ['Trade ID', 'Order ID', 'Symbol', 'Price', 'Quantity', 'Fee', 'Time']
+      : ['Symbol', 'Price', 'Quantity', 'Fee', 'Time'];
+    
     const csv = [
-      ['Trade ID', 'Order ID', 'Symbol', 'Price', 'Quantity', 'Fee', 'Time'].join(','),
-      ...filteredTrades.map(t => [
-        t.id,
-        t.orderId,
-        t.symbol,
-        t.price,
-        t.quantity,
-        t.fee,
-        new Date(t.createdAt).toISOString()
-      ].join(','))
+      headers.join(','),
+      ...filteredTrades.map(t => {
+        const row = [
+          t.symbol,
+          t.price,
+          t.quantity,
+          t.fee,
+          new Date(t.createdAt).toISOString()
+        ];
+        
+        // Add IDs at the beginning only for admin
+        if (isAdmin) {
+          row.unshift(t.id, t.orderId);
+        }
+        
+        return row.join(',');
+      })
     ].join('\n');
     
     const blob = new Blob([csv], { type: 'text/csv' });
@@ -194,8 +214,8 @@ export default function TradesHistory() {
             <Table>
               <TableHeader>
                 <TableRow className="border-gray-800 hover:bg-transparent">
-                  <TableHead className="text-gray-400">Trade ID</TableHead>
-                  <TableHead className="text-gray-400">Order ID</TableHead>
+                  {isAdmin && <TableHead className="text-gray-400">Trade ID</TableHead>}
+                  {isAdmin && <TableHead className="text-gray-400">Order ID</TableHead>}
                   <TableHead className="text-gray-400">Time</TableHead>
                   <TableHead className="text-gray-400">Pair</TableHead>
                   <TableHead className="text-gray-400 text-right">Price</TableHead>
@@ -209,10 +229,14 @@ export default function TradesHistory() {
                   const total = trade.price * trade.quantity;
                   return (
                     <TableRow key={trade.id} className="border-gray-800 hover:bg-gray-800/50">
-                      <TableCell className="text-emerald-500">{trade.id}</TableCell>
-                      <TableCell className="text-blue-400 cursor-pointer hover:underline">
-                        {trade.orderId}
-                      </TableCell>
+                      {isAdmin && (
+                        <TableCell className="text-emerald-500">{trade.id}</TableCell>
+                      )}
+                      {isAdmin && (
+                        <TableCell className="text-blue-400 cursor-pointer hover:underline">
+                          {trade.orderId}
+                        </TableCell>
+                      )}
                       <TableCell className="text-gray-400">
                         {new Date(trade.createdAt).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}
                       </TableCell>
