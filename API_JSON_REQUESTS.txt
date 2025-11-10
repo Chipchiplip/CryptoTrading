@@ -1,0 +1,197 @@
+============================================
+CÁC JSON REQUEST MẪU ĐỂ TEST API
+Copy JSON và paste vào Swagger UI hoặc Postman
+============================================
+
+BASE URL: http://localhost:5299
+
+============================================
+1. POST /api/auth/login - ĐĂNG NHẬP
+============================================
+{
+  "email": "dchoang.work@gmail.com",
+  "password": "Chipchip123"
+}
+
+# Response nếu KHÔNG có 2FA:
+# {
+#   "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+#   "refreshToken": "...",
+#   "expiresAt": "2025-11-10T06:00:00Z",
+#   "user": { ... },
+#   "requiresTwoFactor": false
+# }
+
+# Response nếu CÓ 2FA (như bạn đang gặp):
+# {
+#   "accessToken": "",  ← KHÔNG CÓ TOKEN Ở ĐÂY
+#   "refreshToken": "",
+#   "expiresAt": "0001-01-01T00:00:00",
+#   "user": { ... },
+#   "requiresTwoFactor": true  ← PHẢI XÁC THỰC 2FA
+# }
+# → Phải làm tiếp bước 2 và 3 bên dưới
+
+============================================
+2. POST /api/auth/test-generate-2fa-code - LẤY MÃ 2FA
+============================================
+# CHỈ CHẠY BƯỚC NÀY NẾU requiresTwoFactor = true
+# API này trả về mã 2FA để test (chỉ dùng trong development)
+{
+  "email": "dchoang.work@gmail.com"
+}
+
+# Response:
+# {
+#   "code": "123456"  ← Copy mã này
+# }
+
+============================================
+3. POST /api/auth/login-2fa - XÁC THỰC 2FA VÀ LẤY TOKEN
+============================================
+# BƯỚC QUAN TRỌNG: Đây mới là bước lấy token khi có 2FA
+# Dùng mã từ bước 2 (hoặc mã từ app xác thực của bạn)
+{
+  "email": "dchoang.work@gmail.com",
+  "code": "123456"  ← Mã từ bước 2 hoặc từ app
+}
+
+# Response (CÓ TOKEN):
+# {
+#   "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",  ← TOKEN Ở ĐÂY
+#   "refreshToken": "...",
+#   "expiresAt": "2025-11-10T06:00:00Z",
+#   "user": { ... }
+# }
+
+============================================
+3B. GET /api/bot-strategies - Lấy danh sách strategies (ĐỂ LẤY STRATEGY ID)
+============================================
+# Gọi API này trước để lấy Strategy ID
+# Response sẽ có dạng:
+# [
+#   {
+#     "id": "abc-123-def-456",  <-- Đây là Strategy ID
+#     "strategyKey": "grid-basic",
+#     "displayName": "Grid Trading",
+#     ...
+#   }
+# ]
+# Copy "id" và dùng cho các API khác
+
+============================================
+4. POST /api/bots - Tạo bot mới
+============================================
+# Strategy ID: a1a11bc3-415d-4a5b-9da4-2e3afac22be5 (Grid Trading)
+{
+  "name": "Test Bot 2024",
+  "strategyDefinitionId": "a1a11bc3-415d-4a5b-9da4-2e3afac22be5",
+  "baseAsset": "BTC",
+  "quoteAsset": "USDT",
+  "riskProfile": "Moderate",
+  "parameters": {
+    "gridLevels": 10,
+    "lowerBound": 50000,
+    "upperBound": 60000,
+    "orderSize": 0.01,
+    "capitalAllocation": 10000,
+    "rebalanceMode": "balanced",
+    "refreshIntervalSeconds": 60
+  },
+  "executionIntervalSeconds": 60
+}
+
+============================================
+5. PUT /api/bots/{id} - Cập nhật bot
+============================================
+{
+  "name": "Updated Bot Name",
+  "executionIntervalSeconds": 120
+}
+
+============================================
+6. POST /api/bots/{id}/start - Start bot
+============================================
+{
+  "mode": "live"
+}
+
+============================================
+7. POST /api/bots/{id}/stop - Stop bot
+============================================
+{
+  "reason": "user"
+}
+
+============================================
+8. POST /api/bots/{id}/simulate - Simulate bot
+============================================
+# Strategy ID: a1a11bc3-415d-4a5b-9da4-2e3afac22be5 (Grid Trading)
+# Hoặc lấy từ bot hiện tại: GET /api/bots/{id} -> strategyDefinitionId
+{
+  "strategyDefinitionId": "a1a11bc3-415d-4a5b-9da4-2e3afac22be5",
+  "parameters": {
+    "gridLevels": 10,
+    "lowerBound": 50000,
+    "upperBound": 60000,
+    "orderSize": 0.01,
+    "capitalAllocation": 10000,
+    "rebalanceMode": "balanced",
+    "refreshIntervalSeconds": 60
+  },
+  "startDate": "2024-01-01T00:00:00Z",
+  "endDate": "2024-01-31T23:59:59Z",
+  "initialCapital": 10000
+}
+
+============================================
+HƯỚNG DẪN LẤY STRATEGY ID:
+============================================
+Bước 1: Đăng nhập và lấy token (API 1)
+Bước 2: Gọi GET /api/bot-strategies với header Authorization: Bearer {token}
+Bước 3: Từ response, copy field "id" của strategy đầu tiên
+Bước 4: Thay "PASTE_STRATEGY_ID_HERE" bằng ID vừa copy
+
+Ví dụ response (BẠN ĐÃ LẤY ĐƯỢC):
+[
+  {
+    "id": "a1a11bc3-415d-4a5b-9da4-2e3afac22be5",  ← Strategy ID này
+    "strategyKey": "grid-basic",
+    "displayName": "Grid Trading",
+    "description": "..."
+  }
+]
+
+✅ Strategy ID của bạn: a1a11bc3-415d-4a5b-9da4-2e3afac22be5
+
+============================================
+LƯU Ý QUAN TRỌNG:
+============================================
+1. Token có thời hạn (thường 15-60 phút)
+   - Nếu gặp lỗi 401 "token expired" → Đăng nhập lại (API 1)
+   - Copy token mới và dùng cho các API tiếp theo
+
+2. Thay PASTE_STRATEGY_ID_HERE bằng Strategy ID thực tế
+   - Gọi GET /api/bot-strategies để lấy ID
+
+3. Thay {id} bằng Bot ID thực tế
+   - Lấy từ response khi tạo bot (POST /api/bots)
+
+4. Tất cả API cần Authorization header:
+   Authorization: Bearer {token}
+   - Lấy token từ API login (API 1)
+
+5. Nếu có 2FA:
+   - Bước 1: Login → nhận requiresTwoFactor: true
+   - Bước 2: Gọi test-generate-2fa-code để lấy mã
+   - Bước 3: Gọi login-2fa với mã để lấy token
+
+============================================
+CÁC API KHÔNG CẦN BODY:
+- GET /api/bots
+- GET /api/bots/{id}
+- GET /api/bots/{id}/logs?page=1&pageSize=10
+- GET /api/bots/{id}/orders?page=1&pageSize=10
+- POST /api/bots/{id}/nudge
+- DELETE /api/bots/{id}
+
