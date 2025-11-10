@@ -34,5 +34,24 @@ namespace CryptoTrading.Models
         public string? PasswordResetToken { get; set; }
 
         public DateTime? PasswordResetTokenExpiry { get; set; }
+
+        [StringLength(50)]
+        public string Role { get; set; } = "User"; 
+
+        [StringLength(50)]
+        public string Level { get; set; } = "Beginner"; 
+
+        public bool IsActive { get; set; } = true; 
+
+        [StringLength(500)]
+        public string? AvatarUrl { get; set; } 
+
+        [StringLength(200)]
+        public string? Bio { get; set; } 
+
+        [StringLength(20)]
+        public string? PhoneNumber { get; set; }
+        [StringLength(50)]
+        public string? Timezone { get; set; }
     }
 }

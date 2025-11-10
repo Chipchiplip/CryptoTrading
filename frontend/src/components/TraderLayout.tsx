@@ -18,7 +18,8 @@ import {
   X,
   BarChart3,
   LogOut,
-  User
+  User,
+  Loader2
 } from 'lucide-react';
 import { Input } from './ui/input';
 import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar';
@@ -26,6 +27,7 @@ import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { setAccessToken } from '../api/http';
 import { useNavigate } from 'react-router-dom';
+import { DashboardApi, DashboardSummary } from '../services/dashboard';
 
 interface TraderLayoutProps {
   children: React.ReactNode;
@@ -36,6 +38,8 @@ interface TraderLayoutProps {
 export default function TraderLayout({ children, currentPage, onNavigate }: TraderLayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [dashboardSummary, setDashboardSummary] = useState<DashboardSummary | null>(null);
+  const [balanceLoading, setBalanceLoading] = useState(true);
   const userMenuRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
 
@@ -56,11 +60,58 @@ export default function TraderLayout({ children, currentPage, onNavigate }: Trad
     };
   }, [userMenuOpen]);
 
+  // ✅ Fetch dashboard summary for sidebar balance
+  useEffect(() => {
+    const fetchBalance = async () => {
+      try {
+        setBalanceLoading(true);
+        console.log('[TraderLayout] Fetching dashboard summary for sidebar balance...');
+        const result = await DashboardApi.getSummary();
+        console.log('[TraderLayout] API result:', { ok: result.ok, hasData: !!result.data, error: result.ok ? null : result.error });
+        if (result.ok && result.data) {
+          console.log('[TraderLayout] Dashboard summary loaded:', {
+            totalBalance: result.data.totalBalance,
+            totalBalanceChange: result.data.totalBalanceChange,
+            totalBalanceChangePercent: result.data.totalBalanceChangePercent
+          });
+          setDashboardSummary(result.data);
+        } else {
+          console.error('[TraderLayout] Failed to fetch dashboard summary:', result.error);
+          // Set to null to show error state
+          setDashboardSummary(null);
+        }
+      } catch (error) {
+        console.error('[TraderLayout] Exception while fetching dashboard summary:', error);
+        setDashboardSummary(null);
+      } finally {
+        setBalanceLoading(false);
+      }
+    };
+
+    fetchBalance();
+    // Refresh balance every 30 seconds
+    const interval = setInterval(fetchBalance, 30000);
+    return () => clearInterval(interval);
+  }, []);
+
   // ✅ Handle logout
   const handleLogout = () => {
     setAccessToken(null);
     setUserMenuOpen(false);
     navigate('/login');
+  };
+
+  // ✅ Format currency
+  const formatCurrency = (value: number | null | undefined) => {
+    if (value === null || value === undefined || isNaN(value)) {
+      return '$0.00';
+    }
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD',
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(value);
   };
 
   const menuItems = [
@@ -118,8 +169,28 @@ export default function TraderLayout({ children, currentPage, onNavigate }: Trad
       <div className="p-4 border-t border-gray-800 flex-shrink-0">
         <div className="bg-gray-900 rounded-lg p-4 space-y-2">
           <div className="text-gray-400 text-sm">Total Balance</div>
-          <div className="text-2xl text-white">$12,458.32</div>
-          <div className="text-emerald-500 text-sm">+$234.12 (1.9%)</div>
+          {balanceLoading ? (
+            <div className="flex items-center justify-center py-2">
+              <Loader2 className="w-5 h-5 text-gray-400 animate-spin" />
+            </div>
+          ) : dashboardSummary ? (
+            <>
+              <div className="text-2xl text-white" data-testid="sidebar-total-balance">
+                {formatCurrency(dashboardSummary.totalBalance)}
+              </div>
+              <div className={`text-sm ${
+                dashboardSummary.totalBalanceChange >= 0 ? 'text-emerald-500' : 'text-red-500'
+              }`} data-testid="sidebar-balance-change">
+                {dashboardSummary.totalBalanceChange >= 0 ? '+' : ''}
+                {formatCurrency(dashboardSummary.totalBalanceChange)} ({dashboardSummary.totalBalanceChangePercent >= 0 ? '+' : ''}{dashboardSummary.totalBalanceChangePercent.toFixed(2)}%)
+              </div>
+            </>
+          ) : (
+            <div className="text-sm text-gray-500">
+              <div className="text-xl">--</div>
+              <div className="text-xs mt-1">Unable to load</div>
+            </div>
+          )}
         </div>
       </div>
     </div>

@@ -65,26 +65,33 @@ export default function Register({ onNavigate }: RegisterProps) {
 
     setLoading(true);
 
-    const res = await AuthApi.register({ 
-      email: formData.email, 
-      password: formData.password, 
-      confirmPassword: formData.confirmPassword,
-      fullName: formData.fullName 
-    });
-    if (!res.ok) {
-      setError(res.error);
+    try {
+      const res = await AuthApi.register({ 
+        email: formData.email, 
+        password: formData.password, 
+        confirmPassword: formData.confirmPassword,
+        fullName: formData.fullName 
+      });
+      
+      if (!res.ok) {
+        setError(res.error);
+        setLoading(false);
+        return;
+      }
+    
+      // Store email for VerifyEmail page
+      localStorage.setItem('pendingVerificationEmail', formData.email);
+      
+      if (res.data.accessToken) {
+        setAccessToken(res.data.accessToken, res.data.user || null);
+      }
+      onNavigate?.('verify-email');
       setLoading(false);
-      return;
+    } catch (e: any) {
+      // Xử lý lỗi network (fail to fetch)
+      setError('Network Error: Could not connect to the server. Please ensure the backend is running.');
+      setLoading(false);
     }
-    
-    // Store email for VerifyEmail page
-    localStorage.setItem('pendingVerificationEmail', formData.email);
-    
-    if (res.data.accessToken) {
-      setAccessToken(res.data.accessToken);
-    }
-    onNavigate?.('verify-email');
-    setLoading(false);
   };
 
   return (
@@ -213,7 +220,7 @@ export default function Register({ onNavigate }: RegisterProps) {
               <Checkbox
                 id="terms"
                 checked={agreeToTerms}
-                onCheckedChange={(checked) => setAgreeToTerms(checked as boolean)}
+                onCheckedChange={(checked: boolean | "indeterminate") => setAgreeToTerms(checked as boolean)}
                 className="mt-1"
               />
               <Label htmlFor="terms" className="text-sm text-gray-400 cursor-pointer">
@@ -239,7 +246,7 @@ export default function Register({ onNavigate }: RegisterProps) {
                 <div className="w-full border-t border-gray-800"></div>
               </div>
               <div className="relative flex justify-center text-sm">
-                <span className="px-2 bg-gray-900 text-gray-400">Or sign up with</span>
+                <span className="px-2 bg-gray-900 text-gray-400">Or continue with</span>
               </div>
             </div>
 
