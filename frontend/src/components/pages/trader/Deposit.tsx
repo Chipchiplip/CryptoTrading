@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Copy, Upload, CheckCircle2, Info } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Copy, Upload, CheckCircle2, Info, CreditCard } from 'lucide-react';
 import { Card } from '../../ui/card';
 import { Button } from '../../ui/button';
 import { Input } from '../../ui/input';
@@ -8,12 +8,18 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Alert, AlertDescription } from '../../ui/alert';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../ui/tabs';
 import { Badge } from '../../ui/badge';
+import { PaymentApi } from '../../../api/payment';
+import { TradingApi } from '../../../api/trading';
 
 export default function Deposit() {
   const [selectedCurrency, setSelectedCurrency] = useState('BTC');
   const [amount, setAmount] = useState('');
+  const [vndAmount, setVndAmount] = useState('');
   const [uploadedFile, setUploadedFile] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
 
   const depositAddress = '1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa';
 
@@ -24,10 +30,40 @@ export default function Deposit() {
   ];
 
   const fiatMethods = [
-    { method: 'Bank Transfer', currency: 'USD', fee: '0%', processing: '1-3 business days' },
-    { method: 'Credit Card', currency: 'USD', fee: '2.5%', processing: 'Instant' },
-    { method: 'Debit Card', currency: 'USD', fee: '1.5%', processing: 'Instant' },
+    { method: 'VNPay', currency: 'VND', fee: '0%', processing: 'Instant', icon: CreditCard },
   ];
+
+  // Kiểm tra URL params khi component mount (callback từ VNPay)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const status = params.get('status');
+    const amount = params.get('amount');
+    const message = params.get('message');
+
+    if (status === 'success') {
+      setSuccess(`Deposit thành công! Số tiền: ${amount ? amount + ' VND' : ''}`);
+      
+      // Refresh balance sau khi deposit thành công
+      TradingApi.getBalances().then(res => {
+        if (res.ok) {
+          console.log('Balance refreshed after deposit:', res.data);
+          // Trigger custom event để các component khác có thể refresh balance
+          window.dispatchEvent(new CustomEvent('balanceUpdated'));
+        } else {
+          console.error('Failed to refresh balance:', res.error);
+        }
+      });
+      
+      // Xóa params khỏi URL
+      window.history.replaceState({}, '', window.location.pathname);
+    } else if (status === 'failed') {
+      setError(message || 'Deposit thất bại. Vui lòng thử lại.');
+      window.history.replaceState({}, '', window.location.pathname);
+    } else if (status === 'error') {
+      setError('Có lỗi xảy ra khi xử lý giao dịch.');
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+  }, []);
 
   const recentDeposits = [
     { id: 'DEP-001', currency: 'BTC', amount: 0.05, status: 'Completed', time: '2025-01-14 10:15' },
@@ -47,6 +83,39 @@ export default function Deposit() {
     }
   };
 
+  // Xử lý VNPay deposit
+  const handleVnpayDeposit = async () => {
+    setError('');
+    setSuccess('');
+
+    if (!vndAmount || parseFloat(vndAmount) < 10000) {
+      setError('Số tiền tối thiểu là 10,000 VND');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const result = await PaymentApi.createVnpayDeposit({
+        amount: parseFloat(vndAmount),
+      });
+
+      if (!result.ok) {
+        setError(result.error || 'Có lỗi xảy ra khi tạo giao dịch');
+        setLoading(false);
+        return;
+      }
+
+      if (result.data.paymentUrl) {
+        // Redirect đến VNPay
+        window.location.href = result.data.paymentUrl;
+      }
+    } catch (err: any) {
+      console.error('Error creating deposit:', err);
+      setError(err?.message || 'Có lỗi xảy ra khi tạo giao dịch');
+      setLoading(false);
+    }
+  };
+
   const currentCurrency = cryptoCurrencies.find(c => c.symbol === selectedCurrency) || cryptoCurrencies[0];
 
   return (
@@ -56,6 +125,19 @@ export default function Deposit() {
         <p className="text-gray-400">Add funds to your account</p>
       </div>
 
+      {/* Hiển thị thông báo */}
+      {error && (
+        <Alert className="mb-4 bg-red-500/10 border-red-500/50">
+          <AlertDescription className="text-red-500">{error}</AlertDescription>
+        </Alert>
+      )}
+
+      {success && (
+        <Alert className="mb-4 bg-emerald-500/10 border-emerald-500/50">
+          <AlertDescription className="text-emerald-500">{success}</AlertDescription>
+        </Alert>
+      )}
+
       <div className="grid lg:grid-cols-3 gap-6">
         <Card className="lg:col-span-2 bg-gray-900 border-gray-800 p-6">
           <Tabs defaultValue="crypto">
@@ -64,7 +146,7 @@ export default function Deposit() {
                 Cryptocurrency
               </TabsTrigger>
               <TabsTrigger value="fiat" className="flex-1 data-[state=active]:bg-emerald-500 data-[state=active]:text-black">
-                Fiat (Bank/Card)
+                Fiat (VNPay)
               </TabsTrigger>
             </TabsList>
 
@@ -135,13 +217,16 @@ export default function Deposit() {
                   {fiatMethods.map((method) => (
                     <div
                       key={method.method}
-                      className="flex items-center justify-between p-4 bg-gray-800 rounded-lg hover:bg-gray-700 cursor-pointer transition-colors"
+                      className="flex items-center justify-between p-4 bg-gray-800 rounded-lg hover:bg-gray-700 transition-colors"
                     >
-                      <div>
-                        <div className="text-white mb-1">{method.method}</div>
-                        <div className="text-sm text-gray-400">Processing: {method.processing}</div>
+                      <div className="flex items-center gap-3">
+                        <method.icon className="w-6 h-6 text-emerald-500" />
+                        <div>
+                          <div className="text-white mb-1 font-semibold">{method.method}</div>
+                          <div className="text-sm text-gray-400">Processing: {method.processing}</div>
+                        </div>
                       </div>
-                      <Badge variant="outline" className="border-gray-700">
+                      <Badge variant="outline" className="border-emerald-500 text-emerald-500">
                         Fee: {method.fee}
                       </Badge>
                     </div>
@@ -150,42 +235,40 @@ export default function Deposit() {
               </div>
 
               <div>
-                <Label htmlFor="amount">Amount (USD)</Label>
+                <Label htmlFor="vnd-amount">Amount (VND)</Label>
                 <Input
-                  id="amount"
+                  id="vnd-amount"
                   type="number"
-                  placeholder="0.00"
-                  value={amount}
-                  onChange={(e) => setAmount(e.target.value)}
+                  placeholder="100000"
+                  value={vndAmount}
+                  onChange={(e) => setVndAmount(e.target.value)}
                   className="bg-gray-800 border-gray-700 text-white"
+                  min="10000"
+                  step="1000"
                 />
-                <p className="text-sm text-gray-400 mt-2">Minimum: $10.00</p>
+                <p className="text-sm text-gray-400 mt-2">Minimum: 10,000 VND</p>
+                {vndAmount && parseFloat(vndAmount) >= 10000 && (
+                  <p className="text-sm text-emerald-500 mt-1">
+                    ≈ ${(parseFloat(vndAmount) / 24000).toFixed(2)} USD
+                  </p>
+                )}
               </div>
 
-              <div>
-                <Label htmlFor="receipt">Upload Receipt (Optional)</Label>
-                <div className="mt-2">
-                  <label className="flex items-center justify-center w-full h-32 border-2 border-dashed border-gray-700 rounded-lg cursor-pointer hover:border-emerald-500 transition-colors">
-                    <div className="text-center">
-                      <Upload className="w-8 h-8 text-gray-400 mx-auto mb-2" />
-                      <span className="text-gray-400">
-                        {uploadedFile || 'Click to upload or drag and drop'}
-                      </span>
-                    </div>
-                    <input
-                      id="receipt"
-                      type="file"
-                      className="hidden"
-                      accept="image/*,.pdf"
-                      onChange={handleFileUpload}
-                    />
-                  </label>
-                </div>
-              </div>
-
-              <Button className="w-full bg-emerald-500 text-black hover:bg-emerald-600">
-                Submit Deposit Request
+              <Button
+                onClick={handleVnpayDeposit}
+                disabled={loading || !vndAmount || parseFloat(vndAmount) < 10000}
+                className="w-full bg-emerald-500 text-black hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {loading ? 'Đang xử lý...' : 'Thanh toán qua VNPay'}
               </Button>
+
+              <Alert className="bg-blue-500/10 border-blue-500/50">
+                <Info className="h-4 w-4 text-blue-500" />
+                <AlertDescription className="text-blue-500 text-sm">
+                  <strong>Lưu ý:</strong> Bạn sẽ được chuyển hướng đến trang thanh toán VNPay. 
+                  Sau khi thanh toán thành công, bạn sẽ được chuyển về trang này.
+                </AlertDescription>
+              </Alert>
             </TabsContent>
           </Tabs>
         </Card>

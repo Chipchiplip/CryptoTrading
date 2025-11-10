@@ -151,6 +151,9 @@ builder.Services.AddScoped<IRoleService, RoleService>();
 builder.Services.AddScoped<ILevelService, LevelService>();
 builder.Services.AddScoped<IUserService, UserService>();
 
+// VNPay Service
+builder.Services.AddScoped<CryptoTrading.Services.Payment.IVnPayService, CryptoTrading.Services.Payment.VnPayService>();
+
 // Background Services
 builder.Services.AddHostedService<CryptoSyncBackgroundService>();
 builder.Services.AddHostedService<CryptoTrading.Services.RealtimeBroadcastService>();
