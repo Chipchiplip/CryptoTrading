@@ -15,6 +15,24 @@ try {
   console.warn('[http] Failed to load token from storage:', e);
 }
 
+// Lắng nghe sự thay đổi localStorage từ các tab khác để đồng bộ token
+if (typeof window !== 'undefined') {
+  window.addEventListener('storage', (e) => {
+    if (e.key === TOKEN_STORAGE_KEY) {
+      console.log('[http] Token changed in another tab, updating...');
+      accessToken = e.newValue;
+      // Nếu token bị xóa ở tab khác, redirect về login
+      if (!e.newValue && !window.location.pathname.startsWith('/login') && !window.location.pathname.startsWith('/register')) {
+        const traderRoutes = ['/trader-dashboard', '/watchlist', '/trade', '/orders', '/portfolio', '/wallets', '/deposit', '/withdraw', '/subscription', '/settings', '/market'];
+        if (traderRoutes.some(route => window.location.pathname.startsWith(route))) {
+          console.warn('[http] Token cleared in another tab, redirecting to login');
+          window.location.href = '/login';
+        }
+      }
+    }
+  });
+}
+
 export function setAccessToken(token: string | null, user: UserInfo | null) {
   accessToken = token;
   try {
@@ -33,14 +51,18 @@ export function setAccessToken(token: string | null, user: UserInfo | null) {
 }
 
 export function getAccessToken(): string | null {
-  if (!accessToken) {
-    try {
-      accessToken = localStorage.getItem(TOKEN_STORAGE_KEY);
-    } catch (e) {
-      console.warn('[http] Failed to load token from storage:', e);
-    }
+  // Luôn đọc từ localStorage để đảm bảo có token mới nhất
+  // (quan trọng khi chuyển tab hoặc mở tab mới - mỗi tab có module riêng)
+  try {
+    const token = localStorage.getItem(TOKEN_STORAGE_KEY);
+    // Cập nhật biến trong memory để đồng bộ
+    accessToken = token;
+    return token;
+  } catch (e) {
+    console.warn('[http] Failed to load token from storage:', e);
+    accessToken = null;
+    return null;
   }
-  return accessToken;
 }
 
 export function getUserInfo(): UserInfo | null {
