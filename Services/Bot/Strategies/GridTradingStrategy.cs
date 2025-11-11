@@ -1,3 +1,6 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
 using CryptoTrading.Interfaces.Bot;
 using CryptoTrading.Models.DTOs;
 using Microsoft.Extensions.Logging;
@@ -253,19 +256,216 @@ namespace CryptoTrading.Services.Bot.Strategies
             }
         }
 
-        public Task<StrategySimulationResult> SimulateAsync(
-            BotContext context, 
-            SimulationRequest request, 
+        public async Task<StrategySimulationResult> SimulateAsync(
+            BotContext context,
+            SimulationRequest request,
             CancellationToken cancellationToken = default)
         {
-            // TODO: Implement backtesting simulation
-            _logger.LogWarning("Simulation not yet implemented for grid strategy");
-            
-            return Task.FromResult(new StrategySimulationResult
+            if (request.InitialCapital <= 0)
             {
-                Success = false,
-                ErrorMessage = "Simulation not yet implemented"
-            });
+                return new StrategySimulationResult
+                {
+                    Success = false,
+                    ErrorMessage = "Initial capital must be greater than zero"
+                };
+            }
+
+            if (request.StartDate >= request.EndDate)
+            {
+                return new StrategySimulationResult
+                {
+                    Success = false,
+                    ErrorMessage = "Start date must be earlier than end date"
+                };
+            }
+
+            var parameters = new BotParameters
+            {
+                Values = request.Parameters ?? new Dictionary<string, object>()
+            };
+
+            var validation = await ValidateAsync(context, parameters, cancellationToken);
+            if (!validation.IsValid)
+            {
+                return new StrategySimulationResult
+                {
+                    Success = false,
+                    ErrorMessage = string.Join("; ", validation.Errors)
+                };
+            }
+
+            var candles = await context.MarketData.GetOhlcvAsync(
+                context.BaseAsset,
+                context.QuoteAsset,
+                request.StartDate,
+                request.EndDate,
+                request.Parameters != null && request.Parameters.TryGetValue("interval", out var intervalObj)
+                    ? Convert.ToString(intervalObj) ?? "1h"
+                    : "1h",
+                cancellationToken);
+
+            if (candles == null || candles.Count == 0)
+            {
+                return new StrategySimulationResult
+                {
+                    Success = false,
+                    ErrorMessage = "No market data available for the requested range"
+                };
+            }
+
+            candles = candles.OrderBy(c => c.Timestamp).ToList();
+
+            var state = InitializeState(parameters);
+            var orderSize = parameters.GetValue("orderSize", 0.01m);
+            var capitalAllocation = parameters.GetValue("capitalAllocation", request.InitialCapital);
+            var lowerBound = parameters.GetValue("lowerBound", candles.Min(c => c.Low));
+            var upperBound = parameters.GetValue("upperBound", candles.Max(c => c.High));
+
+            if (orderSize <= 0)
+            {
+                return new StrategySimulationResult
+                {
+                    Success = false,
+                    ErrorMessage = "Order size must be greater than zero"
+                };
+            }
+
+            var step = state.GridLines.Count > 1
+                ? state.GridLines[1].Price - state.GridLines[0].Price
+                : Math.Max(upperBound - lowerBound, 1m) / 10m;
+
+            var availableCash = Math.Min(request.InitialCapital, capitalAllocation);
+            var inventory = 0m;
+            var trades = new List<SimulationTradeDto>();
+            var equityCurve = new List<SimulationEquityPoint>();
+
+            var positions = state.GridLines.Select(gl => new GridPosition
+            {
+                EntryPrice = gl.Price,
+                TargetPrice = Math.Min(gl.Price + step, upperBound),
+                IsOpen = false
+            }).ToArray();
+
+            decimal peakEquity = availableCash;
+            decimal maxDrawdown = 0m;
+
+            foreach (var candle in candles)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                for (var i = 0; i < positions.Length; i++)
+                {
+                    var position = positions[i];
+
+                    if (!position.IsOpen && position.EntryPrice >= lowerBound && candle.Low <= position.EntryPrice)
+                    {
+                        var cost = position.EntryPrice * orderSize;
+                        if (availableCash >= cost)
+                        {
+                            availableCash -= cost;
+                            inventory += orderSize;
+                            position.IsOpen = true;
+                            position.EntryTime = candle.Timestamp;
+                        }
+                    }
+                    else if (position.IsOpen && candle.High >= position.TargetPrice)
+                    {
+                        var proceeds = position.TargetPrice * orderSize;
+                        availableCash += proceeds;
+                        inventory -= orderSize;
+
+                        var pnl = (position.TargetPrice - position.EntryPrice) * orderSize;
+                        trades.Add(new SimulationTradeDto
+                        {
+                            Timestamp = candle.Timestamp,
+                            Side = "SELL",
+                            Price = position.TargetPrice,
+                            Quantity = orderSize,
+                            Pnl = pnl
+                        });
+
+                        position.IsOpen = false;
+                        position.EntryTime = null;
+                    }
+                }
+
+                var equity = availableCash + inventory * candle.Close;
+                equityCurve.Add(new SimulationEquityPoint
+                {
+                    Timestamp = candle.Timestamp,
+                    Equity = equity
+                });
+
+                if (equity > peakEquity)
+                {
+                    peakEquity = equity;
+                }
+                else
+                {
+                    var drawdown = peakEquity - equity;
+                    if (drawdown > maxDrawdown)
+                    {
+                        maxDrawdown = drawdown;
+                    }
+                }
+            }
+
+            var finalPrice = candles.Last().Close;
+            var finalCapital = availableCash + inventory * finalPrice;
+            var totalReturn = finalCapital - request.InitialCapital;
+            var returnPercentage = request.InitialCapital > 0
+                ? totalReturn / request.InitialCapital * 100m
+                : 0m;
+
+            var winningTrades = trades.Count(t => t.Pnl > 0);
+            var losingTrades = trades.Count(t => t.Pnl < 0);
+
+            var equityReturns = new List<decimal>();
+            for (var i = 1; i < equityCurve.Count; i++)
+            {
+                var prevEquity = equityCurve[i - 1].Equity;
+                if (prevEquity > 0)
+                {
+                    var ret = (equityCurve[i].Equity - prevEquity) / prevEquity;
+                    equityReturns.Add(ret);
+                }
+            }
+
+            var averageReturn = equityReturns.Count > 0 ? equityReturns.Average() : 0m;
+            var stdDev = equityReturns.Count > 1
+                ? (decimal)Math.Sqrt((double)equityReturns.Select(r => (r - averageReturn) * (r - averageReturn)).Average())
+                : 0m;
+
+            var sharpeRatio = stdDev > 0 ? averageReturn / stdDev * (decimal)Math.Sqrt(365d) : 0m;
+
+            var result = new SimulationResultDto
+            {
+                FinalCapital = finalCapital,
+                TotalReturn = totalReturn,
+                ReturnPercentage = returnPercentage,
+                TotalTrades = trades.Count,
+                WinningTrades = winningTrades,
+                LosingTrades = losingTrades,
+                WinRate = trades.Count > 0 ? winningTrades / (decimal)trades.Count * 100m : 0m,
+                MaxDrawdown = maxDrawdown,
+                SharpeRatio = sharpeRatio,
+                Trades = trades,
+                EquityCurve = equityCurve
+            };
+
+            return new StrategySimulationResult
+            {
+                Success = true,
+                Result = result
+            };
+        }
+
+        private class GridPosition
+        {
+            public decimal EntryPrice { get; set; }
+            public decimal TargetPrice { get; set; }
+            public bool IsOpen { get; set; }
+            public DateTime? EntryTime { get; set; }
         }
 
         private GridRuntimeState InitializeState(BotParameters parameters)

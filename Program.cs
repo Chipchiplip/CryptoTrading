@@ -176,6 +176,8 @@ builder.Services.AddSingleton<CryptoTrading.Services.Bot.BotSignalRDispatcher>()
 
 // Bot Strategies
 builder.Services.AddTransient<CryptoTrading.Services.Bot.Strategies.GridTradingStrategy>();
+builder.Services.AddTransient<CryptoTrading.Services.Bot.Strategies.AggressiveForexStrategy>();
+builder.Services.AddTransient<CryptoTrading.Services.Bot.Strategies.MomentumScalpingStrategy>();
 
 // VNPay Service
 builder.Services.AddScoped<CryptoTrading.Services.Payment.IVnPayService, CryptoTrading.Services.Payment.VnPayService>();
@@ -300,37 +302,50 @@ async Task SeedDatabase(IServiceProvider serviceProvider, ILogger logger)
     }
 
     // --- 3. Seed Built-in Bot Strategies ---
+    var strategiesToSeed = new List<CryptoTrading.Interfaces.Bot.ITradingStrategy>();
+    var newStrategiesAdded = false;
+
+    // Grid Trading Strategy
     var gridStrategy = scope.ServiceProvider.GetRequiredService<CryptoTrading.Services.Bot.Strategies.GridTradingStrategy>();
-    var existingStrategy = await context.BotStrategyDefinitions
-        .FirstOrDefaultAsync(s => s.StrategyKey == gridStrategy.Key);
-    
-    if (existingStrategy == null)
+    strategiesToSeed.Add(gridStrategy);
+
+    // Aggressive Forex Strategy
+    var aggressiveStrategy = scope.ServiceProvider.GetRequiredService<CryptoTrading.Services.Bot.Strategies.AggressiveForexStrategy>();
+    strategiesToSeed.Add(aggressiveStrategy);
+
+    // Momentum Scalping Strategy
+    var momentumStrategy = scope.ServiceProvider.GetRequiredService<CryptoTrading.Services.Bot.Strategies.MomentumScalpingStrategy>();
+    strategiesToSeed.Add(momentumStrategy);
+
+    foreach (var strategy in strategiesToSeed)
     {
-        logger.LogInformation("Seeding built-in strategy: {StrategyKey}", gridStrategy.Key);
-        var strategyDef = new CryptoTrading.Models.BotStrategyDefinition
-        {
-            Id = Guid.NewGuid(),
-            StrategyKey = gridStrategy.Key,
-            Version = gridStrategy.Metadata.Version,
-            DisplayName = gridStrategy.Metadata.DisplayName,
-            Description = gridStrategy.Metadata.Description,
-            ParametersSchema = gridStrategy.Metadata.ParametersSchemaJson,
-            MaxConcurrency = gridStrategy.Metadata.MaxConcurrency,
-            IsActive = true,
-            CreatedAt = DateTime.UtcNow
-        };
-        await context.BotStrategyDefinitions.AddAsync(strategyDef);
+        var existingStrategy = await context.BotStrategyDefinitions
+            .FirstOrDefaultAsync(s => s.StrategyKey == strategy.Key);
         
-        // Register strategy in registry
-        strategyRegistry.RegisterStrategy(gridStrategy);
-    }
-    else
-    {
-        // Make sure strategy is registered
-        strategyRegistry.RegisterStrategy(gridStrategy);
+        if (existingStrategy == null)
+        {
+            logger.LogInformation("Seeding built-in strategy: {StrategyKey}", strategy.Key);
+            var strategyDef = new CryptoTrading.Models.BotStrategyDefinition
+            {
+                Id = Guid.NewGuid(),
+                StrategyKey = strategy.Key,
+                Version = strategy.Metadata.Version,
+                DisplayName = strategy.Metadata.DisplayName,
+                Description = strategy.Metadata.Description,
+                ParametersSchema = strategy.Metadata.ParametersSchemaJson,
+                MaxConcurrency = strategy.Metadata.MaxConcurrency,
+                IsActive = true,
+                CreatedAt = DateTime.UtcNow
+            };
+            await context.BotStrategyDefinitions.AddAsync(strategyDef);
+            newStrategiesAdded = true;
+        }
+        
+        // Register strategy in registry (always)
+        strategyRegistry.RegisterStrategy(strategy);
     }
 
-    if (rolesToSeed.Any() || levelsToSeed.Any() || existingStrategy == null)
+    if (rolesToSeed.Any() || levelsToSeed.Any() || newStrategiesAdded)
     {
         await context.SaveChangesAsync();
         logger.LogInformation("Default data seeding complete");

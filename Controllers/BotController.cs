@@ -327,6 +327,10 @@ namespace CryptoTrading.Controllers
                 var result = await _botService.SimulateAsync(userId, id, request);
                 return Ok(result);
             }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { error = ex.Message });
+            }
             catch (NotImplementedException)
             {
                 return StatusCode(501, new { error = "Simulation feature coming soon" });
