@@ -516,7 +516,8 @@ public class TradingController : ControllerBase
             foreach (var wallet in wallets.Where(w => w.AssetType == "COIN" && w.Cryptocurrency != null))
             {
                 var balance = movements.GetValueOrDefault(wallet.Id, 0m);
-                if (balance <= 0) continue; // Skip empty holdings
+                // Skip empty holdings or very small balances (rounding errors)
+                if (balance <= 0 || Math.Abs(balance) < 0.00000001m) continue;
                 
                 var symbol = wallet.Cryptocurrency!.Symbol.ToUpper();
                 var crypto = marketData.FirstOrDefault(c => c.Symbol.Equals(symbol, StringComparison.OrdinalIgnoreCase));
@@ -588,6 +589,30 @@ public class TradingController : ControllerBase
             {
                 var balance = movements.GetValueOrDefault(wallet.Id, 0m);
                 var locked = orderHolds.GetValueOrDefault(wallet.Id, 0m);
+                
+                // Skip wallets with zero or very small balance (rounding errors)
+                // For COIN wallets, also check if value is effectively zero
+                if (wallet.AssetType == "COIN" && wallet.Cryptocurrency != null)
+                {
+                    var coinSymbol = wallet.Cryptocurrency.Symbol.ToUpper();
+                    var crypto = marketData.FirstOrDefault(c => c.Symbol.Equals(coinSymbol, StringComparison.OrdinalIgnoreCase));
+                    var price = crypto?.CurrentPrice ?? 0m;
+                    var coinValueUsd = balance * price;
+                    
+                    // Skip if balance is zero or very small, or value is effectively zero
+                    if (balance <= 0 || Math.Abs(balance) < 0.00000001m || Math.Abs(coinValueUsd) < 0.01m)
+                    {
+                        continue;
+                    }
+                }
+                else if (wallet.AssetType == "FIAT")
+                {
+                    // For FIAT, skip if balance is zero or very small
+                    if (balance <= 0 || Math.Abs(balance) < 0.01m)
+                    {
+                        continue;
+                    }
+                }
                 
                 decimal valueUsd = 0m;
                 string symbol = "";

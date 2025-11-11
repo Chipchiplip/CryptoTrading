@@ -32,6 +32,14 @@ namespace CryptoTrading.Data
         // Payment
         public DbSet<DepositTransaction> DepositTransactions { get; set; }
 
+        // ========== BOT TRADING ==========
+        public DbSet<BotStrategyDefinition> BotStrategyDefinitions { get; set; }
+        public DbSet<TradingBot> TradingBots { get; set; }
+        public DbSet<TradingBotParameter> TradingBotParameters { get; set; }
+        public DbSet<TradingBotRuntimeSnapshot> TradingBotRuntimeSnapshots { get; set; }
+        public DbSet<TradingBotOrder> TradingBotOrders { get; set; }
+        public DbSet<TradingBotLog> TradingBotLogs { get; set; }
+
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
@@ -258,10 +266,32 @@ namespace CryptoTrading.Data
                 entity.HasIndex(e => new { e.UserId, e.CreatedAt });
                 entity.HasIndex(e => e.OrderId).IsUnique();
                 
-                entity.HasOne(e => e.User)
-                    .WithMany()
-                    .HasForeignKey(e => e.UserId)
-                    .OnDelete(DeleteBehavior.Cascade);
+
+            // ==========================
+            // BOT STRATEGY DEFINITION CONFIG
+            // ==========================
+            modelBuilder.Entity<BotStrategyDefinition>(entity =>
+            {
+                entity.ToTable("BotStrategyDefinitions");
+                entity.HasKey(e => e.Id);
+                entity.HasIndex(e => new { e.StrategyKey, e.Version }).IsUnique();
+                entity.HasIndex(e => e.IsActive);
+
+                entity.Property(e => e.CreatedAt)
+                      .HasDefaultValueSql("CURRENT_TIMESTAMP(6)");
+            });
+
+            // ==========================
+            // TRADING BOT CONFIG
+            // ==========================
+            modelBuilder.Entity<TradingBot>(entity =>
+            {
+                entity.ToTable("TradingBots");
+                entity.HasKey(e => e.Id);
+                entity.HasIndex(e => new { e.UserId, e.Status });
+                entity.HasIndex(e => e.NextRunAt);
+
+
             });
         }
     }

@@ -23,8 +23,11 @@ interface Holding {
   image?: string | null;
 }
 
+import { PortfolioApi, PortfolioHolding } from '../../../api/portfolio';
+import { CoinIcon } from '../../ui/CoinIcon';
+
 export default function Portfolio() {
-  const [holdings, setHoldings] = useState<Holding[]>([]);
+  const [holdings, setHoldings] = useState<PortfolioHolding[]>([]);
   const [performanceData, setPerformanceData] = useState<Array<{ date: string; value: number }>>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -46,14 +49,8 @@ export default function Portfolio() {
       setLoading(true);
       setError(null);
 
-      // Fetch all data in parallel
-      const [holdingsRes, navHistoryRes, balancesRes, tradesRes, cryptosRes] = await Promise.all([
-        TradingApi.getHoldings().catch(err => ({ ok: false, error: err.message })),
-        DashboardApi.getNavHistory().catch(err => ({ ok: false, error: err.message })),
-        TradingApi.getBalances().catch(err => ({ ok: false, error: err.message })),
-        TradingApi.getTrades({ page: 1, pageSize: 100 }).catch(err => ({ ok: false, error: err.message })),
-        MarketApi.getCryptocurrencies().catch(err => ({ ok: false, error: err.message }))
-      ]);
+      // Fetch portfolio overview from unified API
+      const overviewRes = await PortfolioApi.getPortfolioOverview();
 
       // Process NAV history for performance chart
       if (navHistoryRes.ok && navHistoryRes.data) {
@@ -88,80 +85,35 @@ export default function Portfolio() {
           } else {
             realizedPnL -= (trade.priceUsd * trade.quantityCoin) + trade.feeUsd;
           }
+
         });
+        return;
       }
 
-      // Process holdings
-      if (holdingsRes.ok && holdingsRes.data && balancesRes.ok && balancesRes.data) {
-        const walletMap = new Map(balancesRes.data.wallets.map(w => [w.symbol, w]));
-        
-        // Calculate cost basis from trades
-        const costBasisMap = new Map<string, { totalCost: number; totalAmount: number }>();
-        if (tradesRes.ok && tradesRes.data) {
-          const tradesArray = Array.isArray(tradesRes.data) ? tradesRes.data : (tradesRes.data.data || []);
-          tradesArray.forEach((trade: any) => {
-            if (trade.side === 'BUY') {
-              const existing = costBasisMap.get(trade.symbol) || { totalCost: 0, totalAmount: 0 };
-              costBasisMap.set(trade.symbol, {
-                totalCost: existing.totalCost + (trade.priceUsd * trade.quantityCoin + trade.feeUsd),
-                totalAmount: existing.totalAmount + trade.quantityCoin
-              });
-            }
-          });
-        }
+      const data = overviewRes.data;
 
-        let totalValue = 0;
-        let totalCost = 0;
 
-        const processedHoldings: Holding[] = holdingsRes.data
-          .filter(h => h.amount > 0)
-          .map(holding => {
-            const currentPrice = cryptoPriceMap.get(holding.symbol.toUpperCase()) || 0;
-            const value = holding.amount * currentPrice;
-            
-            // Get cost basis
-            const costBasis = costBasisMap.get(holding.symbol.toUpperCase()) || { totalCost: 0, totalAmount: holding.amount };
-            const avgPrice = costBasis.totalAmount > 0 ? costBasis.totalCost / costBasis.totalAmount : currentPrice;
-            const cost = holding.amount * avgPrice;
-            
-            const pnl = value - cost;
-            const pnlPercent = cost > 0 ? (pnl / cost) * 100 : 0;
+      // Set portfolio summary
+      setPortfolio({
+        totalValue: data.totalValue,
+        totalCost: data.totalCost,
+        unrealizedPnL: data.unrealizedPnL,
+        unrealizedPnLPercent: data.unrealizedPnLPercent,
+        realizedPnL: data.realizedPnL
+      });
 
-            totalValue += value;
-            totalCost += cost;
+      // Set holdings
+      setHoldings(data.holdings || []);
 
-            return {
-              symbol: holding.symbol.toUpperCase(),
-              name: holding.name,
-              amount: holding.amount,
-              avgPrice,
-              currentPrice,
-              value,
-              pnl,
-              pnlPercent,
-              allocation: 0, // Will calculate after
-              cost,
-              image: cryptoImageMap.get(holding.symbol.toUpperCase()) || null
-            };
-          });
-
-        // Calculate allocations
-        processedHoldings.forEach(h => {
-          h.allocation = totalValue > 0 ? (h.value / totalValue) * 100 : 0;
-        });
-
-        setHoldings(processedHoldings);
-
-        const unrealizedPnL = totalValue - totalCost;
-        const unrealizedPnLPercent = totalCost > 0 ? (unrealizedPnL / totalCost) * 100 : 0;
-
-        setPortfolio({
-          totalValue,
-          totalCost,
-          unrealizedPnL,
-          unrealizedPnLPercent,
-          realizedPnL
-        });
+      // Process NAV history for performance chart
+      if (data.navHistory && data.navHistory.length > 0) {
+        const navData = data.navHistory.map(item => ({
+          date: new Date(item.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+          value: item.value
+        }));
+        setPerformanceData(navData);
+      } else {
+        setPerformanceData([]);
       }
     } catch (err: any) {
       console.error('Error fetching portfolio data:', err);
@@ -347,7 +299,6 @@ export default function Portfolio() {
                 <tr key={holding.symbol} className="border-b border-gray-800 hover:bg-gray-800/50">
                   <td className="py-4">
                     <div className="flex items-center gap-3">
-                      <CoinIcon symbol={holding.symbol} image={holding.image} size="md" />
                       <div>
                         <div className="text-white">{holding.name}</div>
                         <div className="text-sm text-gray-400">{holding.symbol}</div>

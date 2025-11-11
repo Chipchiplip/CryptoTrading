@@ -1,0 +1,510 @@
+using CryptoTrading.Data;
+using CryptoTrading.Interfaces.Bot;
+using CryptoTrading.Models;
+using CryptoTrading.Models.DTOs;
+using CryptoTrading.Services.Trading;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
+using System.Text.Json;
+
+namespace CryptoTrading.Services.Bot
+{
+    /// <summary>
+    /// Application service for bot management
+    /// </summary>
+    public class BotApplicationService : IBotApplicationService
+    {
+        private readonly ApplicationDbContext _context;
+        private readonly IStrategyRegistry _strategyRegistry;
+        private readonly ITradingService _tradingService;
+        private readonly ILogger<BotApplicationService> _logger;
+
+        public BotApplicationService(
+            ApplicationDbContext context,
+            IStrategyRegistry strategyRegistry,
+            ITradingService tradingService,
+            ILogger<BotApplicationService> logger)
+        {
+            _context = context;
+            _strategyRegistry = strategyRegistry;
+            _tradingService = tradingService;
+            _logger = logger;
+        }
+
+        public async Task<TradingBotDetailDto> CreateAsync(int userId, CreateBotRequest request)
+        {
+            // Validate strategy exists
+            var strategyDef = await _context.BotStrategyDefinitions
+                .FirstOrDefaultAsync(s => s.Id == request.StrategyDefinitionId && s.IsActive);
+
+            if (strategyDef == null)
+            {
+                throw new InvalidOperationException("Strategy not found or inactive");
+            }
+
+            // Validate strategy implementation exists
+            if (!_strategyRegistry.HasStrategy(strategyDef.StrategyKey))
+            {
+                throw new InvalidOperationException($"Strategy implementation '{strategyDef.StrategyKey}' not registered");
+            }
+
+            // Create bot
+            var bot = new TradingBot
+            {
+                Id = Guid.NewGuid(),
+                UserId = userId,
+                StrategyDefinitionId = request.StrategyDefinitionId,
+                Name = request.Name,
+                Status = "Draft",
+                RiskProfile = request.RiskProfile,
+                BaseAsset = request.BaseAsset,
+                QuoteAsset = request.QuoteAsset,
+                Parameters = JsonSerializer.Serialize(request.Parameters),
+                PositionSizing = request.PositionSizing != null 
+                    ? JsonSerializer.Serialize(request.PositionSizing) 
+                    : null,
+                ExecutionIntervalSeconds = request.ExecutionIntervalSeconds,
+                CreatedAt = DateTime.UtcNow
+            };
+
+            _context.TradingBots.Add(bot);
+            await _context.SaveChangesAsync();
+
+            _logger.LogInformation("Created bot {BotId} for user {UserId}", bot.Id, userId);
+
+            return await MapToBotDetailDto(bot, strategyDef);
+        }
+
+        public async Task<TradingBotDetailDto> UpdateAsync(int userId, Guid botId, UpdateBotRequest request)
+        {
+            var bot = await _context.TradingBots
+                .Include(b => b.StrategyDefinition)
+                .FirstOrDefaultAsync(b => b.Id == botId && b.UserId == userId);
+
+            if (bot == null)
+            {
+                throw new KeyNotFoundException("Bot not found");
+            }
+
+            // Only allow updates when Draft or Stopped
+            if (bot.Status != "Draft" && bot.Status != "Stopped")
+            {
+                throw new InvalidOperationException($"Cannot update bot in status: {bot.Status}");
+            }
+
+            // Update fields
+            if (request.Name != null)
+                bot.Name = request.Name;
+
+            if (request.RiskProfile != null)
+                bot.RiskProfile = request.RiskProfile;
+
+            if (request.Parameters != null)
+                bot.Parameters = JsonSerializer.Serialize(request.Parameters);
+
+            if (request.PositionSizing != null)
+                bot.PositionSizing = JsonSerializer.Serialize(request.PositionSizing);
+
+            if (request.ExecutionIntervalSeconds.HasValue)
+                bot.ExecutionIntervalSeconds = request.ExecutionIntervalSeconds.Value;
+
+            bot.UpdatedAt = DateTime.UtcNow;
+
+            await _context.SaveChangesAsync();
+
+            _logger.LogInformation("Updated bot {BotId}", botId);
+
+            return await MapToBotDetailDto(bot, bot.StrategyDefinition!);
+        }
+
+        public async Task DeleteAsync(int userId, Guid botId)
+        {
+            var bot = await _context.TradingBots
+                .FirstOrDefaultAsync(b => b.Id == botId && b.UserId == userId);
+
+            if (bot == null)
+            {
+                throw new KeyNotFoundException("Bot not found");
+            }
+
+            // Only allow deletion when Draft or Stopped
+            if (bot.Status != "Draft" && bot.Status != "Stopped")
+            {
+                throw new InvalidOperationException($"Cannot delete bot in status: {bot.Status}. Stop it first.");
+            }
+
+            _context.TradingBots.Remove(bot);
+            await _context.SaveChangesAsync();
+
+            _logger.LogInformation("Deleted bot {BotId}", botId);
+        }
+
+        public async Task<TradingBotDetailDto> GetAsync(int userId, Guid botId)
+        {
+            var bot = await _context.TradingBots
+                .Include(b => b.StrategyDefinition)
+                .FirstOrDefaultAsync(b => b.Id == botId && b.UserId == userId);
+
+            if (bot == null)
+            {
+                throw new KeyNotFoundException("Bot not found");
+            }
+
+            return await MapToBotDetailDto(bot, bot.StrategyDefinition!);
+        }
+
+        public async Task<PaginatedResponse<TradingBotSummaryDto>> GetListAsync(int userId, BotListQuery query)
+        {
+            var botsQuery = _context.TradingBots
+                .Include(b => b.StrategyDefinition)
+                .Where(b => b.UserId == userId);
+
+            // Apply filters
+            if (!string.IsNullOrEmpty(query.Status))
+            {
+                botsQuery = botsQuery.Where(b => b.Status == query.Status);
+            }
+
+            if (!string.IsNullOrEmpty(query.StrategyKey))
+            {
+                botsQuery = botsQuery.Where(b => b.StrategyDefinition!.StrategyKey == query.StrategyKey);
+            }
+
+            if (!string.IsNullOrEmpty(query.BaseAsset))
+            {
+                botsQuery = botsQuery.Where(b => b.BaseAsset == query.BaseAsset);
+            }
+
+            var totalItems = await botsQuery.CountAsync();
+
+            var bots = await botsQuery
+                .OrderByDescending(b => b.CreatedAt)
+                .Skip((query.Page - 1) * query.PageSize)
+                .Take(query.PageSize)
+                .ToListAsync();
+
+            var botDtos = new List<TradingBotSummaryDto>();
+            foreach (var bot in bots)
+            {
+                botDtos.Add(await MapToBotSummaryDto(bot, bot.StrategyDefinition!));
+            }
+
+            return new PaginatedResponse<TradingBotSummaryDto>
+            {
+                Page = query.Page,
+                PageSize = query.PageSize,
+                TotalItems = totalItems,
+                TotalPages = (int)Math.Ceiling(totalItems / (double)query.PageSize),
+                Data = botDtos
+            };
+        }
+
+        public async Task<string> StartAsync(int userId, Guid botId, StartBotRequest request)
+        {
+            var bot = await _context.TradingBots
+                .Include(b => b.StrategyDefinition)
+                .FirstOrDefaultAsync(b => b.Id == botId && b.UserId == userId);
+
+            if (bot == null)
+            {
+                throw new KeyNotFoundException("Bot not found");
+            }
+
+            if (bot.Status != "Draft" && bot.Status != "Stopped")
+            {
+                throw new InvalidOperationException($"Cannot start bot in status: {bot.Status}");
+            }
+
+            // Validate configuration
+            var strategy = _strategyRegistry.GetStrategy(bot.StrategyDefinition!.StrategyKey);
+            if (strategy == null)
+            {
+                throw new InvalidOperationException("Strategy implementation not found");
+            }
+
+            // TODO: Perform strategy validation
+            // For now, just update status
+            bot.Status = "Starting";
+            bot.NextRunAt = DateTime.UtcNow;
+            bot.UpdatedAt = DateTime.UtcNow;
+
+            await _context.SaveChangesAsync();
+
+            _logger.LogInformation("Bot {BotId} starting", botId);
+
+            // Return operation ID (for now, just return bot ID)
+            return botId.ToString();
+        }
+
+        public async Task StopAsync(int userId, Guid botId, StopBotRequest request)
+        {
+            var bot = await _context.TradingBots
+                .FirstOrDefaultAsync(b => b.Id == botId && b.UserId == userId);
+
+            if (bot == null)
+            {
+                throw new KeyNotFoundException("Bot not found");
+            }
+
+            if (bot.Status == "Stopped" || bot.Status == "Draft")
+            {
+                throw new InvalidOperationException($"Bot is already stopped");
+            }
+
+            bot.Status = "Stopping";
+            bot.LastStatusReason = request.Reason;
+            bot.UpdatedAt = DateTime.UtcNow;
+
+            await _context.SaveChangesAsync();
+
+            _logger.LogInformation("Bot {BotId} stopping (reason: {Reason})", botId, request.Reason);
+        }
+
+        public async Task NudgeAsync(int userId, Guid botId)
+        {
+            var bot = await _context.TradingBots
+                .FirstOrDefaultAsync(b => b.Id == botId && b.UserId == userId);
+
+            if (bot == null)
+            {
+                throw new KeyNotFoundException("Bot not found");
+            }
+
+            if (bot.Status != "Running")
+            {
+                throw new InvalidOperationException($"Can only nudge running bots");
+            }
+
+            // Force immediate execution
+            bot.NextRunAt = DateTime.UtcNow;
+            await _context.SaveChangesAsync();
+
+            _logger.LogInformation("Bot {BotId} nudged for immediate execution", botId);
+        }
+
+        public async Task<PaginatedResponse<BotLogDto>> GetLogsAsync(int userId, Guid botId, BotLogsQuery query)
+        {
+            // Verify ownership
+            var botExists = await _context.TradingBots
+                .AnyAsync(b => b.Id == botId && b.UserId == userId);
+
+            if (!botExists)
+            {
+                throw new KeyNotFoundException("Bot not found");
+            }
+
+            var logsQuery = _context.TradingBotLogs
+                .Where(l => l.TradingBotId == botId);
+
+            // Apply filters
+            if (!string.IsNullOrEmpty(query.Level))
+            {
+                logsQuery = logsQuery.Where(l => l.Level == query.Level);
+            }
+
+            if (!string.IsNullOrEmpty(query.Category))
+            {
+                logsQuery = logsQuery.Where(l => l.Category == query.Category);
+            }
+
+            if (query.FromDate.HasValue)
+            {
+                logsQuery = logsQuery.Where(l => l.CreatedAt >= query.FromDate.Value);
+            }
+
+            if (query.ToDate.HasValue)
+            {
+                logsQuery = logsQuery.Where(l => l.CreatedAt <= query.ToDate.Value);
+            }
+
+            var totalItems = await logsQuery.CountAsync();
+
+            var logs = await logsQuery
+                .OrderByDescending(l => l.CreatedAt)
+                .Skip((query.Page - 1) * query.PageSize)
+                .Take(query.PageSize)
+                .ToListAsync();
+
+            var logDtos = logs.Select(l => new BotLogDto
+            {
+                Id = l.Id,
+                BotId = l.TradingBotId,
+                Level = l.Level,
+                Category = l.Category,
+                Message = l.Message,
+                Payload = !string.IsNullOrEmpty(l.Payload) 
+                    ? JsonSerializer.Deserialize<object>(l.Payload) 
+                    : null,
+                CreatedAt = l.CreatedAt
+            }).ToList();
+
+            return new PaginatedResponse<BotLogDto>
+            {
+                Page = query.Page,
+                PageSize = query.PageSize,
+                TotalItems = totalItems,
+                TotalPages = (int)Math.Ceiling(totalItems / (double)query.PageSize),
+                Data = logDtos
+            };
+        }
+
+        public async Task<PaginatedResponse<BotOrderDto>> GetOrdersAsync(int userId, Guid botId, int page = 1, int pageSize = 20)
+        {
+            // Verify ownership
+            var botExists = await _context.TradingBots
+                .AnyAsync(b => b.Id == botId && b.UserId == userId);
+
+            if (!botExists)
+            {
+                throw new KeyNotFoundException("Bot not found");
+            }
+
+            var ordersQuery = _context.TradingBotOrders
+                .Include(bo => bo.Order)
+                    .ThenInclude(o => o!.Cryptocurrency)
+                .Where(bo => bo.TradingBotId == botId);
+
+            var totalItems = await ordersQuery.CountAsync();
+
+            var orders = await ordersQuery
+                .OrderByDescending(bo => bo.CreatedAt)
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
+                .ToListAsync();
+
+            var orderDtos = orders.Select(bo => new BotOrderDto
+            {
+                Id = bo.Id,
+                BotId = bo.TradingBotId,
+                OrderId = bo.OrderId,
+                Intent = bo.Intent,
+                SignalId = bo.SignalId,
+                CreatedAt = bo.CreatedAt,
+                OrderDetails = bo.Order != null ? new OrderDto
+                {
+                    Id = bo.Order.Id.ToString(),
+                    Symbol = $"{bo.Order.Cryptocurrency?.Symbol}/USD",
+                    Side = bo.Order.Side,
+                    Type = bo.Order.Type,
+                    Quantity = bo.Order.QuantityCoin,
+                    Price = bo.Order.PriceUsd,
+                    Filled = bo.Order.FilledQty,
+                    Remaining = bo.Order.QuantityCoin - bo.Order.FilledQty,
+                    Status = bo.Order.Status,
+                    CreatedAt = bo.Order.CreatedAt,
+                    UpdatedAt = bo.Order.UpdatedAt ?? bo.Order.CreatedAt
+                } : null
+            }).ToList();
+
+            return new PaginatedResponse<BotOrderDto>
+            {
+                Page = page,
+                PageSize = pageSize,
+                TotalItems = totalItems,
+                TotalPages = (int)Math.Ceiling(totalItems / (double)pageSize),
+                Data = orderDtos
+            };
+        }
+
+        public Task<SimulationResultDto> SimulateAsync(int userId, Guid botId, SimulationRequest request)
+        {
+            // TODO: Implement simulation/backtesting
+            _logger.LogWarning("Simulation not yet implemented");
+            throw new NotImplementedException("Simulation feature coming soon");
+        }
+
+        private async Task<TradingBotDetailDto> MapToBotDetailDto(TradingBot bot, BotStrategyDefinition strategy)
+        {
+            var parameters = !string.IsNullOrEmpty(bot.Parameters)
+                ? JsonSerializer.Deserialize<Dictionary<string, object>>(bot.Parameters)
+                : null;
+
+            var positionSizing = !string.IsNullOrEmpty(bot.PositionSizing)
+                ? JsonSerializer.Deserialize<Dictionary<string, object>>(bot.PositionSizing)
+                : null;
+
+            // Get runtime info if exists
+            var latestSnapshot = await _context.TradingBotRuntimeSnapshots
+                .Where(s => s.TradingBotId == bot.Id)
+                .OrderByDescending(s => s.CapturedAt)
+                .FirstOrDefaultAsync();
+
+            BotRuntimeInfoDto? runtime = null;
+            if (latestSnapshot != null)
+            {
+                runtime = new BotRuntimeInfoDto
+                {
+                    NextRunAt = latestSnapshot.NextTickAt,
+                    LastExecutionAt = latestSnapshot.CapturedAt,
+                    LastSignal = latestSnapshot.LastSignal
+                    // TODO: Calculate PnL and other metrics
+                };
+            }
+
+            return new TradingBotDetailDto
+            {
+                Id = bot.Id,
+                UserId = bot.UserId,
+                Name = bot.Name,
+                Status = bot.Status,
+                RiskProfile = bot.RiskProfile,
+                BaseAsset = bot.BaseAsset,
+                QuoteAsset = bot.QuoteAsset,
+                Strategy = new StrategyInfoDto
+                {
+                    Id = strategy.Id,
+                    Key = strategy.StrategyKey,
+                    Version = strategy.Version,
+                    DisplayName = strategy.DisplayName
+                },
+                Parameters = parameters,
+                PositionSizing = positionSizing,
+                ExecutionIntervalSeconds = bot.ExecutionIntervalSeconds,
+                NextRunAt = bot.NextRunAt,
+                LastStatusReason = bot.LastStatusReason,
+                Runtime = runtime,
+                CreatedAt = bot.CreatedAt,
+                UpdatedAt = bot.UpdatedAt
+            };
+        }
+
+        private async Task<TradingBotSummaryDto> MapToBotSummaryDto(TradingBot bot, BotStrategyDefinition strategy)
+        {
+            var latestSnapshot = await _context.TradingBotRuntimeSnapshots
+                .Where(s => s.TradingBotId == bot.Id)
+                .OrderByDescending(s => s.CapturedAt)
+                .FirstOrDefaultAsync();
+
+            BotRuntimeInfoDto? runtime = null;
+            if (latestSnapshot != null)
+            {
+                runtime = new BotRuntimeInfoDto
+                {
+                    NextRunAt = latestSnapshot.NextTickAt,
+                    LastExecutionAt = latestSnapshot.CapturedAt,
+                    LastSignal = latestSnapshot.LastSignal
+                };
+            }
+
+            return new TradingBotSummaryDto
+            {
+                Id = bot.Id,
+                Name = bot.Name,
+                Status = bot.Status,
+                BaseAsset = bot.BaseAsset,
+                QuoteAsset = bot.QuoteAsset,
+                Strategy = new StrategyInfoDto
+                {
+                    Id = strategy.Id,
+                    Key = strategy.StrategyKey,
+                    Version = strategy.Version,
+                    DisplayName = strategy.DisplayName
+                },
+                Runtime = runtime,
+                CreatedAt = bot.CreatedAt,
+                UpdatedAt = bot.UpdatedAt
+            };
+        }
+    }
+}
+
