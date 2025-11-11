@@ -304,7 +304,7 @@ public class PortfolioController : ControllerBase
     /// Get portfolio overview including holdings, PnL, and NAV history
     /// </summary>
     [HttpGet("overview")]
-    public async Task<IActionResult> GetPortfolioOverview()
+    public async Task<IActionResult> GetPortfolioOverview(CancellationToken cancellationToken)
     {
         _logger.LogInformation("[PortfolioController] GET /api/portfolio/overview - Request received");
         
@@ -314,7 +314,7 @@ public class PortfolioController : ControllerBase
             var userId = GetUserId();
             _logger.LogInformation("[PortfolioController] Processing portfolio overview for userId={UserId}", userId);
             
-            var overview = await _portfolioService.GetPortfolioOverviewAsync(userId);
+            var overview = await _portfolioService.GetPortfolioOverviewAsync(userId, cancellationToken);
             
             _logger.LogInformation("[PortfolioController] Successfully retrieved portfolio overview for userId={UserId}", userId);
             return Ok(overview);

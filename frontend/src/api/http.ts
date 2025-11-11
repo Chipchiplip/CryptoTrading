@@ -106,7 +106,7 @@ export function getRefreshToken(): string | null {
   return refreshToken;
 }
 
-async function refreshAuthToken(): Promise<boolean> {
+export async function refreshAuthToken(): Promise<boolean> {
   const currentRefreshToken = getRefreshToken();
   if (!currentRefreshToken) return false;
 
@@ -184,17 +184,29 @@ export async function authFetch(input: RequestInfo | URL, init?: RequestInit) {
   console.log('[http] Fetching:', url, { method: init?.method || 'GET', hasAuth: !!token });
 
   try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 seconds (reverted to original)
+    // Use provided signal if available, otherwise create new one with default timeout
+    let controller: AbortController;
+    let timeoutId: NodeJS.Timeout | null = null;
+    
+    if (init?.signal) {
+      // Use provided signal (e.g., from apiGetWithLongTimeout)
+      controller = new AbortController();
+      // Don't create timeout if signal is already provided
+    } else {
+      controller = new AbortController();
+      timeoutId = setTimeout(() => controller.abort(), 10000); // 10 seconds default
+    }
 
     const res = await fetch(input, {
       ...init,
       headers,
       credentials: 'include',
-      signal: controller.signal,
+      signal: init?.signal || controller.signal,
     });
 
-    clearTimeout(timeoutId);
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
     console.log('[http] Response:', url, { status: res.status, statusText: res.statusText });
 
     if (res.status === 401) {

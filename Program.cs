@@ -10,6 +10,7 @@ using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using System.Text;
 using System;
+using System.Linq;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -344,13 +345,35 @@ using (var scope = app.Services.CreateScope())
 
     try
     {
-        logger.LogInformation("Applying database migrations...");
-        db.Database.Migrate();
+        logger.LogInformation("Checking database migrations...");
+        
+        // Check if there are pending migrations without applying them
+        var pendingMigrations = await db.Database.GetPendingMigrationsAsync();
+        if (pendingMigrations.Any())
+        {
+            logger.LogWarning("There are {Count} pending migrations. Please run 'dotnet ef database update' manually.", pendingMigrations.Count());
+            logger.LogWarning("Pending migrations: {Migrations}", string.Join(", ", pendingMigrations));
+        }
+        else
+        {
+            logger.LogInformation("Database is up to date with all migrations.");
+        }
+        
+        // Only apply migrations if explicitly enabled via environment variable
+        if (Environment.GetEnvironmentVariable("AUTO_APPLY_MIGRATIONS") == "true")
+        {
+            logger.LogInformation("Auto-applying migrations (AUTO_APPLY_MIGRATIONS=true)...");
+            await db.Database.MigrateAsync();
+            logger.LogInformation("Migrations applied successfully.");
+        }
+        
         await SeedDatabase(services, logger);
     }
     catch (Exception ex)
     {
-        logger.LogError(ex, "An error occurred while migrating or seeding the database.");
+        logger.LogError(ex, "An error occurred while checking migrations or seeding the database.");
+        // Don't crash the application - continue running even if migration check fails
+        logger.LogWarning("Application will continue running. Please check database connection and migrations manually.");
     }
 }
 

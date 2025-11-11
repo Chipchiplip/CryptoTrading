@@ -63,8 +63,8 @@ public class TradingController : ControllerBase
         _logger.LogDebug("Fetching dashboard for user {UserId}", userId);
         
         var summary = await GetDashboardSummaryData(userId, cancellationToken);
-        var navHistory = await GetDashboardNavHistoryData(userId, null);
-        var pnlHistory = await GetDashboardPnlHistoryData(userId, "hourly", null);
+        var navHistory = await GetDashboardNavHistoryData(userId, DateTime.UtcNow.AddDays(-29).Date, cancellationToken);
+        var pnlHistory = await GetDashboardPnlHistoryData(userId, "hourly", DateTime.UtcNow.Date, cancellationToken);
         
         var dashboardData = new DashboardDto
         {
@@ -93,37 +93,100 @@ public class TradingController : ControllerBase
     [HttpGet("dashboard/summary")]
     public async Task<IActionResult> GetDashboardSummaryEndpoint(CancellationToken cancellationToken)
     {
-        var userId = GetUserId();
-        _logger.LogDebug("Fetching dashboard summary for user {UserId}", userId);
-        
-        var summary = await GetDashboardSummaryData(userId, cancellationToken);
-        return Ok(summary);
+        try
+        {
+            var userId = GetUserId();
+            _logger.LogDebug("Fetching dashboard summary for user {UserId}", userId);
+            
+            var summary = await GetDashboardSummaryData(userId, cancellationToken);
+            return Ok(summary);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error fetching dashboard summary for user");
+            return StatusCode(500, new { message = "An error occurred while fetching dashboard summary", error = ex.Message });
+        }
     }
 
     /// <summary>
     /// Get NAV history for the last 30 days
     /// </summary>
     [HttpGet("dashboard/nav")]
-    public async Task<IActionResult> GetDashboardNav([FromQuery] string? from)
+    public async Task<IActionResult> GetDashboardNav([FromQuery] string? from, CancellationToken cancellationToken)
     {
-        var userId = GetUserId();
-        _logger.LogDebug("Fetching NAV history for user {UserId}", userId);
-        
-        var navHistory = await GetDashboardNavHistoryData(userId, from);
-        return Ok(navHistory);
+        try
+        {
+            var userId = GetUserId();
+            _logger.LogDebug("Fetching NAV history for user {UserId}", userId);
+            
+            // Validate date parameter
+            DateTime fromDate;
+            if (string.IsNullOrEmpty(from))
+            {
+                fromDate = DateTime.UtcNow.AddDays(-29).Date;
+            }
+            else
+            {
+                if (!DateTime.TryParse(from, out fromDate))
+                {
+                    _logger.LogWarning("Invalid date format for 'from' parameter: {From}", from);
+                    return BadRequest(new { message = $"Invalid date format for 'from' parameter. Expected format: YYYY-MM-DD, received: {from}" });
+                }
+                fromDate = fromDate.Date;
+            }
+            
+            var navHistory = await GetDashboardNavHistoryData(userId, fromDate, cancellationToken);
+            return Ok(navHistory);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error fetching NAV history for user");
+            return StatusCode(500, new { message = "An error occurred while fetching NAV history", error = ex.Message });
+        }
     }
 
     /// <summary>
     /// Get PnL history for a specific date
     /// </summary>
     [HttpGet("dashboard/pnl")]
-    public async Task<IActionResult> GetDashboardPnl([FromQuery] string granularity = "hourly", [FromQuery] string? date = null)
+    public async Task<IActionResult> GetDashboardPnl([FromQuery] string granularity = "hourly", [FromQuery] string? date = null, CancellationToken cancellationToken = default)
     {
-        var userId = GetUserId();
-        _logger.LogDebug("Fetching PnL history for user {UserId}", userId);
-        
-        var pnlHistory = await GetDashboardPnlHistoryData(userId, granularity, date);
-        return Ok(pnlHistory);
+        try
+        {
+            var userId = GetUserId();
+            _logger.LogDebug("Fetching PnL history for user {UserId}", userId);
+            
+            // Validate date parameter
+            DateTime targetDate;
+            if (string.IsNullOrEmpty(date))
+            {
+                targetDate = DateTime.UtcNow.Date;
+            }
+            else
+            {
+                if (!DateTime.TryParse(date, out targetDate))
+                {
+                    _logger.LogWarning("Invalid date format for 'date' parameter: {Date}", date);
+                    return BadRequest(new { message = $"Invalid date format for 'date' parameter. Expected format: YYYY-MM-DD, received: {date}" });
+                }
+                targetDate = targetDate.Date;
+            }
+            
+            // Validate granularity
+            if (granularity != "hourly" && granularity != "daily" && granularity != "weekly")
+            {
+                _logger.LogWarning("Invalid granularity parameter: {Granularity}", granularity);
+                return BadRequest(new { message = $"Invalid granularity parameter. Expected: hourly, daily, or weekly, received: {granularity}" });
+            }
+            
+            var pnlHistory = await GetDashboardPnlHistoryData(userId, granularity, targetDate, cancellationToken);
+            return Ok(pnlHistory);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error fetching PnL history for user");
+            return StatusCode(500, new { message = "An error occurred while fetching PnL history", error = ex.Message });
+        }
     }
 
     // Helper methods
@@ -307,21 +370,34 @@ public class TradingController : ControllerBase
         };
     }
 
-    private async Task<DashboardNavHistoryDto> GetDashboardNavHistoryData(int userId, string? from)
+    private async Task<DashboardNavHistoryDto> GetDashboardNavHistoryData(int userId, DateTime fromDate, CancellationToken cancellationToken = default)
     {
-        var fromDate = string.IsNullOrEmpty(from) 
-            ? DateTime.UtcNow.AddDays(-29).Date 
-            : DateTime.Parse(from).Date;
-
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+        _logger.LogInformation("[Dashboard NAV] Starting for user {UserId}, from {FromDate}", userId, fromDate);
+        
+        // Limit date range to prevent excessive data loading (max 90 days)
+        var maxDaysBack = 90;
+        var earliestAllowedDate = DateTime.UtcNow.Date.AddDays(-maxDaysBack);
+        if (fromDate < earliestAllowedDate)
+        {
+            _logger.LogWarning("[Dashboard NAV] Date range too large, limiting to {MaxDays} days", maxDaysBack);
+            fromDate = earliestAllowedDate;
+        }
+        
+        var toDate = DateTime.UtcNow.Date;
         var data = new List<DashboardNavDataPointDto>();
         
-        // Get all trades up to now
+        // Get all trades up to now - optimized with AsNoTracking and date filter
         var allTrades = await _db.Trades
-            .Where(t => _db.Orders.Any(o => o.Id == t.OrderId && o.UserId == userId))
+            .Where(t => _db.Orders.Any(o => o.Id == t.OrderId && o.UserId == userId) && 
+                       t.CreatedAt.Date <= toDate)
             .Include(t => t.Order)
             .Include(t => t.Cryptocurrency)
+            .AsNoTracking()
             .OrderBy(t => t.CreatedAt)
-            .ToListAsync();
+            .ToListAsync(cancellationToken);
+        
+        _logger.LogDebug("[Dashboard NAV] Loaded {Count} trades in {Elapsed}ms", allTrades.Count, stopwatch.ElapsedMilliseconds);
 
         // Get positions (net quantity per cryptocurrency)
         var positions = allTrades
@@ -343,9 +419,12 @@ public class TradingController : ControllerBase
             var priceData = await _db.CryptoPrices
                 .Where(p => cryptoIds.Contains(p.CryptocurrencyId) && 
                            p.CollectedAtUtc.Date >= fromDate && 
-                           p.CollectedAtUtc.Date <= DateTime.UtcNow.Date)
+                           p.CollectedAtUtc.Date <= toDate)
                 .Select(p => new { p.CryptocurrencyId, Date = p.CollectedAtUtc.Date, p.PriceUsd, p.CollectedAtUtc })
-                .ToListAsync();
+                .AsNoTracking()
+                .ToListAsync(cancellationToken);
+            
+            _logger.LogDebug("[Dashboard NAV] Loaded price data in {Elapsed}ms", stopwatch.ElapsedMilliseconds);
             
             // Group by crypto and date, taking the latest price for each day
             var groupedPrices = priceData
@@ -366,20 +445,24 @@ public class TradingController : ControllerBase
         // Preload USD wallet data ONCE (not in the loop!)
         var usdWallets = await _db.Wallets
             .Where(w => w.UserId == userId && w.AssetType == "FIAT" && w.CurrencyCode == "USD")
-            .ToListAsync();
+            .AsNoTracking()
+            .ToListAsync(cancellationToken);
 
         var usdWalletIds = usdWallets.Select(w => w.Id).ToList();
         
-        // Preload ALL USD movements ONCE
+        // Preload ALL USD movements ONCE - limit to date range
         var usdMovements = new List<(DateTime Date, decimal Amount)>();
         if (usdWalletIds.Any())
         {
-            usdMovements = await _db.WalletMovements
-                .Where(m => usdWalletIds.Contains(m.WalletId) && m.CreatedAt.Date <= DateTime.UtcNow.Date)
+            var movementsData = await _db.WalletMovements
+                .Where(m => usdWalletIds.Contains(m.WalletId) && m.CreatedAt.Date <= toDate)
                 .OrderBy(m => m.CreatedAt)
                 .Select(m => new { Date = m.CreatedAt.Date, m.Amount })
-                .ToListAsync()
-                .ContinueWith(t => t.Result.Select(x => (x.Date, x.Amount)).ToList());
+                .AsNoTracking()
+                .ToListAsync(cancellationToken);
+            
+            usdMovements = movementsData.Select(x => (x.Date, x.Amount)).ToList();
+            _logger.LogDebug("[Dashboard NAV] Loaded USD movements in {Elapsed}ms", stopwatch.ElapsedMilliseconds);
         }
 
         // Calculate cumulative USD balance by date
@@ -392,9 +475,15 @@ public class TradingController : ControllerBase
         }
 
         // For each day in the range, calculate NAV using preloaded prices
-        for (int i = 29; i >= 0; i--)
+        // Limit to max 30 days for performance
+        var daysToCalculate = Math.Min(30, (toDate - fromDate).Days + 1);
+        for (int i = daysToCalculate - 1; i >= 0; i--)
         {
             var date = fromDate.AddDays(i);
+            if (date > toDate) continue;
+            
+            cancellationToken.ThrowIfCancellationRequested();
+            
             decimal nav = 0m;
 
             foreach (var pos in positions)
@@ -432,34 +521,44 @@ public class TradingController : ControllerBase
             });
         }
 
+        stopwatch.Stop();
+        _logger.LogInformation("[Dashboard NAV] Completed for user {UserId} in {Elapsed}ms, returned {Count} data points", 
+            userId, stopwatch.ElapsedMilliseconds, data.Count);
+
         return new DashboardNavHistoryDto
         {
             From = fromDate.ToString("yyyy-MM-dd"),
-            To = DateTime.UtcNow.Date.ToString("yyyy-MM-dd"),
+            To = toDate.ToString("yyyy-MM-dd"),
             Data = data
         };
     }
 
-    private async Task<DashboardPnlHistoryDto> GetDashboardPnlHistoryData(int userId, string granularity, string? date)
+    private async Task<DashboardPnlHistoryDto> GetDashboardPnlHistoryData(int userId, string granularity, DateTime targetDate, CancellationToken cancellationToken = default)
     {
-        var targetDate = string.IsNullOrEmpty(date)
-            ? DateTime.UtcNow.Date
-            : DateTime.Parse(date).Date;
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+        _logger.LogInformation("[Dashboard PnL] Starting for user {UserId}, granularity {Granularity}, date {Date}", 
+            userId, granularity, targetDate);
 
         var data = new List<DashboardPnlDataPointDto>();
 
         if (granularity == "hourly")
         {
-            // Get all trades for the target date
+            // Get all trades for the target date - optimized with AsNoTracking
             var dayTrades = await _db.Trades
                 .Where(t => _db.Orders.Any(o => o.Id == t.OrderId && o.UserId == userId) && 
                            t.CreatedAt.Date == targetDate)
                 .Include(t => t.Order)
-                .ToListAsync();
+                .AsNoTracking()
+                .ToListAsync(cancellationToken);
+            
+            _logger.LogDebug("[Dashboard PnL] Loaded {Count} trades for date {Date} in {Elapsed}ms", 
+                dayTrades.Count, targetDate, stopwatch.ElapsedMilliseconds);
 
             // Group by hour and calculate PnL
             for (int hour = 0; hour < 24; hour++)
             {
+                cancellationToken.ThrowIfCancellationRequested();
+                
                 var hourStart = targetDate.AddHours(hour);
                 var hourEnd = hourStart.AddHours(1);
 
@@ -482,6 +581,89 @@ public class TradingController : ControllerBase
                 });
             }
         }
+        else if (granularity == "daily")
+        {
+            // For daily granularity, get trades for the week containing targetDate
+            var weekStart = targetDate.AddDays(-(int)targetDate.DayOfWeek);
+            var weekEnd = weekStart.AddDays(7);
+            
+            var weekTrades = await _db.Trades
+                .Where(t => _db.Orders.Any(o => o.Id == t.OrderId && o.UserId == userId) && 
+                           t.CreatedAt.Date >= weekStart && t.CreatedAt.Date < weekEnd)
+                .Include(t => t.Order)
+                .AsNoTracking()
+                .ToListAsync(cancellationToken);
+            
+            // Group by day
+            for (int day = 0; day < 7; day++)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                
+                var dayStart = weekStart.AddDays(day);
+                var dayEnd = dayStart.AddDays(1);
+                
+                var dayTrades = weekTrades
+                    .Where(t => t.CreatedAt >= dayStart && t.CreatedAt < dayEnd)
+                    .ToList();
+                
+                var pnl = dayTrades.Sum(t =>
+                {
+                    if (t.Order.Side == "SELL")
+                        return (t.PriceUsd * t.QuantityCoin) - t.FeeUsd;
+                    else // BUY
+                        return -((t.PriceUsd * t.QuantityCoin) + t.FeeUsd);
+                });
+                
+                data.Add(new DashboardPnlDataPointDto
+                {
+                    Time = dayStart.ToString("yyyy-MM-dd"),
+                    Pnl = Math.Round(pnl, 2)
+                });
+            }
+        }
+        else if (granularity == "weekly")
+        {
+            // For weekly granularity, get trades for the last 4 weeks
+            var fourWeeksAgo = targetDate.AddDays(-28);
+            
+            var monthTrades = await _db.Trades
+                .Where(t => _db.Orders.Any(o => o.Id == t.OrderId && o.UserId == userId) && 
+                           t.CreatedAt.Date >= fourWeeksAgo && t.CreatedAt.Date <= targetDate)
+                .Include(t => t.Order)
+                .AsNoTracking()
+                .ToListAsync(cancellationToken);
+            
+            // Group by week
+            for (int week = 0; week < 4; week++)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                
+                var weekStart = fourWeeksAgo.AddDays(week * 7);
+                var weekEnd = weekStart.AddDays(7);
+                
+                var weekTrades = monthTrades
+                    .Where(t => t.CreatedAt >= weekStart && t.CreatedAt < weekEnd)
+                    .ToList();
+                
+                var pnl = weekTrades.Sum(t =>
+                {
+                    if (t.Order.Side == "SELL")
+                        return (t.PriceUsd * t.QuantityCoin) - t.FeeUsd;
+                    else // BUY
+                        return -((t.PriceUsd * t.QuantityCoin) + t.FeeUsd);
+                });
+                
+                data.Add(new DashboardPnlDataPointDto
+                {
+                    Time = $"Week {week + 1}",
+                    Pnl = Math.Round(pnl, 2)
+                });
+            }
+        }
+
+        stopwatch.Stop();
+        _logger.LogInformation("[Dashboard PnL] Completed for user {UserId} in {Elapsed}ms, returned {Count} data points", 
+            userId, stopwatch.ElapsedMilliseconds, data.Count);
 
         return new DashboardPnlHistoryDto
         {

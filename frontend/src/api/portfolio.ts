@@ -1,4 +1,4 @@
-import { authFetch } from './http';
+import { authFetch, refreshAuthToken } from './http';
 
 export type ApiResult<T> = { ok: true; data: T } | { ok: false; error: string };
 
@@ -24,21 +24,17 @@ async function apiGetWithLongTimeout<T>(url: string, timeoutMs: number = 30000, 
         // Wait before retry: 1s, 2s, 3s...
         await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
         console.log(`[portfolio] Retrying request (attempt ${attempt + 1}/${retries + 1}):`, url);
+        // Refresh token before retry in case it expired
+        await refreshAuthToken();
       }
+      
+      // Use authFetch instead of fetch directly to get token refresh logic
       
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
       
-      const token = localStorage.getItem('crypto_trading_access_token');
-      const headers = new Headers();
-      if (token) {
-        headers.set('Authorization', `Bearer ${token}`);
-      }
-      
-      const res = await fetch(url, {
+      const res = await authFetch(url, {
         method: 'GET',
-        headers,
-        credentials: 'include',
         signal: controller.signal,
       });
       
