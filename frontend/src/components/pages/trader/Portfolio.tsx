@@ -7,6 +7,7 @@ import { PieChart, Pie, Cell, ResponsiveContainer, AreaChart, Area, XAxis, YAxis
 import { TradingApi } from '../../../api/trading';
 import { MarketApi } from '../../../api/market';
 import { DashboardApi } from '../../../services/dashboard';
+import { CoinIcon } from '../../ui/CoinIcon';
 
 interface Holding {
   symbol: string;
@@ -19,6 +20,7 @@ interface Holding {
   pnlPercent: number;
   allocation: number;
   cost: number;
+  image?: string | null;
 }
 
 export default function Portfolio() {
@@ -63,11 +65,16 @@ export default function Portfolio() {
         setPerformanceData(navData);
       }
 
-      // Get crypto prices map
+      // Get crypto prices and images map
       const cryptoPriceMap = new Map<string, number>();
+      const cryptoImageMap = new Map<string, string | null>();
       if (cryptosRes.ok && cryptosRes.data) {
-        cryptosRes.data.forEach(crypto => {
-          cryptoPriceMap.set(crypto.symbol.toUpperCase(), crypto.currentPrice);
+        cryptosRes.data.forEach((crypto: any) => {
+          const symbol = crypto.symbol?.toUpperCase() || '';
+          cryptoPriceMap.set(symbol, crypto.currentPrice || crypto.current_price || 0);
+          // Handle both camelCase and snake_case image fields
+          const imageUrl = crypto.image || crypto.Image || crypto.image_url || crypto.imageUrl || null;
+          cryptoImageMap.set(symbol, imageUrl);
         });
       }
 
@@ -133,7 +140,8 @@ export default function Portfolio() {
               pnl,
               pnlPercent,
               allocation: 0, // Will calculate after
-              cost
+              cost,
+              image: cryptoImageMap.get(holding.symbol.toUpperCase()) || null
             };
           });
 
@@ -339,9 +347,7 @@ export default function Portfolio() {
                 <tr key={holding.symbol} className="border-b border-gray-800 hover:bg-gray-800/50">
                   <td className="py-4">
                     <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 bg-emerald-500/10 rounded-full flex items-center justify-center">
-                        <span className="text-emerald-500 text-sm">{holding.symbol}</span>
-                      </div>
+                      <CoinIcon symbol={holding.symbol} image={holding.image} size="md" />
                       <div>
                         <div className="text-white">{holding.name}</div>
                         <div className="text-sm text-gray-400">{holding.symbol}</div>
