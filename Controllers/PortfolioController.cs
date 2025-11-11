@@ -12,10 +12,14 @@ namespace CryptoTrading.Controllers;
 public class PortfolioController : ControllerBase
 {
     private readonly IWatchlistService _watchlistService;
+    private readonly IPortfolioService _portfolioService;
 
-    public PortfolioController(IWatchlistService watchlistService)
+    public PortfolioController(
+        IWatchlistService watchlistService,
+        IPortfolioService portfolioService)
     {
         _watchlistService = watchlistService;
+        _portfolioService = portfolioService;
     }
 
     private int GetUserId() 
@@ -294,15 +298,42 @@ public class PortfolioController : ControllerBase
     #region Portfolio Overview
 
     /// <summary>
-    /// Get portfolio overview
+    /// Get portfolio overview including holdings, PnL, and NAV history
     /// </summary>
     [HttpGet("overview")]
-    public IActionResult GetPortfolioOverview()
+    public async Task<IActionResult> GetPortfolioOverview()
     {
-        return Ok(new { 
-            message = "Portfolio overview endpoint - to be implemented", 
-            note = "This will show total portfolio value, P&L, asset allocation, etc." 
-        });
+        try
+        {
+            var userId = GetUserId();
+            var overview = await _portfolioService.GetPortfolioOverviewAsync(userId);
+            return Ok(overview);
+        }
+        catch (Exception ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// Get portfolio performance metrics for a date range
+    /// </summary>
+    [HttpGet("performance")]
+    public async Task<IActionResult> GetPerformance([FromQuery] DateTime? from, [FromQuery] DateTime? to)
+    {
+        try
+        {
+            var userId = GetUserId();
+            var fromDate = from ?? DateTime.UtcNow.AddDays(-30);
+            var toDate = to ?? DateTime.UtcNow;
+            
+            var performance = await _portfolioService.GetPerformanceAsync(userId, fromDate, toDate);
+            return Ok(performance);
+        }
+        catch (Exception ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
     }
 
     #endregion

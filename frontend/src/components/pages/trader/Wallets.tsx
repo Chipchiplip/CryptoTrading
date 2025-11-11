@@ -1,38 +1,89 @@
-import { useState } from 'react';
-import { Wallet, ArrowDownToLine, ArrowUpFromLine, Eye, EyeOff, TrendingUp, TrendingDown } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Wallet, ArrowUpFromLine, Eye, EyeOff, TrendingUp, TrendingDown, Loader2 } from 'lucide-react';
 import { Card } from '../../ui/card';
 import { Button } from '../../ui/button';
 import { Badge } from '../../ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../ui/tabs';
+import { TradingApi, WalletBalance } from '../../../api/trading';
+import { MarketApi } from '../../../api/market';
+import { CoinIcon } from '../../ui/CoinIcon';
 
 interface WalletsProps {
   onNavigate?: (page: string) => void;
 }
 
+interface CryptoWalletData extends WalletBalance {
+  name: string;
+  change24h: number;
+  imageUrl?: string;
+}
+
 export default function Wallets({ onNavigate }: WalletsProps) {
   const [showBalances, setShowBalances] = useState(true);
+  const [loading, setLoading] = useState(true);
+  const [cryptoWallets, setCryptoWallets] = useState<CryptoWalletData[]>([]);
+  const [fiatWallets, setFiatWallets] = useState<WalletBalance[]>([]);
+  const [totalValue, setTotalValue] = useState(0);
+  const [totalChange24h, setTotalChange24h] = useState(0);
 
-  const cryptoWallets = [
-    { symbol: 'BTC', name: 'Bitcoin', balance: 0.2341, available: 0.2341, locked: 0, usdValue: 11759.82, change24h: 2.34 },
-    { symbol: 'ETH', name: 'Ethereum', balance: 4.5678, available: 3.5678, locked: 1.0, usdValue: 12993.50, change24h: 1.82 },
-    { symbol: 'SOL', name: 'Solana', balance: 125.34, available: 100.34, locked: 25.0, usdValue: 12339.73, change24h: -0.45 },
-    { symbol: 'BNB', name: 'BNB', balance: 10.5, available: 10.5, locked: 0, usdValue: 3285.35, change24h: 3.12 },
-    { symbol: 'USDT', name: 'Tether', balance: 5234.56, available: 5234.56, locked: 0, usdValue: 5234.56, change24h: 0 },
-  ];
+  useEffect(() => {
+    fetchWalletData();
+  }, []);
 
-  const fiatWallets = [
-    { currency: 'USD', balance: 2500.00, available: 2500.00, locked: 0 },
-    { currency: 'EUR', balance: 1200.00, available: 1200.00, locked: 0 },
-  ];
+  const fetchWalletData = async () => {
+    try {
+      setLoading(true);
+      const [balancesRes, marketRes] = await Promise.all([
+        TradingApi.getBalances(),
+        MarketApi.getCryptocurrencies()
+      ]);
 
-  const recentMovements = [
-    { type: 'Deposit', currency: 'USDT', amount: 1000, status: 'Completed', time: '2025-01-15 14:23', txId: '0x1234...5678' },
-    { type: 'Withdrawal', currency: 'BTC', amount: 0.05, status: 'Completed', time: '2025-01-14 10:15', txId: '0x9876...4321' },
-    { type: 'Trade', currency: 'ETH', amount: 1.0, status: 'Completed', time: '2025-01-14 09:30', txId: 'TRD-001' },
-    { type: 'Deposit', currency: 'USD', amount: 500, status: 'Pending', time: '2025-01-13 16:45', txId: 'DEP-123' },
-  ];
+      if (balancesRes.ok && balancesRes.data) {
+        const wallets = balancesRes.data.wallets || [];
+        const cryptoWalletsData: CryptoWalletData[] = [];
+        const fiatWalletsData: WalletBalance[] = [];
 
-  const totalValue = cryptoWallets.reduce((sum, w) => sum + w.usdValue, 0) + fiatWallets.reduce((sum, w) => sum + w.balance, 0);
+        // Get crypto prices map for change24h
+        const cryptoPriceMap = new Map<string, { name: string; change24h: number; image?: string }>();
+        if (marketRes.ok && marketRes.data) {
+          marketRes.data.forEach((crypto: any) => {
+            cryptoPriceMap.set(crypto.symbol.toUpperCase(), {
+              name: crypto.name || crypto.symbol,
+              change24h: crypto.priceChangePercentage24h || 0,
+              image: crypto.image || crypto.Image
+            });
+          });
+        }
+
+        wallets.forEach((wallet: WalletBalance) => {
+          const cryptoData = cryptoPriceMap.get(wallet.symbol.toUpperCase());
+          if (cryptoData) {
+            // Crypto wallet
+            cryptoWalletsData.push({
+              ...wallet,
+              name: cryptoData.name,
+              change24h: cryptoData.change24h,
+              imageUrl: cryptoData.image
+            });
+          } else {
+            // Fiat wallet
+            fiatWalletsData.push(wallet);
+          }
+        });
+
+        setCryptoWallets(cryptoWalletsData);
+        setFiatWallets(fiatWalletsData);
+        setTotalValue(balancesRes.data.totalBalance || 0);
+        setTotalChange24h(0); // Calculate from individual wallets if needed
+      }
+    } catch (error) {
+      console.error('Error fetching wallet data:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const recentMovements: Array<{ type: string; currency: string; amount: number; status: string; time: string; txId: string }> = [];
 
   return (
     <div className="p-4 lg:p-8">
@@ -61,19 +112,14 @@ export default function Wallets({ onNavigate }: WalletsProps) {
             <div className="text-5xl text-white mb-2">
               {showBalances ? `$${totalValue.toLocaleString()}` : '••••••'}
             </div>
-            <div className="flex items-center gap-1 text-emerald-500">
-              <TrendingUp className="w-4 h-4" />
-              <span>+2.1% (24h)</span>
-            </div>
+            {totalChange24h !== 0 && (
+              <div className={`flex items-center gap-1 ${totalChange24h >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
+                {totalChange24h >= 0 ? <TrendingUp className="w-4 h-4" /> : <TrendingDown className="w-4 h-4" />}
+                <span>{totalChange24h >= 0 ? '+' : ''}{totalChange24h.toFixed(2)}% (24h)</span>
+              </div>
+            )}
           </div>
           <div className="flex gap-3">
-            <Button
-              className="bg-emerald-500 text-black hover:bg-emerald-600"
-              onClick={() => onNavigate?.('deposit')}
-            >
-              <ArrowDownToLine className="w-4 h-4 mr-2" />
-              Deposit
-            </Button>
             <Button
               variant="outline"
               className="border-gray-700 hover:bg-gray-800"
@@ -100,120 +146,146 @@ export default function Wallets({ onNavigate }: WalletsProps) {
         </TabsList>
 
         <TabsContent value="crypto" className="space-y-4">
-          {cryptoWallets.map((wallet) => (
-            <Card key={wallet.symbol} className="bg-gray-900 border-gray-800 p-6 hover:border-emerald-500/50 transition-colors">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 bg-emerald-500/10 rounded-full flex items-center justify-center">
-                    <span className="text-emerald-500">{wallet.symbol}</span>
-                  </div>
-                  <div>
-                    <h3 className="mb-1">{wallet.name}</h3>
-                    <p className="text-gray-400 text-sm">{wallet.symbol}</p>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-3 gap-8 text-right">
-                  <div>
-                    <div className="text-gray-400 text-sm mb-1">Total Balance</div>
-                    <div className="text-white">
-                      {showBalances ? `${wallet.balance.toFixed(4)} ${wallet.symbol}` : '••••••'}
-                    </div>
-                    <div className="text-sm text-gray-400">
-                      {showBalances ? `$${wallet.usdValue.toLocaleString()}` : '••••••'}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-gray-400 text-sm mb-1">Available</div>
-                    <div className="text-emerald-500">
-                      {showBalances ? wallet.available.toFixed(4) : '••••••'}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-gray-400 text-sm mb-1">In Orders</div>
-                    <div className="text-yellow-500">
-                      {showBalances ? wallet.locked.toFixed(4) : '••••••'}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <Badge className={wallet.change24h >= 0 ? 'bg-emerald-500/10 text-emerald-500' : 'bg-red-500/10 text-red-500'}>
-                    {wallet.change24h >= 0 ? <TrendingUp className="w-3 h-3 mr-1" /> : <TrendingDown className="w-3 h-3 mr-1" />}
-                    {Math.abs(wallet.change24h)}%
-                  </Badge>
-                </div>
-              </div>
+          {loading ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="w-8 h-8 text-emerald-500 animate-spin" />
+            </div>
+          ) : cryptoWallets.length === 0 ? (
+            <Card className="bg-gray-900 border-gray-800 p-6">
+              <div className="text-center text-gray-400">No crypto wallets found</div>
             </Card>
-          ))}
+          ) : (
+            cryptoWallets.map((wallet) => (
+              <Card key={wallet.symbol} className="bg-gray-900 border-gray-800 p-6 hover:border-emerald-500/50 transition-colors">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-4">
+                    <CoinIcon 
+                      image={wallet.imageUrl} 
+                      symbol={wallet.symbol} 
+                      size="lg"
+                    />
+                    <div>
+                      <h3 className="mb-1">{wallet.name}</h3>
+                      <p className="text-gray-400 text-sm">{wallet.symbol}</p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-8 text-right">
+                    <div>
+                      <div className="text-gray-400 text-sm mb-1">Total Balance</div>
+                      <div className="text-white">
+                        {showBalances ? `${wallet.total.toFixed(6)} ${wallet.symbol}` : '••••••'}
+                      </div>
+                      <div className="text-sm text-gray-400">
+                        {showBalances ? `$${wallet.valueUsd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '••••••'}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-gray-400 text-sm mb-1">Available</div>
+                      <div className="text-emerald-500">
+                        {showBalances ? wallet.available.toFixed(6) : '••••••'}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-gray-400 text-sm mb-1">In Orders</div>
+                      <div className="text-yellow-500">
+                        {showBalances ? wallet.locked.toFixed(6) : '••••••'}
+                      </div>
+                    </div>
+                  </div>
+
+                  {wallet.change24h !== undefined && (
+                    <div className="flex items-center gap-2">
+                      <Badge className={wallet.change24h >= 0 ? 'bg-emerald-500/10 text-emerald-500' : 'bg-red-500/10 text-red-500'}>
+                        {wallet.change24h >= 0 ? <TrendingUp className="w-3 h-3 mr-1" /> : <TrendingDown className="w-3 h-3 mr-1" />}
+                        {Math.abs(wallet.change24h).toFixed(2)}%
+                      </Badge>
+                    </div>
+                  )}
+                </div>
+              </Card>
+            ))
+          )}
         </TabsContent>
 
         <TabsContent value="fiat" className="space-y-4">
-          {fiatWallets.map((wallet) => (
-            <Card key={wallet.currency} className="bg-gray-900 border-gray-800 p-6">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 bg-blue-500/10 rounded-full flex items-center justify-center">
-                    <span className="text-blue-500">{wallet.currency}</span>
-                  </div>
-                  <div>
-                    <h3 className="mb-1">{wallet.currency}</h3>
-                    <p className="text-gray-400 text-sm">Fiat Currency</p>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-8 text-right">
-                  <div>
-                    <div className="text-gray-400 text-sm mb-1">Total Balance</div>
-                    <div className="text-white text-xl">
-                      {showBalances ? `${wallet.balance.toFixed(2)} ${wallet.currency}` : '••••••'}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-gray-400 text-sm mb-1">Available</div>
-                    <div className="text-emerald-500">
-                      {showBalances ? `${wallet.available.toFixed(2)}` : '••••••'}
-                    </div>
-                  </div>
-                </div>
-              </div>
+          {loading ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="w-8 h-8 text-emerald-500 animate-spin" />
+            </div>
+          ) : fiatWallets.length === 0 ? (
+            <Card className="bg-gray-900 border-gray-800 p-6">
+              <div className="text-center text-gray-400">No fiat wallets found</div>
             </Card>
-          ))}
+          ) : (
+            fiatWallets.map((wallet) => (
+              <Card key={wallet.symbol} className="bg-gray-900 border-gray-800 p-6">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 bg-blue-500/10 rounded-full flex items-center justify-center">
+                      <span className="text-blue-500">{wallet.symbol}</span>
+                    </div>
+                    <div>
+                      <h3 className="mb-1">{wallet.symbol}</h3>
+                      <p className="text-gray-400 text-sm">Fiat Currency</p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-8 text-right">
+                    <div>
+                      <div className="text-gray-400 text-sm mb-1">Total Balance</div>
+                      <div className="text-white text-xl">
+                        {showBalances ? `${wallet.total.toFixed(2)} ${wallet.symbol}` : '••••••'}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-gray-400 text-sm mb-1">Available</div>
+                      <div className="text-emerald-500">
+                        {showBalances ? wallet.available.toFixed(2) : '••••••'}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </Card>
+            ))
+          )}
         </TabsContent>
 
         <TabsContent value="movements">
           <Card className="bg-gray-900 border-gray-800 p-6">
             <h2 className="text-xl mb-6">Recent Movements</h2>
-            <div className="space-y-4">
-              {recentMovements.map((movement, index) => (
-                <div key={index} className="flex items-center justify-between p-4 bg-gray-800 rounded-lg">
-                  <div className="flex items-center gap-4">
-                    <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
-                      movement.type === 'Deposit' ? 'bg-emerald-500/10' :
-                      movement.type === 'Withdrawal' ? 'bg-red-500/10' :
-                      'bg-blue-500/10'
-                    }`}>
-                      {movement.type === 'Deposit' ? <ArrowDownToLine className="w-5 h-5 text-emerald-500" /> :
-                       movement.type === 'Withdrawal' ? <ArrowUpFromLine className="w-5 h-5 text-red-500" /> :
-                       <Wallet className="w-5 h-5 text-blue-500" />}
+            {recentMovements.length === 0 ? (
+              <div className="text-center text-gray-400 py-8">No recent movements</div>
+            ) : (
+              <div className="space-y-4">
+                {recentMovements.map((movement, index) => (
+                  <div key={index} className="flex items-center justify-between p-4 bg-gray-800 rounded-lg">
+                    <div className="flex items-center gap-4">
+                      <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
+                        movement.type === 'Withdrawal' ? 'bg-red-500/10' :
+                        'bg-blue-500/10'
+                      }`}>
+                        {movement.type === 'Withdrawal' ? <ArrowUpFromLine className="w-5 h-5 text-red-500" /> :
+                         <Wallet className="w-5 h-5 text-blue-500" />}
+                      </div>
+                      <div>
+                        <div className="text-white mb-1">{movement.type} - {movement.currency}</div>
+                        <div className="text-sm text-gray-400">{movement.time}</div>
+                      </div>
                     </div>
-                    <div>
-                      <div className="text-white mb-1">{movement.type} - {movement.currency}</div>
-                      <div className="text-sm text-gray-400">{movement.time}</div>
+                    <div className="text-right">
+                      <div className="text-white mb-1">{movement.amount} {movement.currency}</div>
+                      <Badge className={movement.status === 'Completed' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-yellow-500/10 text-yellow-500'}>
+                        {movement.status}
+                      </Badge>
+                    </div>
+                    <div className="text-gray-400 text-sm">
+                      {movement.txId}
                     </div>
                   </div>
-                  <div className="text-right">
-                    <div className="text-white mb-1">{movement.amount} {movement.currency}</div>
-                    <Badge className={movement.status === 'Completed' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-yellow-500/10 text-yellow-500'}>
-                      {movement.status}
-                    </Badge>
-                  </div>
-                  <div className="text-gray-400 text-sm">
-                    {movement.txId}
-                  </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </Card>
         </TabsContent>
       </Tabs>

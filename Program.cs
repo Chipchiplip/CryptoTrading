@@ -158,6 +158,7 @@ builder.Services.AddScoped<CryptoTrading.Services.Trading.ITradingService, Crypt
 builder.Services.AddScoped<IRoleService, RoleService>();
 builder.Services.AddScoped<ILevelService, LevelService>();
 builder.Services.AddScoped<IUserService, UserService>();
+builder.Services.AddScoped<IPortfolioService, CryptoTrading.Services.Portfolio.PortfolioService>();
 
 // Bot Trading Services
 builder.Services.AddSingleton<CryptoTrading.Interfaces.Bot.IStrategyRegistry, CryptoTrading.Services.Bot.StrategyRegistry>();

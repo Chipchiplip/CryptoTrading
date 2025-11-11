@@ -100,6 +100,36 @@ export interface WatchlistQuota {
   subscriptionTier: string;
 }
 
+// Portfolio DTOs
+export interface PortfolioHolding {
+  symbol: string;
+  name: string;
+  amount: number;
+  avgPrice: number;
+  currentPrice: number;
+  value: number;
+  pnl: number;
+  pnlPercent: number;
+  allocation: number;
+  cost: number;
+  imageUrl?: string;
+}
+
+export interface NavDataPoint {
+  date: string;
+  value: number;
+}
+
+export interface PortfolioOverview {
+  totalValue: number;
+  totalCost: number;
+  unrealizedPnL: number;
+  unrealizedPnLPercent: number;
+  realizedPnL: number;
+  holdings: PortfolioHolding[];
+  navHistory: NavDataPoint[];
+}
+
 export const PortfolioApi = {
   getWatchlists: () => apiGet<Watchlist[]>('/api/portfolio/watchlists'),
   createWatchlist: (dto: CreateWatchlistDto) => apiPost<Watchlist>('/api/portfolio/watchlists', dto),
@@ -111,6 +141,6 @@ export const PortfolioApi = {
   addCoinToWatchlist: (id: string, dto: AddCoinDto) => apiPost<void>(`/api/portfolio/watchlists/${id}/coins`, dto),
   removeCoinFromWatchlist: (id: string, symbol: string) => apiDelete<void>(`/api/portfolio/watchlists/${id}/coins/${symbol}`),
   getWatchlistQuota: () => apiGet<WatchlistQuota>('/api/portfolio/watchlists/quota'),
-  getPortfolioOverview: () => apiGet<any>('/api/portfolio/overview'),
+  getPortfolioOverview: () => apiGet<PortfolioOverview>('/api/portfolio/overview'),
 };
 
