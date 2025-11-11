@@ -57,12 +57,12 @@ public class TradingController : ControllerBase
     /// Get dashboard data (legacy endpoint - kept for compatibility)
     /// </summary>
     [HttpGet("dashboard")]
-    public async Task<IActionResult> GetDashboard()
+    public async Task<IActionResult> GetDashboard(CancellationToken cancellationToken)
     {
         var userId = GetUserId();
         _logger.LogDebug("Fetching dashboard for user {UserId}", userId);
         
-        var summary = await GetDashboardSummaryData(userId);
+        var summary = await GetDashboardSummaryData(userId, cancellationToken);
         var navHistory = await GetDashboardNavHistoryData(userId, null);
         var pnlHistory = await GetDashboardPnlHistoryData(userId, "hourly", null);
         
@@ -91,12 +91,12 @@ public class TradingController : ControllerBase
     /// Get dashboard summary (NAV, TodayPnL, AvailableBalance, OpenOrdersCount)
     /// </summary>
     [HttpGet("dashboard/summary")]
-    public async Task<IActionResult> GetDashboardSummaryEndpoint()
+    public async Task<IActionResult> GetDashboardSummaryEndpoint(CancellationToken cancellationToken)
     {
         var userId = GetUserId();
         _logger.LogDebug("Fetching dashboard summary for user {UserId}", userId);
         
-        var summary = await GetDashboardSummaryData(userId);
+        var summary = await GetDashboardSummaryData(userId, cancellationToken);
         return Ok(summary);
     }
 
@@ -127,29 +127,43 @@ public class TradingController : ControllerBase
     }
 
     // Helper methods
-    private async Task<DashboardSummaryDto> GetDashboardSummaryData(int userId)
+    private async Task<DashboardSummaryDto> GetDashboardSummaryData(int userId, CancellationToken cancellationToken = default)
     {
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+        _logger.LogInformation("[Dashboard Summary] Starting for user {UserId}", userId);
+        
         // Get wallets and calculate total balance
         var wallets = await _db.Wallets
             .Where(w => w.UserId == userId)
             .Include(w => w.Cryptocurrency)
-            .ToListAsync();
+            .AsNoTracking()
+            .ToListAsync(cancellationToken);
+        
+        _logger.LogDebug("[Dashboard Summary] Loaded {Count} wallets in {Elapsed}ms", wallets.Count, stopwatch.ElapsedMilliseconds);
 
         var walletIds = wallets.Select(w => w.Id).ToList();
         var movements = await _db.WalletMovements
             .Where(m => walletIds.Contains(m.WalletId))
             .GroupBy(m => m.WalletId)
             .Select(g => new { WalletId = g.Key, Balance = g.Sum(m => m.Amount) })
-            .ToDictionaryAsync(x => x.WalletId, x => x.Balance);
+            .AsNoTracking()
+            .ToDictionaryAsync(x => x.WalletId, x => x.Balance, cancellationToken);
+        
+        _logger.LogDebug("[Dashboard Summary] Loaded wallet movements in {Elapsed}ms", stopwatch.ElapsedMilliseconds);
 
         var marketData = await _coinGeckoService.GetMarketDataAsync();
+        
+        _logger.LogDebug("[Dashboard Summary] Loaded market data in {Elapsed}ms", stopwatch.ElapsedMilliseconds);
         
         // Get locked balances from active order holds
         var orderHolds = await _db.OrderHolds
             .Where(h => walletIds.Contains(h.WalletId) && h.ReleasedAt == null)
             .GroupBy(h => h.WalletId)
             .Select(g => new { WalletId = g.Key, LockedAmount = g.Sum(h => h.Amount) })
-            .ToDictionaryAsync(x => x.WalletId, x => x.LockedAmount);
+            .AsNoTracking()
+            .ToDictionaryAsync(x => x.WalletId, x => x.LockedAmount, cancellationToken);
+        
+        _logger.LogDebug("[Dashboard Summary] Loaded order holds in {Elapsed}ms", stopwatch.ElapsedMilliseconds);
         
         // Calculate USD balance from wallet movements
         var usdWallet = wallets.FirstOrDefault(w => w.AssetType == "FIAT" && w.CurrencyCode == "USD");
@@ -187,15 +201,21 @@ public class TradingController : ControllerBase
         {
             var usdMovementsYesterday = await _db.WalletMovements
                 .Where(m => m.WalletId == usdWallet.Id && m.CreatedAt.Date <= yesterday)
-                .SumAsync(m => m.Amount);
+                .AsNoTracking()
+                .SumAsync(m => m.Amount, cancellationToken);
             previousTotalBalance = usdMovementsYesterday;
         }
+        
+        _logger.LogDebug("[Dashboard Summary] Calculated yesterday balance in {Elapsed}ms", stopwatch.ElapsedMilliseconds);
 
         // Get positions (net quantity per cryptocurrency) as of yesterday
         var allTrades = await _db.Trades
             .Where(t => _db.Orders.Any(o => o.Id == t.OrderId && o.UserId == userId && t.CreatedAt.Date <= yesterday))
             .Include(t => t.Order)
-            .ToListAsync();
+            .AsNoTracking()
+            .ToListAsync(cancellationToken);
+        
+        _logger.LogDebug("[Dashboard Summary] Loaded trades in {Elapsed}ms", stopwatch.ElapsedMilliseconds);
 
         var positions = allTrades
             .GroupBy(t => t.CryptocurrencyId)
@@ -221,7 +241,10 @@ public class TradingController : ControllerBase
                     CryptocurrencyId = g.Key,
                     Price = g.OrderByDescending(p => p.CollectedAtUtc).Select(p => p.PriceUsd).FirstOrDefault()
                 })
-                .ToDictionaryAsync(x => x.CryptocurrencyId, x => x.Price);
+                .AsNoTracking()
+                .ToDictionaryAsync(x => x.CryptocurrencyId, x => x.Price, cancellationToken);
+            
+            _logger.LogDebug("[Dashboard Summary] Loaded yesterday prices in {Elapsed}ms", stopwatch.ElapsedMilliseconds);
             
             foreach (var pos in positions)
             {
@@ -233,7 +256,10 @@ public class TradingController : ControllerBase
         // Get open orders count
         var openOrders = await _db.Orders
             .Where(o => o.UserId == userId && (o.Status == "NEW" || o.Status == "PARTIAL"))
-            .ToListAsync();
+            .AsNoTracking()
+            .ToListAsync(cancellationToken);
+        
+        _logger.LogDebug("[Dashboard Summary] Loaded open orders in {Elapsed}ms", stopwatch.ElapsedMilliseconds);
 
         var openOrdersBuy = openOrders.Count(o => o.Side == "BUY");
         var openOrdersSell = openOrders.Count(o => o.Side == "SELL");
@@ -243,7 +269,10 @@ public class TradingController : ControllerBase
         var todayTrades = await _db.Trades
             .Where(t => _db.Orders.Any(o => o.Id == t.OrderId && o.UserId == userId && t.CreatedAt.Date == today))
             .Include(t => t.Order)
-            .ToListAsync();
+            .AsNoTracking()
+            .ToListAsync(cancellationToken);
+        
+        _logger.LogDebug("[Dashboard Summary] Loaded today trades in {Elapsed}ms", stopwatch.ElapsedMilliseconds);
 
         var todayPnl = todayTrades.Sum(t => 
         {
@@ -259,6 +288,9 @@ public class TradingController : ControllerBase
         var totalBalanceChangePercent = previousTotalBalance > 0 
             ? (totalBalanceChange / previousTotalBalance) * 100m 
             : 0m;
+
+        stopwatch.Stop();
+        _logger.LogInformation("[Dashboard Summary] Completed for user {UserId} in {Elapsed}ms", userId, stopwatch.ElapsedMilliseconds);
 
         return new DashboardSummaryDto
         {
@@ -331,6 +363,34 @@ public class TradingController : ControllerBase
             }
         }
 
+        // Preload USD wallet data ONCE (not in the loop!)
+        var usdWallets = await _db.Wallets
+            .Where(w => w.UserId == userId && w.AssetType == "FIAT" && w.CurrencyCode == "USD")
+            .ToListAsync();
+
+        var usdWalletIds = usdWallets.Select(w => w.Id).ToList();
+        
+        // Preload ALL USD movements ONCE
+        var usdMovements = new List<(DateTime Date, decimal Amount)>();
+        if (usdWalletIds.Any())
+        {
+            usdMovements = await _db.WalletMovements
+                .Where(m => usdWalletIds.Contains(m.WalletId) && m.CreatedAt.Date <= DateTime.UtcNow.Date)
+                .OrderBy(m => m.CreatedAt)
+                .Select(m => new { Date = m.CreatedAt.Date, m.Amount })
+                .ToListAsync()
+                .ContinueWith(t => t.Result.Select(x => (x.Date, x.Amount)).ToList());
+        }
+
+        // Calculate cumulative USD balance by date
+        var usdBalanceByDate = new Dictionary<DateTime, decimal>();
+        decimal cumulativeUsd = 0m;
+        foreach (var movement in usdMovements)
+        {
+            cumulativeUsd += movement.Amount;
+            usdBalanceByDate[movement.Date] = cumulativeUsd;
+        }
+
         // For each day in the range, calculate NAV using preloaded prices
         for (int i = 29; i >= 0; i--)
         {
@@ -353,20 +413,15 @@ public class TradingController : ControllerBase
                 nav += pos.QtyCoin * latestPrice;
             }
 
-            // Add USD balance (FIAT wallets)
-            var usdWallets = await _db.Wallets
-                .Where(w => w.UserId == userId && w.AssetType == "FIAT" && w.CurrencyCode == "USD")
-                .ToListAsync();
-
-            var usdWalletIds = usdWallets.Select(w => w.Id).ToList();
-            if (usdWalletIds.Any())
+            // Add USD balance using preloaded data
+            if (usdBalanceByDate.Any())
             {
-                var usdBalance = await _db.WalletMovements
-                    .Where(m => usdWalletIds.Contains(m.WalletId) && m.CreatedAt.Date <= date)
-                    .GroupBy(m => m.WalletId)
-                    .Select(g => g.Sum(m => m.Amount))
-                    .SumAsync();
-
+                // Find the latest USD balance on or before this date
+                var usdBalance = usdBalanceByDate
+                    .Where(kvp => kvp.Key <= date)
+                    .OrderByDescending(kvp => kvp.Key)
+                    .FirstOrDefault().Value;
+                
                 nav += usdBalance;
             }
 

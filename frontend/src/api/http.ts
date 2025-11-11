@@ -185,7 +185,7 @@ export async function authFetch(input: RequestInfo | URL, init?: RequestInit) {
 
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000);
+    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 seconds (reverted to original)
 
     const res = await fetch(input, {
       ...init,

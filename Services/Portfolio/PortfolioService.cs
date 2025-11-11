@@ -31,13 +31,18 @@ namespace CryptoTrading.Services.Portfolio
         /// </summary>
         public async Task<PortfolioOverviewDto> GetPortfolioOverviewAsync(int userId)
         {
+            _logger.LogInformation("[PortfolioService] GetPortfolioOverviewAsync called for userId={UserId}", userId);
+            
             try
             {
+                _logger.LogDebug("[PortfolioService] Fetching wallets...");
                 // Get all wallets for the user
                 var wallets = await _context.Wallets
                     .Where(w => w.UserId == userId)
                     .Include(w => w.Cryptocurrency)
                     .ToListAsync();
+                
+                _logger.LogDebug("[PortfolioService] Found {Count} wallets", wallets.Count);
 
                 // Get wallet movements to calculate balances
                 var walletIds = wallets.Select(w => w.Id).ToList();
@@ -48,7 +53,10 @@ namespace CryptoTrading.Services.Portfolio
                     .ToDictionaryAsync(x => x.WalletId, x => x.Balance);
 
                 // Get current crypto prices
+                _logger.LogDebug("[PortfolioService] Fetching market data from CoinGecko...");
                 var marketData = await _coinGeckoService.GetMarketDataAsync();
+                _logger.LogDebug("[PortfolioService] Received {Count} market data items", marketData.Count);
+                
                 var cryptoPriceMap = marketData.ToDictionary(
                     c => c.Symbol.ToUpper(),
                     c => c.CurrentPrice ?? 0m,
@@ -139,6 +147,7 @@ namespace CryptoTrading.Services.Portfolio
                 }
 
                 // Calculate realized PnL
+                _logger.LogDebug("[PortfolioService] Calculating realized PnL...");
                 var realizedPnL = await CalculateRealizedPnLAsync(userId);
 
                 // Calculate unrealized PnL
@@ -146,7 +155,11 @@ namespace CryptoTrading.Services.Portfolio
                 var unrealizedPnLPercent = totalCost > 0 ? (unrealizedPnL / totalCost) * 100 : 0m;
 
                 // Get NAV history (last 30 days)
+                _logger.LogDebug("[PortfolioService] Fetching NAV history...");
                 var navHistory = await GetNavHistoryAsync(userId, 30);
+
+                _logger.LogInformation("[PortfolioService] Portfolio overview completed for userId={UserId}, totalValue={TotalValue}, holdings={HoldingCount}", 
+                    userId, totalValue, holdings.Count);
 
                 return new PortfolioOverviewDto
                 {

@@ -1,30 +1,10 @@
 import { useState, useEffect } from 'react';
-import { TrendingUp, TrendingDown, DollarSign, PieChart as PieChartIcon, Loader2, AlertCircle } from 'lucide-react';
+import { TrendingUp, TrendingDown, DollarSign, Loader2, AlertCircle } from 'lucide-react';
 import { Card } from '../../ui/card';
 import { Badge } from '../../ui/badge';
 import { Alert, AlertDescription } from '../../ui/alert';
 import { PieChart, Pie, Cell, ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip } from 'recharts';
-import { TradingApi } from '../../../api/trading';
-import { MarketApi } from '../../../api/market';
-import { DashboardApi } from '../../../services/dashboard';
-import { CoinIcon } from '../../ui/CoinIcon';
-
-interface Holding {
-  symbol: string;
-  name: string;
-  amount: number;
-  avgPrice: number;
-  currentPrice: number;
-  value: number;
-  pnl: number;
-  pnlPercent: number;
-  allocation: number;
-  cost: number;
-  image?: string | null;
-}
-
 import { PortfolioApi, PortfolioHolding } from '../../../api/portfolio';
-import { CoinIcon } from '../../ui/CoinIcon';
 
 export default function Portfolio() {
   const [holdings, setHoldings] = useState<PortfolioHolding[]>([]);
@@ -52,42 +32,9 @@ export default function Portfolio() {
       // Fetch portfolio overview from unified API
       const overviewRes = await PortfolioApi.getPortfolioOverview();
 
-      // Process NAV history for performance chart
-      if (navHistoryRes.ok && navHistoryRes.data) {
-        const navDataArray = navHistoryRes.data.data || navHistoryRes.data;
-        const navData = (Array.isArray(navDataArray) ? navDataArray : []).map((item: any) => ({
-          date: new Date(item.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-          value: item.value
-        }));
-        setPerformanceData(navData);
-      }
-
-      // Get crypto prices and images map
-      const cryptoPriceMap = new Map<string, number>();
-      const cryptoImageMap = new Map<string, string | null>();
-      if (cryptosRes.ok && cryptosRes.data) {
-        cryptosRes.data.forEach((crypto: any) => {
-          const symbol = crypto.symbol?.toUpperCase() || '';
-          cryptoPriceMap.set(symbol, crypto.currentPrice || crypto.current_price || 0);
-          // Handle both camelCase and snake_case image fields
-          const imageUrl = crypto.image || crypto.Image || crypto.image_url || crypto.imageUrl || null;
-          cryptoImageMap.set(symbol, imageUrl);
-        });
-      }
-
-      // Calculate realized PnL from trades
-      let realizedPnL = 0;
-      if (tradesRes.ok && tradesRes.data) {
-        const tradesArray = Array.isArray(tradesRes.data) ? tradesRes.data : (tradesRes.data.data || []);
-        tradesArray.forEach((trade: any) => {
-          if (trade.side === 'SELL') {
-            realizedPnL += (trade.priceUsd * trade.quantityCoin) - trade.feeUsd;
-          } else {
-            realizedPnL -= (trade.priceUsd * trade.quantityCoin) + trade.feeUsd;
-          }
-
-        });
-        return;
+      // Check if API call was successful
+      if (!overviewRes.ok) {
+        throw new Error(overviewRes.error || 'Failed to load portfolio data');
       }
 
       const data = overviewRes.data;
@@ -253,7 +200,7 @@ export default function Portfolio() {
                 paddingAngle={2}
                 dataKey="value"
               >
-                {allocationData.map((entry, index) => (
+                {allocationData.map((_, index) => (
                   <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                 ))}
               </Pie>

@@ -82,7 +82,11 @@ builder.Services.AddSwaggerGen(c =>
 var mysqlConnectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
     options.UseMySql(mysqlConnectionString, new MySqlServerVersion(new Version(8, 0, 21)),
-        mySqlOptions => mySqlOptions.SchemaBehavior(Pomelo.EntityFrameworkCore.MySql.Infrastructure.MySqlSchemaBehavior.Ignore)));
+        mySqlOptions => 
+        {
+            mySqlOptions.SchemaBehavior(Pomelo.EntityFrameworkCore.MySql.Infrastructure.MySqlSchemaBehavior.Ignore);
+            mySqlOptions.CommandTimeout(30); // 30 second timeout for database queries
+        }));
 
 // JWT Settings
 builder.Services.Configure<JwtSettings>(builder.Configuration.GetSection("JwtSettings"));
@@ -141,6 +145,7 @@ builder.Services.AddHttpClient<ICoinGeckoService,
 {
     client.BaseAddress = new Uri("https://api.coingecko.com/api/v3/");
     client.DefaultRequestHeaders.Add("User-Agent", "CryptoTrading/1.0");
+    client.Timeout = TimeSpan.FromSeconds(10); // 10 second timeout for external API
 });
 // Cache service must be usable from singleton hosted services (e.g., typed HttpClient in background services),
 // so register it as a singleton to avoid "scoped service from root provider" errors.
@@ -198,7 +203,11 @@ if (app.Environment.IsDevelopment())
 app.UseMiddleware<CryptoTrading.Middleware.ErrorHandlingMiddleware>();
 
 app.UseCors("AllowFrontend");
-app.UseHttpsRedirection();
+// Skip HTTPS redirection in development when running HTTP only
+if (app.Environment.IsProduction() || app.Configuration["ASPNETCORE_URLS"]?.Contains("https") == true)
+{
+    app.UseHttpsRedirection();
+}
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();

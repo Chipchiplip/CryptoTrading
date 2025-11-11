@@ -60,16 +60,25 @@
     strictPort: false, // Try next available port if 3000 is busy
     proxy: {
       '/api': {
-        target: process.env.VITE_API_TARGET || 'http://localhost:5299',
+        target: 'http://localhost:5299',
         changeOrigin: true,
         secure: false,
-        timeout: 5000, // 5 second timeout
+        timeout: 10000, // 10 second timeout
         configure: (proxy, _options) => {
-          proxy.on('error', (err: any, _req, _res) => {
-            // Silently ignore proxy errors to prevent console spam
-            if (err?.code !== 'ECONNRESET' && err?.code !== 'ECONNREFUSED') {
-              console.error('Proxy error:', err?.message || err);
-            }
+          proxy.on('error', (err: any, req, res) => {
+            console.error('❌ Proxy Error:', {
+              url: req?.url,
+              method: req?.method,
+              error: err?.message || err,
+              code: err?.code,
+              target: 'http://localhost:5299'
+            });
+          });
+          proxy.on('proxyReq', (proxyReq, req, res) => {
+            console.log('🔄 Proxying:', req.method, req.url, '→', 'http://localhost:5299' + req.url);
+          });
+          proxy.on('proxyRes', (proxyRes, req, res) => {
+            console.log('✅ Proxy Response:', req.method, req.url, '→', proxyRes.statusCode);
           });
         },
       },

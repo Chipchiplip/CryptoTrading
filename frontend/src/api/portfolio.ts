@@ -13,6 +13,86 @@ async function apiGet<T>(url: string): Promise<ApiResult<T>> {
   }
 }
 
+// Helper function for portfolio overview with longer timeout (30s) and retry logic
+// This endpoint does heavy processing (multiple DB queries, CoinGecko API calls, FIFO calculations)
+async function apiGetWithLongTimeout<T>(url: string, timeoutMs: number = 30000, retries: number = 2): Promise<ApiResult<T>> {
+  let lastError: any = null;
+  
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      if (attempt > 0) {
+        // Wait before retry: 1s, 2s, 3s...
+        await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+        console.log(`[portfolio] Retrying request (attempt ${attempt + 1}/${retries + 1}):`, url);
+      }
+      
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+      
+      const token = localStorage.getItem('crypto_trading_access_token');
+      const headers = new Headers();
+      if (token) {
+        headers.set('Authorization', `Bearer ${token}`);
+      }
+      
+      const res = await fetch(url, {
+        method: 'GET',
+        headers,
+        credentials: 'include',
+        signal: controller.signal,
+      });
+      
+      clearTimeout(timeoutId);
+      
+      // Try to parse JSON response
+      let json: any = {};
+      try {
+        const text = await res.text();
+        if (text) {
+          json = JSON.parse(text);
+        } else {
+          // Empty response body
+          throw new Error('Empty response from server - backend may have crashed or timed out');
+        }
+      } catch (parseError: any) {
+        console.error('[portfolio] Failed to parse JSON response:', parseError);
+        // If response is not ok and we can't parse JSON, return error
+        if (!res.ok) {
+          throw new Error(`Server error (${res.status}): ${res.statusText || 'Unable to parse response'}`);
+        }
+        throw new Error('Invalid JSON response from server');
+      }
+      
+      if (!res.ok) {
+        return { ok: false, error: (json as any)?.message || `HTTP ${res.status}` };
+      }
+      
+      return { ok: true, data: json as T };
+    } catch (e: any) {
+      lastError = e;
+      
+      // Don't retry on abort (timeout)
+      if (e.name === 'AbortError') {
+        return { ok: false, error: 'Request timeout - server may be processing. Please try again.' };
+      }
+      
+      // Don't retry on last attempt
+      if (attempt === retries) {
+        // Check for specific error types
+        if (e.message?.includes('Failed to fetch') || e.message?.includes('ERR_EMPTY_RESPONSE')) {
+          return { ok: false, error: 'Server connection error - backend may be unavailable or processing. Please check if the server is running.' };
+        }
+        return { ok: false, error: e?.message || 'Network error' };
+      }
+      
+      // Log retry attempt
+      console.warn(`[portfolio] Request failed (attempt ${attempt + 1}/${retries + 1}):`, e.message);
+    }
+  }
+  
+  return { ok: false, error: lastError?.message || 'Network error after retries' };
+}
+
 async function apiPost<T>(url: string, body: unknown): Promise<ApiResult<T>> {
   try {
     const res = await authFetch(url, {
@@ -141,6 +221,6 @@ export const PortfolioApi = {
   addCoinToWatchlist: (id: string, dto: AddCoinDto) => apiPost<void>(`/api/portfolio/watchlists/${id}/coins`, dto),
   removeCoinFromWatchlist: (id: string, symbol: string) => apiDelete<void>(`/api/portfolio/watchlists/${id}/coins/${symbol}`),
   getWatchlistQuota: () => apiGet<WatchlistQuota>('/api/portfolio/watchlists/quota'),
-  getPortfolioOverview: () => apiGet<PortfolioOverview>('/api/portfolio/overview'),
+  getPortfolioOverview: () => apiGetWithLongTimeout<PortfolioOverview>('/api/portfolio/overview', 30000), // 30s timeout for heavy processing
 };
 

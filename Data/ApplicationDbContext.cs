@@ -267,6 +267,7 @@ namespace CryptoTrading.Data
                 entity.HasIndex(e => e.OrderId).IsUnique();
                 
 
+            });
             // ==========================
             // BOT STRATEGY DEFINITION CONFIG
             // ==========================
