@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { Loader2, AlertCircle } from 'lucide-react';
 import { Button } from '../../ui/button';
@@ -13,13 +13,12 @@ export default function GitHubCallback() {
     const code = searchParams.get('code');
 
     if (code) {
-      // Gửi 'code' này lên API của bạn
       const exchangeCodeForJwt = async (githubCode: string) => {
         try {
           const res = await fetch('/api/auth/github', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ token: githubCode }) // Gửi code trong trường 'token'
+            body: JSON.stringify({ token: githubCode })
           });
 
           const data = await res.json();
@@ -28,9 +27,8 @@ export default function GitHubCallback() {
             throw new Error(data.message || "GitHub login failed on server.");
           }
 
-          // Đăng nhập API thành công
           setAccessToken(data.accessToken, data.user);
-          navigate('/trader-dashboard'); // Chuyển hướng đến trang dashboard
+          navigate('/trader-dashboard'); 
 
         } catch (err: any) {
           setError(err.message || "An unexpected error occurred.");

@@ -58,7 +58,6 @@ public class AuthController : ControllerBase
     {
         try
         {
-            // dto.Token ở đây là idToken
             var result = await _authService.LoginWithGoogleAsync(dto.Token);
             return Ok(result);
         }
@@ -76,7 +75,6 @@ public class AuthController : ControllerBase
     {
         try
         {
-            // dto.Token ở đây là 'code'
             var result = await _authService.LoginWithGitHubAsync(dto.Token);
             return Ok(result);
         }
@@ -131,14 +129,13 @@ public class AuthController : ControllerBase
                 return Unauthorized(new { message = "User not authenticated" });
             }
 
-            // Gọi UpdateProfileAsync từ IAuthService
+
             var profile = await _authService.UpdateProfileAsync(userId.Value, dto);
             if (profile == null)
             {
                 return NotFound(new { message = "Profile update failed or user not found" });
             }
 
-            // Trả về thông tin profile đã được cập nhật
             return Ok(profile);
         }
         catch (Exception ex)
