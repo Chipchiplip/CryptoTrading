@@ -64,18 +64,19 @@ export function setAccessToken(
   refreshToken = newRefreshToken || null;
 
   try {
-    if (token && user) {
+    if (token) {
       localStorage.setItem(TOKEN_STORAGE_KEY, token);
       if (newRefreshToken) {
         localStorage.setItem(REFRESH_TOKEN_STORAGE_KEY, newRefreshToken);
       }
-      localStorage.setItem(USER_INFO_KEY, JSON.stringify(user));
-      console.log('[http] Access token and user info set');
+      if (user) {
+        localStorage.setItem(USER_INFO_KEY, JSON.stringify(user));
+      }
+      console.log('[http] Access token saved (user optional)');
     } else {
       localStorage.removeItem(TOKEN_STORAGE_KEY);
       localStorage.removeItem(REFRESH_TOKEN_STORAGE_KEY);
       localStorage.removeItem(USER_INFO_KEY);
-      console.log('[http] Access token and user info cleared');
     }
   } catch (e) {
     console.warn('[http] Failed to save token/user to storage:', e);
