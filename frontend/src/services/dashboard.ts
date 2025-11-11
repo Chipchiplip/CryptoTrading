@@ -134,11 +134,15 @@ export const DashboardApi = {
   getNavHistory: async (from?: string): Promise<ApiResult<NavHistory>> => {
     if (USE_MOCK) {
       await new Promise(resolve => setTimeout(resolve, 500));
-      const fromDate = from || new Date(Date.now() - 29 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+      // Use UTC date to avoid timezone issues
+      const today = new Date();
+      const fromDate = from || new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate() - 29)).toISOString().split('T')[0];
       return { ok: true, data: generateMockNavHistory(fromDate) };
     }
     
-    const fromDate = from || new Date(Date.now() - 29 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    // Use UTC date to avoid timezone issues
+    const today = new Date();
+    const fromDate = from || new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate() - 29)).toISOString().split('T')[0];
     return apiGet<NavHistory>(`/api/trading/dashboard/nav?from=${fromDate}`);
   },
 
@@ -150,11 +154,15 @@ export const DashboardApi = {
   getPnlHistory: async (granularity: 'hourly' | 'daily' | 'weekly' = 'hourly', date?: string): Promise<ApiResult<PnlHistory>> => {
     if (USE_MOCK) {
       await new Promise(resolve => setTimeout(resolve, 500));
-      const targetDate = date || new Date().toISOString().split('T')[0];
+      // Use UTC date to avoid timezone issues
+      const today = new Date();
+      const targetDate = date || new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate())).toISOString().split('T')[0];
       return { ok: true, data: generateMockPnlHistory(granularity, targetDate) };
     }
     
-    const targetDate = date || new Date().toISOString().split('T')[0];
+    // Use UTC date to avoid timezone issues
+    const today = new Date();
+    const targetDate = date || new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate())).toISOString().split('T')[0];
     return apiGet<PnlHistory>(`/api/trading/dashboard/pnl?granularity=${granularity}&date=${targetDate}`);
   },
 };

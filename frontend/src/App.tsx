@@ -10,6 +10,8 @@ import Register from './components/pages/guest/Register';
 import ForgotPassword from './components/pages/guest/ForgotPassword';
 import ResetPassword from './components/pages/guest/ResetPassword';
 import VerifyEmail from './components/pages/guest/VerifyEmail';
+import GitHubCallback from './components/pages/guest/GitHubCallback'; // ĐÃ THÊM
+
 import TraderDashboard from './components/pages/trader/TraderDashboard';
 import Watchlist from './components/pages/trader/Watchlist';
 import Trade from './components/pages/trader/Trade';
@@ -169,6 +171,9 @@ export default function App() {
         <Route path="/forgot-password" element={<GuestPage current="forgot-password"><ForgotPassword /></GuestPage>} />
         <Route path="/reset-password" element={<GuestPage current="reset-password"><ResetPassword /></GuestPage>} />
         <Route path="/verify-email" element={<GuestPage current="verify-email"><VerifyEmail /></GuestPage>} />
+        
+        {/* THÊM ROUTE MỚI CHO GITHUB CALLBACK */}
+        <Route path="/auth/github/callback" element={<GitHubCallback />} />
         
         <Route path="/test/chart" element={
           <div className="dark min-h-screen bg-black">

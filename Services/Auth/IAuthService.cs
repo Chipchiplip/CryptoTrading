@@ -31,6 +31,10 @@ namespace CryptoTrading.Services.Auth
         Task<UserProfileDto> UpdateProfileAsync(int userId, UpdateProfileDto dto);
         Task<bool> ChangePasswordAsync(int userId, ChangePasswordDto dto);
 
+        // ========== EXTERNAL AUTHENTICATION ========== //
+        Task<AuthResponseDto> LoginWithGoogleAsync(string idToken);
+        Task<AuthResponseDto> LoginWithGitHubAsync(string code);
+
         // ========== ADMIN - USER MANAGEMENT ==========
         Task<IEnumerable<UserListDto>> GetAllUsersAsync();
         Task<bool> UpdateUserRoleAsync(int userId, UpdateUserRoleDto dto);

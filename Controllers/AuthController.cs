@@ -3,6 +3,7 @@ using CryptoTrading.Services.Auth;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using CryptoTrading.Interfaces;
+using CryptoTrading.Models.DTOs.ExternalAuth;
 
 namespace CryptoTrading.Controllers;
 
@@ -42,6 +43,42 @@ public class AuthController : ControllerBase
                 return NotFound(new { message = "Profile not found" });
             }
             return Ok(profile);
+        }
+        catch (Exception ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+    }
+    
+    /// <summary>
+    /// Login or Register with Google ID Token
+    /// </summary>
+    [HttpPost("google")]
+    public async Task<IActionResult> GoogleLogin([FromBody] ExternalAuthDto dto)
+    {
+        try
+        {
+            // dto.Token ở đây là idToken
+            var result = await _authService.LoginWithGoogleAsync(dto.Token);
+            return Ok(result);
+        }
+        catch (Exception ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+    }
+    
+    /// <summary>
+    /// Login or Register with GitHub OAuth Code
+    /// </summary>
+    [HttpPost("github")]
+    public async Task<IActionResult> GitHubLogin([FromBody] ExternalAuthDto dto)
+    {
+        try
+        {
+            // dto.Token ở đây là 'code'
+            var result = await _authService.LoginWithGitHubAsync(dto.Token);
+            return Ok(result);
         }
         catch (Exception ex)
         {

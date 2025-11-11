@@ -8,6 +8,11 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
+using Google.Apis.Auth;
+using CryptoTrading.Models.DTOs.ExternalAuth;
+using System.Net.Http.Headers;
+using System.Net.Http.Json;
+using System.Text.Json;
 
 namespace CryptoTrading.Services.Auth
 {
@@ -20,6 +25,8 @@ namespace CryptoTrading.Services.Auth
         private readonly ILogger<AuthService> _logger;
         private readonly IHttpContextAccessor _httpContextAccessor;
         private readonly IRoleService _roleService;
+        private readonly IHttpClientFactory _httpClientFactory;
+        private readonly IConfiguration _configuration;
         private readonly ILevelService _levelService;
 
         public AuthService(
@@ -29,6 +36,8 @@ namespace CryptoTrading.Services.Auth
             IDateTimeProvider dateTimeProvider,
             ILogger<AuthService> logger,
             IHttpContextAccessor httpContextAccessor,
+            IHttpClientFactory httpClientFactory,
+            IConfiguration configuration,
             IRoleService roleService,
             ILevelService levelService)
         {
@@ -40,6 +49,8 @@ namespace CryptoTrading.Services.Auth
             _httpContextAccessor = httpContextAccessor;
             _roleService = roleService;
             _levelService = levelService;
+            _httpClientFactory = httpClientFactory;
+            _configuration = configuration;
         }
 
         // ====== ĐĂNG KÝ (REGISTER) - MẶC ĐỊNH ROLE/LEVEL ======
@@ -269,6 +280,214 @@ namespace CryptoTrading.Services.Auth
                 _logger.LogError(ex, "Token refresh failed");
                 throw;
             }
+        }
+
+
+        // ====== EXTERNAL AUTHENTICATION (THÊM/SỬA PHẦN NÀY) ======
+
+        public async Task<AuthResponseDto> LoginWithGoogleAsync(string idToken)
+        {
+            var googleClientId = _configuration["ExternalAuth:Google:ClientId"];
+            if (string.IsNullOrEmpty(googleClientId))
+            {
+                _logger.LogError("Google Client ID is not configured in appsettings.");
+                throw new InvalidOperationException("Google Client ID is not configured.");
+            }
+
+            // 1. Xác thực ID Token của Google
+            GoogleJsonWebSignature.Payload payload;
+            try
+            {
+                payload = await GoogleJsonWebSignature.ValidateAsync(idToken, new GoogleJsonWebSignature.ValidationSettings
+                {
+                    Audience = new[] { googleClientId }
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Google ID Token validation failed.");
+                throw new Exception("Invalid Google ID Token.");
+            }
+
+            // 2. Kiểm tra/Tạo người dùng trong DB
+            return await HandleExternalUserLogin(payload.Email, payload.Name, "Google");
+        }
+
+        public async Task<AuthResponseDto> LoginWithGitHubAsync(string code)
+        {
+            // 1. Đổi 'code' lấy 'access_token' từ GitHub
+            var accessToken = await GetGitHubAccessTokenAsync(code);
+            if (string.IsNullOrEmpty(accessToken))
+            {
+                throw new Exception("Could not retrieve GitHub access token.");
+            }
+
+            // 2. Dùng 'access_token' để lấy thông tin người dùng
+            var externalUser = await GetGitHubUserInfoAsync(accessToken);
+
+            // 3. Kiểm tra/Tạo người dùng trong DB
+            return await HandleExternalUserLogin(externalUser.Email, externalUser.Name, "GitHub");
+        }
+
+        /// <summary>
+        /// (MỚI) Đổi code lấy Access Token từ GitHub.
+        /// </summary>
+        private async Task<string?> GetGitHubAccessTokenAsync(string code)
+        {
+            var clientId = _configuration["ExternalAuth:GitHub:ClientId"];
+            var clientSecret = _configuration["ExternalAuth:GitHub:ClientSecret"];
+
+            if (string.IsNullOrEmpty(clientId) || string.IsNullOrEmpty(clientSecret))
+            {
+                throw new InvalidOperationException("GitHub ClientID or ClientSecret not configured.");
+            }
+
+            var httpClient = _httpClientFactory.CreateClient();
+            var tokenUrl = "https://github.com/login/oauth/access_token";
+
+            var requestBody = new
+            {
+                client_id = clientId,
+                client_secret = clientSecret,
+                code = code
+            };
+
+            var request = new HttpRequestMessage(HttpMethod.Post, tokenUrl);
+            request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+            request.Content = new StringContent(JsonSerializer.Serialize(requestBody), Encoding.UTF8, "application/json");
+
+            var response = await httpClient.SendAsync(request);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                var errorContent = await response.Content.ReadAsStringAsync();
+                _logger.LogError("GitHub token exchange failed: {StatusCode} - {Error}", response.StatusCode, errorContent);
+                throw new Exception("GitHub token exchange failed.");
+            }
+
+            var tokenResponse = await response.Content.ReadFromJsonAsync<GitHubTokenResponse>();
+            return tokenResponse?.AccessToken;
+        }
+
+        /// <summary>
+        /// (CẬP NHẬT) Dùng Access Token để lấy thông tin User từ GitHub.
+        /// </summary>
+        private async Task<ExternalUser> GetGitHubUserInfoAsync(string accessToken)
+        {
+            var httpClient = _httpClientFactory.CreateClient();
+            httpClient.DefaultRequestHeaders.UserAgent.ParseAdd("CryptoTrading-App");
+            httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("token", accessToken);
+
+            // 1. Lấy thông tin cơ bản
+            var userResponse = await httpClient.GetFromJsonAsync<GitHubUser>("https://api.github.com/user");
+
+            if (userResponse == null)
+            {
+                throw new Exception("Could not retrieve GitHub user information.");
+            }
+
+            // 2. Nếu email null (rất phổ biến), thử lấy từ /user/emails
+            if (string.IsNullOrEmpty(userResponse.Email))
+            {
+                _logger.LogWarning("GitHub /user did not return email. Trying /user/emails.");
+                var emailsResponse = await httpClient.GetFromJsonAsync<List<GitHubUserEmail>>("https://api.github.com/user/emails");
+                
+                var primaryEmail = emailsResponse?.FirstOrDefault(e => e.Primary && e.Verified);
+                if (primaryEmail != null)
+                {
+                    userResponse.Email = primaryEmail.Email;
+                }
+            }
+
+            if (string.IsNullOrEmpty(userResponse.Email))
+            {
+                throw new Exception("Could not retrieve primary email from GitHub. Ensure 'user:email' scope is granted on the client side.");
+            }
+
+            return new ExternalUser
+            {
+                Email = userResponse.Email,
+                Name = userResponse.Name ?? userResponse.Login
+            };
+        }
+
+        /// <summary>
+        /// (MỚI - Tái cấu trúc) Logic chung để xử lý đăng nhập/đăng ký
+        /// </summary>
+        private async Task<AuthResponseDto> HandleExternalUserLogin(string email, string? fullName, string provider)
+        {
+            if (string.IsNullOrEmpty(email))
+            {
+                throw new Exception($"Could not retrieve email from {provider}.");
+            }
+            
+            var user = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Email == email);
+
+            if (user == null)
+            {
+                // Tự động đăng ký
+                user = new User
+                {
+                    Email = email,
+                    // Tạo một mật khẩu ngẫu nhiên, an toàn vì không ai dùng nó
+                    PasswordHash = BCrypt.Net.BCrypt.HashPassword(Guid.NewGuid().ToString() + "P@ssw0rd!"),
+                    FullName = fullName,
+                    EmailConfirmed = true, // Đã xác thực qua provider
+                    CreatedAt = _dateTimeProvider.UtcNow,
+                    Role = "User", // Mặc định
+                    Level = "Beginner", // Mặc định
+                    IsActive = true
+                };
+                await _unitOfWork.Users.AddAsync(user);
+                await _unitOfWork.SaveChangesAsync(); // Lưu để lấy UserId
+                _logger.LogInformation("New user registered via {Provider}: {Email}", provider, user.Email);
+            }
+            else
+            {
+                // Đã có, cập nhật last login
+                user.LastLoginAt = _dateTimeProvider.UtcNow;
+                _unitOfWork.Users.Update(user);
+            }
+
+            // Ghi lại hoạt động đăng nhập
+            await _unitOfWork.LoginActivities.AddAsync(new LoginActivity
+            {
+                UserId = user.Id,
+                Ip = _httpContextAccessor.HttpContext?.Connection?.RemoteIpAddress?.ToString() ?? "unknown",
+                UserAgent = _httpContextAccessor.HttpContext?.Request.Headers["User-Agent"].ToString(),
+                Success = true,
+                CreatedAt = DateTime.UtcNow
+            });
+            
+            // 3. Tạo JWT riêng của hệ thống
+            var accessToken = GenerateJwtToken(user);
+            var refreshToken = GenerateRefreshToken();
+
+            user.RefreshToken = refreshToken;
+            user.RefreshTokenExpiryTime = DateTime.UtcNow.AddDays(_jwtSettings.RefreshTokenExpirationDays);
+            _unitOfWork.Users.Update(user);
+            await _unitOfWork.SaveChangesAsync();
+
+            return new AuthResponseDto
+            {
+                AccessToken = accessToken,
+                RefreshToken = refreshToken,
+                ExpiresAt = DateTime.UtcNow.AddMinutes(_jwtSettings.AccessTokenExpirationMinutes),
+                User = MapToUserDto(user) // Giả sử bạn có hàm MapToUserDto
+            };
+        }
+
+        private UserDto MapToUserDto(User user)
+        {
+            return new UserDto
+            {
+                Id = user.Id,
+                Email = user.Email,
+                FullName = user.FullName,
+                Role = user.Role,
+                Level = user.Level,
+                TwoFactorEnabled = user.TwoFactorEnabled
+            };
         }
 
         // ====== REVOKE TOKEN ======

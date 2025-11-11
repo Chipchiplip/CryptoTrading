@@ -29,6 +29,14 @@ namespace CryptoTrading.Data
         public DbSet<Level> Levels { get; set; }
         public DbSet<Role> Roles { get; set; }
 
+        // ========== BOT TRADING ==========
+        public DbSet<BotStrategyDefinition> BotStrategyDefinitions { get; set; }
+        public DbSet<TradingBot> TradingBots { get; set; }
+        public DbSet<TradingBotParameter> TradingBotParameters { get; set; }
+        public DbSet<TradingBotRuntimeSnapshot> TradingBotRuntimeSnapshots { get; set; }
+        public DbSet<TradingBotOrder> TradingBotOrders { get; set; }
+        public DbSet<TradingBotLog> TradingBotLogs { get; set; }
+
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
@@ -244,6 +252,126 @@ namespace CryptoTrading.Data
                     .WithMany()
                     .HasForeignKey(e => e.CryptocurrencyId)
                     .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            // ==========================
+            // BOT STRATEGY DEFINITION CONFIG
+            // ==========================
+            modelBuilder.Entity<BotStrategyDefinition>(entity =>
+            {
+                entity.ToTable("BotStrategyDefinitions");
+                entity.HasKey(e => e.Id);
+                entity.HasIndex(e => new { e.StrategyKey, e.Version }).IsUnique();
+                entity.HasIndex(e => e.IsActive);
+
+                entity.Property(e => e.CreatedAt)
+                      .HasDefaultValueSql("CURRENT_TIMESTAMP(6)");
+            });
+
+            // ==========================
+            // TRADING BOT CONFIG
+            // ==========================
+            modelBuilder.Entity<TradingBot>(entity =>
+            {
+                entity.ToTable("TradingBots");
+                entity.HasKey(e => e.Id);
+                entity.HasIndex(e => new { e.UserId, e.Status });
+                entity.HasIndex(e => e.NextRunAt);
+
+                entity.HasOne(e => e.User)
+                    .WithMany()
+                    .HasForeignKey(e => e.UserId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasOne(e => e.StrategyDefinition)
+                    .WithMany()
+                    .HasForeignKey(e => e.StrategyDefinitionId)
+                    .OnDelete(DeleteBehavior.Restrict);
+
+                entity.Property(e => e.CreatedAt)
+                      .HasDefaultValueSql("CURRENT_TIMESTAMP(6)");
+            });
+
+            // ==========================
+            // TRADING BOT PARAMETER CONFIG
+            // ==========================
+            modelBuilder.Entity<TradingBotParameter>(entity =>
+            {
+                entity.ToTable("TradingBotParameters");
+                entity.HasKey(e => e.Id);
+                entity.HasIndex(e => new { e.TradingBotId, e.ParameterKey });
+
+                entity.HasOne(e => e.TradingBot)
+                    .WithMany()
+                    .HasForeignKey(e => e.TradingBotId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                entity.Property(e => e.CreatedAt)
+                      .HasDefaultValueSql("CURRENT_TIMESTAMP(6)");
+            });
+
+            // ==========================
+            // TRADING BOT RUNTIME SNAPSHOT CONFIG
+            // ==========================
+            modelBuilder.Entity<TradingBotRuntimeSnapshot>(entity =>
+            {
+                entity.ToTable("TradingBotRuntimeSnapshots");
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.Id).ValueGeneratedOnAdd();
+                entity.HasIndex(e => new { e.TradingBotId, e.CapturedAt });
+
+                entity.HasOne(e => e.TradingBot)
+                    .WithMany()
+                    .HasForeignKey(e => e.TradingBotId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                entity.Property(e => e.CapturedAt)
+                      .HasDefaultValueSql("CURRENT_TIMESTAMP(6)");
+            });
+
+            // ==========================
+            // TRADING BOT ORDER CONFIG
+            // ==========================
+            modelBuilder.Entity<TradingBotOrder>(entity =>
+            {
+                entity.ToTable("TradingBotOrders");
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.Id).ValueGeneratedOnAdd();
+                entity.HasIndex(e => e.OrderId).IsUnique();
+                entity.HasIndex(e => new { e.TradingBotId, e.CreatedAt });
+
+                entity.HasOne(e => e.TradingBot)
+                    .WithMany()
+                    .HasForeignKey(e => e.TradingBotId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasOne(e => e.Order)
+                    .WithMany()
+                    .HasForeignKey(e => e.OrderId)
+                    .OnDelete(DeleteBehavior.Restrict);
+
+                entity.Property(e => e.CreatedAt)
+                      .HasDefaultValueSql("CURRENT_TIMESTAMP(6)");
+            });
+
+            // ==========================
+            // TRADING BOT LOG CONFIG
+            // ==========================
+            modelBuilder.Entity<TradingBotLog>(entity =>
+            {
+                entity.ToTable("TradingBotLogs");
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.Id).ValueGeneratedOnAdd();
+                entity.HasIndex(e => new { e.TradingBotId, e.CreatedAt });
+                entity.HasIndex(e => e.Level);
+
+                entity.HasOne(e => e.TradingBot)
+                    .WithMany()
+                    .HasForeignKey(e => e.TradingBotId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                entity.Property(e => e.CreatedAt)
+                      .HasDefaultValueSql("CURRENT_TIMESTAMP(6)");
             });
         }
     }
