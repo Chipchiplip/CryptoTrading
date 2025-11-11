@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { TrendingUp, TrendingDown, Info, Loader2, Search, ChevronDown } from 'lucide-react';
+import { TrendingUp, TrendingDown, Info, Loader2, Search, ChevronDown, CheckCircle2 } from 'lucide-react';
 import { Card } from '../../ui/card';
 import { Button } from '../../ui/button';
 import { Input } from '../../ui/input';
@@ -41,6 +41,13 @@ export default function Trade({ onNavigate }: TradeProps) {
   const [receiveAmount, setReceiveAmount] = useState('');
   const [limitPrice, setLimitPrice] = useState('');
   const [showPreview, setShowPreview] = useState(false);
+  const [showSuccessDialog, setShowSuccessDialog] = useState(false);
+  const [placedOrder, setPlacedOrder] = useState<any>(null);
+  const [placedOrderAmount, setPlacedOrderAmount] = useState<string>('');
+  const [placedOrderSide, setPlacedOrderSide] = useState<'buy' | 'sell'>('buy');
+  const [placedOrderType, setPlacedOrderType] = useState<'MARKET' | 'LIMIT'>('MARKET');
+  const [placedOrderPair, setPlacedOrderPair] = useState<string>('');
+  const [isPlacingOrder, setIsPlacingOrder] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadingChart, setLoadingChart] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -875,6 +882,9 @@ export default function Trade({ onNavigate }: TradeProps) {
   };
 
   const confirmOrder = async () => {
+    // Tránh double click
+    if (isPlacingOrder) return;
+    
     const amount = side === 'buy' ? buyAmount : sellAmount;
     if (!amount) return;
     if (orderType === 'LIMIT' && !limitPrice) {
@@ -883,6 +893,8 @@ export default function Trade({ onNavigate }: TradeProps) {
     }
     
     setError(null);
+    setIsPlacingOrder(true);
+    
     try {
       // Round quantity and price to proper precision
       const quantity = parseFloat(amount);
@@ -899,10 +911,21 @@ export default function Trade({ onNavigate }: TradeProps) {
       if (!res.ok) {
         setError(res.error);
         setShowPreview(false);
+        setIsPlacingOrder(false);
         return;
       }
       
+      // Lưu thông tin order đã đặt và số lượng trước khi clear
+      setPlacedOrder(res.data);
+      setPlacedOrderAmount(amount);
+      setPlacedOrderSide(side);
+      setPlacedOrderType(orderType);
+      setPlacedOrderPair(selectedPair);
+      
+      // Đóng preview dialog
       setShowPreview(false);
+      
+      // Clear form
       setBuyAmount('');
       setUseAmount('');
       setSellAmount('');
@@ -915,11 +938,19 @@ export default function Trade({ onNavigate }: TradeProps) {
         setBalances(balancesRes.data);
       }
       
-      onNavigate?.('orders');
+      // Hiển thị success dialog
+      setShowSuccessDialog(true);
+      setIsPlacingOrder(false);
     } catch (e: any) {
       setError(e?.message || 'Failed to place order');
       setShowPreview(false);
+      setIsPlacingOrder(false);
     }
+  };
+  
+  const handleGoToOrders = () => {
+    setShowSuccessDialog(false);
+    onNavigate?.('orders');
   };
 
   if (loading) {
@@ -1475,27 +1506,37 @@ export default function Trade({ onNavigate }: TradeProps) {
             </Button>
             <Button
               onClick={confirmOrder}
-              className="flex-1 font-bold py-6 text-lg shadow-lg transition-all transform hover:scale-[1.02] active:scale-[0.98] text-white"
+              disabled={isPlacingOrder}
+              className="flex-1 font-bold py-6 text-lg shadow-lg transition-all transform hover:scale-[1.02] active:scale-[0.98] text-white disabled:opacity-50 disabled:cursor-not-allowed"
               style={side === 'buy' 
                 ? { backgroundColor: '#00ac72' }
                 : { backgroundColor: '#ef4444' }
               }
               onMouseEnter={(e: React.MouseEvent<HTMLButtonElement>) => {
-                if (side === 'buy') {
-                  e.currentTarget.style.backgroundColor = '#009966';
-                } else {
-                  e.currentTarget.style.backgroundColor = '#dc2626';
+                if (!isPlacingOrder) {
+                  if (side === 'buy') {
+                    e.currentTarget.style.backgroundColor = '#009966';
+                  } else {
+                    e.currentTarget.style.backgroundColor = '#dc2626';
+                  }
                 }
               }}
               onMouseLeave={(e: React.MouseEvent<HTMLButtonElement>) => {
-                if (side === 'buy') {
-                  e.currentTarget.style.backgroundColor = '#00ac72';
-                } else {
-                  e.currentTarget.style.backgroundColor = '#ef4444';
+                if (!isPlacingOrder) {
+                  if (side === 'buy') {
+                    e.currentTarget.style.backgroundColor = '#00ac72';
+                  } else {
+                    e.currentTarget.style.backgroundColor = '#ef4444';
+                  }
                 }
               }}
             >
-              {side === 'buy' ? (
+              {isPlacingOrder ? (
+                <>
+                  <Loader2 className="w-5 h-5 mr-2 inline animate-spin" />
+                  Đang xử lý...
+                </>
+              ) : side === 'buy' ? (
                 <>
                   <TrendingUp className="w-5 h-5 mr-2 inline" />
                   Xác nhận Mua
@@ -1506,6 +1547,91 @@ export default function Trade({ onNavigate }: TradeProps) {
                   Xác nhận Bán
                 </>
               )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Success Dialog */}
+      <Dialog open={showSuccessDialog} onOpenChange={setShowSuccessDialog}>
+        <DialogContent 
+          className="!bg-black !border-gray-600 text-white shadow-2xl"
+          style={{ backgroundColor: '#0C121E' }}
+        >
+          <DialogHeader>
+            <DialogTitle className="text-center">Đặt lệnh thành công!</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="flex justify-center mb-4">
+              <div className="w-16 h-16 rounded-full bg-emerald-500/20 flex items-center justify-center">
+                <CheckCircle2 className="w-10 h-10 text-emerald-500" />
+              </div>
+            </div>
+            
+            {placedOrder && (
+              <div className="space-y-3 p-4 bg-gray-900/50 rounded-lg border border-gray-600/50">
+                <div className="flex justify-between">
+                  <span className="text-gray-300">Mã lệnh</span>
+                  <span className="text-white font-mono">#{placedOrder.id || placedOrder.orderId || 'N/A'}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-300">Cặp giao dịch</span>
+                  <span className="text-white">{placedOrderPair}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-300">Loại lệnh</span>
+                  <Badge className={placedOrderSide === 'buy' ? "bg-emerald-500/10 text-emerald-500" : "bg-red-500/10 text-red-500"}>
+                    {placedOrderSide === 'buy' ? 'BUY' : 'SELL'}
+                  </Badge>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-300">Loại</span>
+                  <Badge className="bg-blue-500/10 text-blue-500">{placedOrderType}</Badge>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-300">Số lượng</span>
+                  <span className="text-white">
+                    {placedOrderAmount} {placedOrderPair.split('/')[0]}
+                  </span>
+                </div>
+                {placedOrder.status && (
+                  <div className="flex justify-between border-t border-gray-700 pt-3">
+                    <span className="text-gray-300">Trạng thái</span>
+                    <Badge className={
+                      placedOrder.status === 'FILLED' ? 'bg-emerald-500/10 text-emerald-500' :
+                      placedOrder.status === 'PARTIALLY_FILLED' ? 'bg-yellow-500/10 text-yellow-500' :
+                      'bg-blue-500/10 text-blue-500'
+                    }>
+                      {placedOrder.status}
+                    </Badge>
+                  </div>
+                )}
+              </div>
+            )}
+            
+            <div className="text-center text-gray-400 text-sm mt-4">
+              Lệnh của bạn đã được đặt thành công!
+            </div>
+          </div>
+          <DialogFooter className="gap-3">
+            <Button 
+              onClick={() => setShowSuccessDialog(false)} 
+              className="flex-1 font-medium py-6 text-lg transition-all text-white border border-gray-600 hover:bg-gray-800"
+            >
+              Ở lại trang này
+            </Button>
+            <Button
+              onClick={handleGoToOrders}
+              className="flex-1 font-bold py-6 text-lg shadow-lg transition-all transform hover:scale-[1.02] active:scale-[0.98] text-white"
+              style={{ backgroundColor: '#00ac72' }}
+              onMouseEnter={(e: React.MouseEvent<HTMLButtonElement>) => {
+                e.currentTarget.style.backgroundColor = '#009966';
+              }}
+              onMouseLeave={(e: React.MouseEvent<HTMLButtonElement>) => {
+                e.currentTarget.style.backgroundColor = '#00ac72';
+              }}
+            >
+              Xem lệnh
             </Button>
           </DialogFooter>
         </DialogContent>

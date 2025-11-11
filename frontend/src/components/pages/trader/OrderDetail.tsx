@@ -1,17 +1,23 @@
 import React, { useState, useEffect } from 'react';
-import { ArrowLeft, Clock, CheckCircle2, XCircle, AlertCircle, Loader2 } from 'lucide-react';
+import { useSearchParams } from 'react-router-dom';
+import { ArrowLeft, Clock, CheckCircle2, XCircle, AlertCircle, Loader2, DollarSign, TrendingUp, TrendingDown } from 'lucide-react';
 import { Card } from '../../ui/card';
 import { Button } from '../../ui/button';
 import { Badge } from '../../ui/badge';
 import { Separator } from '../../ui/separator';
 import { TradingApi, OrderDetail as OrderDetailType, OrderStatus } from '../../../api/trading';
+import { useUserRole } from '../../../hooks/useUserRole';
 
 interface OrderDetailProps {
   orderId?: string;
   onNavigate?: (page: string) => void;
 }
 
-export default function OrderDetail({ orderId, onNavigate }: OrderDetailProps) {
+export default function OrderDetail({ orderId: propOrderId, onNavigate }: OrderDetailProps) {
+  const { isAdmin } = useUserRole();
+  const [searchParams] = useSearchParams();
+  const urlOrderId = searchParams.get('id') || searchParams.get('orderId');
+  const orderId = propOrderId || urlOrderId || '';
   const [order, setOrder] = useState<OrderDetailType | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -154,7 +160,9 @@ export default function OrderDetail({ orderId, onNavigate }: OrderDetailProps) {
         <Card className="lg:col-span-2 bg-gray-900 border-gray-800 p-6">
           <div className="flex items-center justify-between mb-6">
             <div>
-              <h1 className="text-2xl mb-1">Order #{order.id}</h1>
+              <h1 className="text-2xl mb-1">
+                {isAdmin ? `Order #${order.id}` : 'Order Details'}
+              </h1>
               <p className="text-gray-400">{order.symbol}</p>
             </div>
             <Badge className={
@@ -168,51 +176,116 @@ export default function OrderDetail({ orderId, onNavigate }: OrderDetailProps) {
             </Badge>
           </div>
 
+          {/* Summary Cards */}
+          <div className="grid md:grid-cols-3 gap-4 mb-6">
+            <Card className="bg-gray-800/50 border-gray-700 p-4">
+              <div className="flex items-center gap-2 mb-2">
+                {order.side === 'BUY' ? (
+                  <TrendingUp className="w-5 h-5 text-emerald-500" />
+                ) : (
+                  <TrendingDown className="w-5 h-5 text-red-500" />
+                )}
+                <div className="text-gray-400 text-sm">Side</div>
+              </div>
+              <Badge className={order.side === 'BUY' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-red-500/10 text-red-500'}>
+                {order.side}
+              </Badge>
+            </Card>
+            
+            <Card className="bg-gray-800/50 border-gray-700 p-4">
+              <div className="flex items-center gap-2 mb-2">
+                <DollarSign className="w-5 h-5 text-blue-500" />
+                <div className="text-gray-400 text-sm">Order Type</div>
+              </div>
+              <div className="text-white font-semibold">{order.type}</div>
+            </Card>
+            
+            <Card className="bg-gray-800/50 border-gray-700 p-4">
+              <div className="text-gray-400 text-sm mb-2">Price</div>
+              <div className="text-white font-semibold text-lg">
+                {order.price ? `$${order.price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : 'Market'}
+              </div>
+              {order.avgPrice && order.avgPrice !== order.price && (
+                <div className="text-gray-400 text-xs mt-1">
+                  Avg: ${order.avgPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </div>
+              )}
+            </Card>
+          </div>
+
+          {/* Detailed Information */}
           <div className="grid md:grid-cols-2 gap-6 mb-6">
             <div className="space-y-4">
+              <h3 className="text-lg font-semibold mb-3">Order Information</h3>
+              {isAdmin && (
+                <div>
+                  <div className="text-gray-400 text-sm mb-1">Order ID</div>
+                  <div className="text-white font-mono text-sm">{order.id}</div>
+                </div>
+              )}
+              <div>
+                <div className="text-gray-400 text-sm mb-1">Symbol</div>
+                <div className="text-white font-semibold">{order.symbol}</div>
+              </div>
               <div>
                 <div className="text-gray-400 text-sm mb-1">Order Type</div>
-                <div className="text-white">{order.type}</div>
-              </div>
-              <div>
-                <div className="text-gray-400 text-sm mb-1">Side</div>
-                <Badge className={order.side === 'BUY' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-red-500/10 text-red-500'}>
-                  {order.side}
+                <Badge variant="outline" className="border-gray-700">
+                  {order.type}
                 </Badge>
               </div>
-              <div>
-                <div className="text-gray-400 text-sm mb-1">
-                  {order.type === 'LIMIT' ? 'Limit Price' : 'Order Type'}
+              {order.type === 'LIMIT' && order.price && (
+                <div>
+                  <div className="text-gray-400 text-sm mb-1">Limit Price</div>
+                  <div className="text-white text-xl font-semibold">
+                    ${order.price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </div>
                 </div>
-                <div className="text-white text-xl">
-                  {order.price ? `$${order.price.toFixed(2)}` : order.type}
-                </div>
-              </div>
+              )}
               {order.avgPrice && (
                 <div>
                   <div className="text-gray-400 text-sm mb-1">Average Fill Price</div>
-                  <div className="text-white text-xl">${order.avgPrice.toFixed(2)}</div>
+                  <div className="text-white text-xl font-semibold text-emerald-500">
+                    ${order.avgPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </div>
                 </div>
               )}
             </div>
 
             <div className="space-y-4">
+              <h3 className="text-lg font-semibold mb-3">Quantity & Fills</h3>
               <div>
-                <div className="text-gray-400 text-sm mb-1">Quantity</div>
-                <div className="text-white">{order.quantity} {baseAsset}</div>
+                <div className="text-gray-400 text-sm mb-1">Total Quantity</div>
+                <div className="text-white text-xl font-semibold">
+                  {order.quantity.toLocaleString('en-US', { maximumFractionDigits: 8 })} {baseAsset}
+                </div>
               </div>
               <div>
                 <div className="text-gray-400 text-sm mb-1">Filled</div>
-                <div className="text-emerald-500">{order.filled} {baseAsset} ({fillPercentage.toFixed(1)}%)</div>
+                <div className="text-emerald-500 text-xl font-semibold">
+                  {order.filled.toLocaleString('en-US', { maximumFractionDigits: 8 })} {baseAsset}
+                </div>
+                <div className="text-gray-400 text-xs mt-1">{fillPercentage.toFixed(2)}% filled</div>
               </div>
               <div>
                 <div className="text-gray-400 text-sm mb-1">Remaining</div>
-                <div className="text-yellow-500">{order.remaining} {baseAsset}</div>
+                <div className="text-yellow-500 text-xl font-semibold">
+                  {order.remaining.toLocaleString('en-US', { maximumFractionDigits: 8 })} {baseAsset}
+                </div>
               </div>
               {order.totalFees !== undefined && (
                 <div>
                   <div className="text-gray-400 text-sm mb-1">Total Fees</div>
-                  <div className="text-white">${order.totalFees.toFixed(2)}</div>
+                  <div className="text-white text-lg font-semibold">
+                    ${order.totalFees.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </div>
+                </div>
+              )}
+              {order.avgPrice && order.filled > 0 && (
+                <div>
+                  <div className="text-gray-400 text-sm mb-1">Total Value</div>
+                  <div className="text-white text-lg font-semibold">
+                    ${(order.avgPrice * order.filled).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </div>
                 </div>
               )}
             </div>
@@ -225,54 +298,112 @@ export default function OrderDetail({ orderId, onNavigate }: OrderDetailProps) {
             <h2 className="text-xl mb-4">Fill History</h2>
             {order.trades && order.trades.length > 0 ? (
               <>
-                <div className="space-y-3">
-                  {order.trades.map((trade) => {
+                <div className="space-y-3 mb-4">
+                  {order.trades.map((trade, index) => {
                     const total = trade.price * trade.quantity;
                     return (
-                      <div key={trade.id} className="flex items-center justify-between p-4 bg-gray-800 rounded-lg">
-                        <div>
-                          <div className="text-white mb-1">
-                            {trade.quantity} {baseAsset} @ ${trade.price.toFixed(2)}
+                      <Card key={trade.id} className="bg-gray-800/50 border-gray-700 p-4">
+                        <div className="flex items-center justify-between">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-3 mb-2">
+                              <div className="w-8 h-8 rounded-full bg-emerald-500/10 flex items-center justify-center">
+                                <span className="text-emerald-500 text-xs font-bold">#{index + 1}</span>
+                              </div>
+                              <div>
+                                <div className="text-white font-semibold mb-1">
+                                  {trade.quantity.toLocaleString('en-US', { maximumFractionDigits: 8 })} {baseAsset} @ ${trade.price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                </div>
+                                <div className="text-sm text-gray-400">
+                                  {new Date(trade.createdAt).toLocaleString('vi-VN', { 
+                                    timeZone: 'Asia/Ho_Chi_Minh',
+                                    year: 'numeric',
+                                    month: 'short',
+                                    day: 'numeric',
+                                    hour: '2-digit',
+                                    minute: '2-digit',
+                                    second: '2-digit'
+                                  })}
+                                </div>
+                              </div>
+                            </div>
                           </div>
-                          <div className="text-sm text-gray-400">
-                            {new Date(trade.createdAt).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}
+                          <div className="text-right ml-4">
+                            <div className="text-white font-semibold text-lg mb-1">
+                              ${total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </div>
+                            <div className="text-sm text-gray-400">
+                              Fee: ${trade.fee.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </div>
                           </div>
                         </div>
-                        <div className="text-right">
-                          <div className="text-white mb-1">${total.toFixed(2)}</div>
-                          <div className="text-sm text-gray-400">Fee: ${trade.fee.toFixed(2)}</div>
-                        </div>
-                      </div>
+                      </Card>
                     );
                   })}
                 </div>
-                {order.totalFees !== undefined && (
-                  <div className="mt-4 p-4 bg-gray-800/50 rounded-lg flex items-center justify-between">
-                    <span className="text-gray-400">Total Fees</span>
-                    <span className="text-white">${order.totalFees.toFixed(2)}</span>
+                <Card className="bg-emerald-500/10 border-emerald-500/20 p-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="text-gray-300 text-sm mb-1">Total Filled</div>
+                      <div className="text-white font-semibold">
+                        {order.filled.toLocaleString('en-US', { maximumFractionDigits: 8 })} {baseAsset}
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-gray-300 text-sm mb-1">Total Fees</div>
+                      <div className="text-white font-semibold">
+                        ${order.totalFees?.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '0.00'}
+                      </div>
+                    </div>
                   </div>
-                )}
+                </Card>
               </>
             ) : (
-              <div className="text-center py-8 text-gray-400">
-                No fills yet
-              </div>
+              <Card className="bg-gray-800/50 border-gray-700 p-8">
+                <div className="text-center text-gray-400">
+                  <Clock className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                  <p>No fills yet</p>
+                  <p className="text-sm mt-2">This order has not been filled yet.</p>
+                </div>
+              </Card>
             )}
           </div>
 
           <Separator className="my-6 bg-gray-800" />
 
           {/* Timestamps */}
-          <div className="grid md:grid-cols-2 gap-4 text-sm">
-            <div>
-              <div className="text-gray-400 mb-1">Created At</div>
-              <div className="text-white">{new Date(order.createdAt).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}</div>
+          <Card className="bg-gray-800/50 border-gray-700 p-4">
+            <h3 className="text-lg font-semibold mb-4">Timeline</h3>
+            <div className="grid md:grid-cols-2 gap-4">
+              <div>
+                <div className="text-gray-400 text-sm mb-1">Created At</div>
+                <div className="text-white font-semibold">
+                  {new Date(order.createdAt).toLocaleString('vi-VN', { 
+                    timeZone: 'Asia/Ho_Chi_Minh',
+                    year: 'numeric',
+                    month: 'short',
+                    day: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    second: '2-digit'
+                  })}
+                </div>
+              </div>
+              <div>
+                <div className="text-gray-400 text-sm mb-1">Last Updated</div>
+                <div className="text-white font-semibold">
+                  {new Date(order.updatedAt).toLocaleString('vi-VN', { 
+                    timeZone: 'Asia/Ho_Chi_Minh',
+                    year: 'numeric',
+                    month: 'short',
+                    day: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    second: '2-digit'
+                  })}
+                </div>
+              </div>
             </div>
-            <div>
-              <div className="text-gray-400 mb-1">Last Updated</div>
-              <div className="text-white">{new Date(order.updatedAt).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}</div>
-            </div>
-          </div>
+          </Card>
         </Card>
 
         {/* Timeline & Actions */}

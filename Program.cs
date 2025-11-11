@@ -171,6 +171,9 @@ builder.Services.AddSingleton<CryptoTrading.Services.Bot.BotSignalRDispatcher>()
 // Bot Strategies
 builder.Services.AddTransient<CryptoTrading.Services.Bot.Strategies.GridTradingStrategy>();
 
+// VNPay Service
+builder.Services.AddScoped<CryptoTrading.Services.Payment.IVnPayService, CryptoTrading.Services.Payment.VnPayService>();
+
 // Background Services
 builder.Services.AddHostedService<CryptoSyncBackgroundService>();
 builder.Services.AddHostedService<CryptoTrading.Services.RealtimeBroadcastService>();

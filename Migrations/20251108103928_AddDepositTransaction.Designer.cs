@@ -4,6 +4,7 @@ using CryptoTrading.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace CryptoTrading.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20251108103928_AddDepositTransaction")]
+    partial class AddDepositTransaction
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -21,66 +24,6 @@ namespace CryptoTrading.Migrations
                 .HasAnnotation("Relational:MaxIdentifierLength", 64);
 
             MySqlModelBuilderExtensions.AutoIncrementColumns(modelBuilder);
-
-            modelBuilder.Entity("CryptoTrading.Models.BotStrategyDefinition", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("char(36)");
-
-                    b.Property<string>("AssemblyName")
-                        .HasMaxLength(500)
-                        .HasColumnType("varchar(500)");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("datetime(6)")
-                        .HasDefaultValueSql("CURRENT_TIMESTAMP(6)");
-
-                    b.Property<string>("Description")
-                        .HasMaxLength(1000)
-                        .HasColumnType("varchar(1000)");
-
-                    b.Property<string>("DisplayName")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("varchar(200)");
-
-                    b.Property<string>("EntryType")
-                        .HasMaxLength(500)
-                        .HasColumnType("varchar(500)");
-
-                    b.Property<bool>("IsActive")
-                        .HasColumnType("tinyint(1)");
-
-                    b.Property<int>("MaxConcurrency")
-                        .HasColumnType("int");
-
-                    b.Property<string>("ParametersSchema")
-                        .HasColumnType("JSON");
-
-                    b.Property<string>("StrategyKey")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("varchar(100)");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("datetime(6)");
-
-                    b.Property<string>("Version")
-                        .IsRequired()
-                        .HasMaxLength(20)
-                        .HasColumnType("varchar(20)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("IsActive");
-
-                    b.HasIndex("StrategyKey", "Version")
-                        .IsUnique();
-
-                    b.ToTable("BotStrategyDefinitions", (string)null);
-                });
 
             modelBuilder.Entity("CryptoTrading.Models.CryptoPrice", b =>
                 {
@@ -232,79 +175,6 @@ namespace CryptoTrading.Migrations
                     b.HasIndex("UserId", "CreatedAt");
 
                     b.ToTable("DepositTransactions", (string)null);
-                });
-
-            modelBuilder.Entity("CryptoTrading.Models.Level", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime(6)");
-
-                    b.Property<string>("Description")
-                        .HasColumnType("longtext");
-
-                    b.Property<bool>("IsDeleted")
-                        .HasColumnType("tinyint(1)");
-
-                    b.Property<decimal?>("MaxBalance")
-                        .HasColumnType("decimal(65,30)");
-
-                    b.Property<decimal?>("MinBalance")
-                        .HasColumnType("decimal(65,30)");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasColumnType("longtext");
-
-                    b.Property<int>("Number")
-                        .HasColumnType("int");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("datetime(6)");
-
-                    b.HasKey("Id");
-
-                    b.ToTable("Levels");
-                });
-
-            modelBuilder.Entity("CryptoTrading.Models.LoginActivity", b =>
-                {
-                    b.Property<long>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint");
-
-                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<long>("Id"));
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime(6)");
-
-                    b.Property<string>("Ip")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("varchar(64)");
-
-                    b.Property<bool>("Success")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("tinyint(1)")
-                        .HasDefaultValue(true);
-
-                    b.Property<string>("UserAgent")
-                        .HasMaxLength(255)
-                        .HasColumnType("varchar(255)");
-
-                    b.Property<int>("UserId")
-                        .HasColumnType("int");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("UserId", "CreatedAt");
-
-                    b.ToTable("LoginActivity", (string)null);
                 });
 
             modelBuilder.Entity("CryptoTrading.Models.MarketStat", b =>
@@ -463,233 +333,6 @@ namespace CryptoTrading.Migrations
                     b.ToTable("Trades", (string)null);
                 });
 
-            modelBuilder.Entity("CryptoTrading.Models.TradingBot", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("char(36)");
-
-                    b.Property<string>("BaseAsset")
-                        .IsRequired()
-                        .HasMaxLength(20)
-                        .HasColumnType("varchar(20)");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("datetime(6)")
-                        .HasDefaultValueSql("CURRENT_TIMESTAMP(6)");
-
-                    b.Property<int>("ExecutionIntervalSeconds")
-                        .HasColumnType("int");
-
-                    b.Property<string>("LastStatusReason")
-                        .HasMaxLength(1000)
-                        .HasColumnType("varchar(1000)");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("varchar(200)");
-
-                    b.Property<DateTime?>("NextRunAt")
-                        .HasColumnType("datetime(6)");
-
-                    b.Property<string>("Parameters")
-                        .HasColumnType("JSON");
-
-                    b.Property<string>("PositionSizing")
-                        .HasColumnType("JSON");
-
-                    b.Property<string>("QuoteAsset")
-                        .IsRequired()
-                        .HasMaxLength(20)
-                        .HasColumnType("varchar(20)");
-
-                    b.Property<string>("RiskProfile")
-                        .HasMaxLength(50)
-                        .HasColumnType("varchar(50)");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("varchar(50)");
-
-                    b.Property<Guid>("StrategyDefinitionId")
-                        .HasColumnType("char(36)");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("datetime(6)");
-
-                    b.Property<int>("UserId")
-                        .HasColumnType("int");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("NextRunAt");
-
-                    b.HasIndex("StrategyDefinitionId");
-
-                    b.HasIndex("UserId", "Status");
-
-                    b.ToTable("TradingBots", (string)null);
-                });
-
-            modelBuilder.Entity("CryptoTrading.Models.TradingBotLog", b =>
-                {
-                    b.Property<ulong>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint unsigned");
-
-                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<ulong>("Id"));
-
-                    b.Property<string>("Category")
-                        .HasMaxLength(50)
-                        .HasColumnType("varchar(50)");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("datetime(6)")
-                        .HasDefaultValueSql("CURRENT_TIMESTAMP(6)");
-
-                    b.Property<string>("Level")
-                        .IsRequired()
-                        .HasMaxLength(20)
-                        .HasColumnType("varchar(20)");
-
-                    b.Property<string>("Message")
-                        .IsRequired()
-                        .HasMaxLength(2000)
-                        .HasColumnType("varchar(2000)");
-
-                    b.Property<string>("Payload")
-                        .HasColumnType("JSON");
-
-                    b.Property<Guid>("TradingBotId")
-                        .HasColumnType("char(36)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("Level");
-
-                    b.HasIndex("TradingBotId", "CreatedAt");
-
-                    b.ToTable("TradingBotLogs", (string)null);
-                });
-
-            modelBuilder.Entity("CryptoTrading.Models.TradingBotOrder", b =>
-                {
-                    b.Property<ulong>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint unsigned");
-
-                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<ulong>("Id"));
-
-                    b.Property<DateTime>("CreatedAt")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("datetime(6)")
-                        .HasDefaultValueSql("CURRENT_TIMESTAMP(6)");
-
-                    b.Property<string>("Intent")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("varchar(50)");
-
-                    b.Property<ulong>("OrderId")
-                        .HasColumnType("BIGINT UNSIGNED");
-
-                    b.Property<string>("SignalId")
-                        .HasMaxLength(100)
-                        .HasColumnType("varchar(100)");
-
-                    b.Property<Guid>("TradingBotId")
-                        .HasColumnType("char(36)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("OrderId")
-                        .IsUnique();
-
-                    b.HasIndex("TradingBotId", "CreatedAt");
-
-                    b.ToTable("TradingBotOrders", (string)null);
-                });
-
-            modelBuilder.Entity("CryptoTrading.Models.TradingBotParameter", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("char(36)");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("datetime(6)")
-                        .HasDefaultValueSql("CURRENT_TIMESTAMP(6)");
-
-                    b.Property<string>("ParameterKey")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("varchar(100)");
-
-                    b.Property<string>("ParameterValue")
-                        .IsRequired()
-                        .HasColumnType("longtext");
-
-                    b.Property<Guid>("TradingBotId")
-                        .HasColumnType("char(36)");
-
-                    b.Property<string>("ValueType")
-                        .HasMaxLength(20)
-                        .HasColumnType("varchar(20)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("TradingBotId", "ParameterKey");
-
-                    b.ToTable("TradingBotParameters", (string)null);
-                });
-
-            modelBuilder.Entity("CryptoTrading.Models.TradingBotRuntimeSnapshot", b =>
-                {
-                    b.Property<ulong>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint unsigned");
-
-                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<ulong>("Id"));
-
-                    b.Property<DateTime>("CapturedAt")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("datetime(6)")
-                        .HasDefaultValueSql("CURRENT_TIMESTAMP(6)");
-
-                    b.Property<string>("LastSignal")
-                        .HasMaxLength(500)
-                        .HasColumnType("varchar(500)");
-
-                    b.Property<DateTime?>("NextTickAt")
-                        .HasColumnType("datetime(6)");
-
-                    b.Property<string>("OpenPositionSummary")
-                        .HasColumnType("JSON");
-
-                    b.Property<string>("RuntimeState")
-                        .IsRequired()
-                        .HasColumnType("JSON");
-
-                    b.Property<Guid>("TradingBotId")
-                        .HasColumnType("char(36)");
-
-                    b.Property<DateTime?>("Version")
-                        .IsConcurrencyToken()
-                        .ValueGeneratedOnAddOrUpdate()
-                        .HasColumnType("timestamp(6)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("TradingBotId", "CapturedAt");
-
-                    b.ToTable("TradingBotRuntimeSnapshots", (string)null);
-                });
-
             modelBuilder.Entity("CryptoTrading.Models.User", b =>
                 {
                     b.Property<int>("Id")
@@ -697,14 +340,6 @@ namespace CryptoTrading.Migrations
                         .HasColumnType("int");
 
                     MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<string>("AvatarUrl")
-                        .HasMaxLength(500)
-                        .HasColumnType("varchar(500)");
-
-                    b.Property<string>("Bio")
-                        .HasMaxLength(200)
-                        .HasColumnType("varchar(200)");
 
                     b.Property<DateTime>("CreatedAt")
                         .ValueGeneratedOnAdd()
@@ -728,20 +363,8 @@ namespace CryptoTrading.Migrations
                     b.Property<string>("FullName")
                         .HasColumnType("LONGTEXT");
 
-                    b.Property<bool>("IsActive")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("tinyint(1)")
-                        .HasDefaultValue(true);
-
                     b.Property<DateTime?>("LastLoginAt")
                         .HasColumnType("datetime(6)");
-
-                    b.Property<string>("Level")
-                        .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasMaxLength(50)
-                        .HasColumnType("varchar(50)")
-                        .HasDefaultValue("Beginner");
 
                     b.Property<string>("PasswordHash")
                         .IsRequired()
@@ -753,26 +376,11 @@ namespace CryptoTrading.Migrations
                     b.Property<DateTime?>("PasswordResetTokenExpiry")
                         .HasColumnType("datetime(6)");
 
-                    b.Property<string>("PhoneNumber")
-                        .HasMaxLength(20)
-                        .HasColumnType("varchar(20)");
-
                     b.Property<string>("RefreshToken")
                         .HasColumnType("LONGTEXT");
 
                     b.Property<DateTime?>("RefreshTokenExpiryTime")
                         .HasColumnType("datetime(6)");
-
-                    b.Property<string>("Role")
-                        .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasMaxLength(50)
-                        .HasColumnType("varchar(50)")
-                        .HasDefaultValue("User");
-
-                    b.Property<string>("Timezone")
-                        .HasMaxLength(50)
-                        .HasColumnType("varchar(50)");
 
                     b.Property<bool>("TwoFactorEnabled")
                         .HasColumnType("tinyint(1)");
@@ -784,12 +392,6 @@ namespace CryptoTrading.Migrations
 
                     b.HasIndex("Email")
                         .IsUnique();
-
-                    b.HasIndex("IsActive");
-
-                    b.HasIndex("Level");
-
-                    b.HasIndex("Role");
 
                     b.ToTable("Users", (string)null);
                 });
@@ -883,26 +485,6 @@ namespace CryptoTrading.Migrations
                     b.ToTable("WalletMovements", (string)null);
                 });
 
-            modelBuilder.Entity("Role", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<string>("Description")
-                        .HasColumnType("longtext");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasColumnType("longtext");
-
-                    b.HasKey("Id");
-
-                    b.ToTable("Roles");
-                });
-
             modelBuilder.Entity("CryptoTrading.Models.CryptoPrice", b =>
                 {
                     b.HasOne("CryptoTrading.Models.Cryptocurrency", "Cryptocurrency")
@@ -915,17 +497,6 @@ namespace CryptoTrading.Migrations
                 });
 
             modelBuilder.Entity("CryptoTrading.Models.DepositTransaction", b =>
-                {
-                    b.HasOne("CryptoTrading.Models.User", "User")
-                        .WithMany()
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("User");
-                });
-
-            modelBuilder.Entity("CryptoTrading.Models.LoginActivity", b =>
                 {
                     b.HasOne("CryptoTrading.Models.User", "User")
                         .WithMany()
@@ -991,77 +562,6 @@ namespace CryptoTrading.Migrations
                     b.Navigation("Cryptocurrency");
 
                     b.Navigation("Order");
-                });
-
-            modelBuilder.Entity("CryptoTrading.Models.TradingBot", b =>
-                {
-                    b.HasOne("CryptoTrading.Models.BotStrategyDefinition", "StrategyDefinition")
-                        .WithMany()
-                        .HasForeignKey("StrategyDefinitionId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("CryptoTrading.Models.User", "User")
-                        .WithMany()
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("StrategyDefinition");
-
-                    b.Navigation("User");
-                });
-
-            modelBuilder.Entity("CryptoTrading.Models.TradingBotLog", b =>
-                {
-                    b.HasOne("CryptoTrading.Models.TradingBot", "TradingBot")
-                        .WithMany()
-                        .HasForeignKey("TradingBotId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("TradingBot");
-                });
-
-            modelBuilder.Entity("CryptoTrading.Models.TradingBotOrder", b =>
-                {
-                    b.HasOne("CryptoTrading.Models.Order", "Order")
-                        .WithMany()
-                        .HasForeignKey("OrderId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("CryptoTrading.Models.TradingBot", "TradingBot")
-                        .WithMany()
-                        .HasForeignKey("TradingBotId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Order");
-
-                    b.Navigation("TradingBot");
-                });
-
-            modelBuilder.Entity("CryptoTrading.Models.TradingBotParameter", b =>
-                {
-                    b.HasOne("CryptoTrading.Models.TradingBot", "TradingBot")
-                        .WithMany()
-                        .HasForeignKey("TradingBotId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("TradingBot");
-                });
-
-            modelBuilder.Entity("CryptoTrading.Models.TradingBotRuntimeSnapshot", b =>
-                {
-                    b.HasOne("CryptoTrading.Models.TradingBot", "TradingBot")
-                        .WithMany()
-                        .HasForeignKey("TradingBotId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("TradingBot");
                 });
 
             modelBuilder.Entity("CryptoTrading.Models.UserWatchlist", b =>

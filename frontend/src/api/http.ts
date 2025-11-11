@@ -19,19 +19,54 @@ try {
   console.warn('[http] Failed to load token from storage:', e);
 }
 
-// ✅ FIX: Thêm parameter newRefreshToken
+// ✅ Giữ logic từ feature/mysql-database-integration
+// Lắng nghe sự thay đổi localStorage từ các tab khác để đồng bộ token
+if (typeof window !== 'undefined') {
+  window.addEventListener('storage', (e) => {
+    if (e.key === TOKEN_STORAGE_KEY) {
+      console.log('[http] Token changed in another tab, updating...');
+      accessToken = e.newValue;
+      // Nếu token bị xóa ở tab khác, redirect về login
+      if (
+        !e.newValue &&
+        !window.location.pathname.startsWith('/login') &&
+        !window.location.pathname.startsWith('/register')
+      ) {
+        const traderRoutes = [
+          '/trader-dashboard',
+          '/watchlist',
+          '/trade',
+          '/orders',
+          '/portfolio',
+          '/wallets',
+          '/deposit',
+          '/withdraw',
+          '/subscription',
+          '/settings',
+          '/market',
+        ];
+        if (traderRoutes.some((route) => window.location.pathname.startsWith(route))) {
+          console.warn('[http] Token cleared in another tab, redirecting to login');
+          window.location.href = '/login';
+        }
+      }
+    }
+  });
+}
+
+// ✅ Hợp nhất với fix từ feature/watchlist-portfolio
 export function setAccessToken(
-  token: string | null, 
-  user: UserInfo | null, 
+  token: string | null,
+  user: UserInfo | null,
   newRefreshToken?: string | null
 ) {
   accessToken = token;
-  refreshToken = newRefreshToken || null; // ✅ Sửa lỗi 1
-  
+  refreshToken = newRefreshToken || null;
+
   try {
     if (token && user) {
       localStorage.setItem(TOKEN_STORAGE_KEY, token);
-      if (newRefreshToken) { // ✅ Sửa lỗi 2
+      if (newRefreshToken) {
         localStorage.setItem(REFRESH_TOKEN_STORAGE_KEY, newRefreshToken);
       }
       localStorage.setItem(USER_INFO_KEY, JSON.stringify(user));
@@ -48,14 +83,15 @@ export function setAccessToken(
 }
 
 export function getAccessToken(): string | null {
-  if (!accessToken) {
-    try {
-      accessToken = localStorage.getItem(TOKEN_STORAGE_KEY);
-    } catch (e) {
-      console.warn('[http] Failed to load token from storage:', e);
-    }
+  try {
+    const token = localStorage.getItem(TOKEN_STORAGE_KEY);
+    accessToken = token;
+    return token;
+  } catch (e) {
+    console.warn('[http] Failed to load token from storage:', e);
+    accessToken = null;
+    return null;
   }
-  return accessToken;
 }
 
 export function getRefreshToken(): string | null {
@@ -69,12 +105,9 @@ export function getRefreshToken(): string | null {
   return refreshToken;
 }
 
-// ✅ FIX: Bỏ comment unused function warning
 async function refreshAuthToken(): Promise<boolean> {
   const currentRefreshToken = getRefreshToken();
-  if (!currentRefreshToken) {
-    return false;
-  }
+  if (!currentRefreshToken) return false;
 
   try {
     const res = await fetch('/api/auth/refresh', {
@@ -90,7 +123,7 @@ async function refreshAuthToken(): Promise<boolean> {
       return false;
     }
 
-    // ✅ FIX: Thêm parameter thứ 3 khi gọi setAccessToken
+    // ✅ Giữ fix thêm refreshToken
     setAccessToken(json.accessToken, json.user, json.refreshToken);
     return true;
   } catch (e) {
@@ -140,55 +173,68 @@ export async function authFetch(input: RequestInfo | URL, init?: RequestInit) {
   const url = typeof input === 'string' ? input : input.toString();
   const token = getAccessToken();
   const headers = new Headers(init?.headers || {});
-  
+
   if (token) {
     headers.set('Authorization', `Bearer ${token}`);
   } else {
     console.warn('[http] No access token available for request:', url);
   }
-  
+
   console.log('[http] Fetching:', url, { method: init?.method || 'GET', hasAuth: !!token });
-  
+
   try {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 10000);
-    
-    const res = await fetch(input, { 
-      ...init, 
-      headers, 
+
+    const res = await fetch(input, {
+      ...init,
+      headers,
       credentials: 'include',
-      signal: controller.signal
+      signal: controller.signal,
     });
-    
+
     clearTimeout(timeoutId);
     console.log('[http] Response:', url, { status: res.status, statusText: res.statusText });
-    
-    // ✅ OPTIONAL: Tự động refresh token khi 401
+
     if (res.status === 401) {
       console.warn('[http] Unauthorized (401), attempting token refresh...');
       const refreshed = await refreshAuthToken();
-      
+
       if (refreshed) {
-        // Retry request với token mới
         const newToken = getAccessToken();
         if (newToken) {
           headers.set('Authorization', `Bearer ${newToken}`);
           return fetch(input, { ...init, headers, credentials: 'include' });
         }
       }
-      
-      // Nếu refresh thất bại → redirect login
+
       setAccessToken(null, null);
-      
-      if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/login') && !window.location.pathname.startsWith('/register')) {
-        const traderRoutes = ['/trader-dashboard', '/watchlist', '/trade', '/orders', '/portfolio', '/wallets', '/deposit', '/withdraw', '/subscription', '/settings', '/market'];
-        if (traderRoutes.some(route => window.location.pathname.startsWith(route))) {
+
+      if (
+        typeof window !== 'undefined' &&
+        !window.location.pathname.startsWith('/login') &&
+        !window.location.pathname.startsWith('/register')
+      ) {
+        const traderRoutes = [
+          '/trader-dashboard',
+          '/watchlist',
+          '/trade',
+          '/orders',
+          '/portfolio',
+          '/wallets',
+          '/deposit',
+          '/withdraw',
+          '/subscription',
+          '/settings',
+          '/market',
+        ];
+        if (traderRoutes.some((route) => window.location.pathname.startsWith(route))) {
           console.warn('[http] Redirecting to login due to 401');
           window.location.href = '/login';
         }
       }
     }
-    
+
     return res;
   } catch (e: any) {
     if (e.name === 'AbortError') {

@@ -136,15 +136,23 @@ function ProtectedRoute({ children, adminOnly = false }: { children: React.React
 }
 
 function TraderPage({ current, children }: { current: string; children: React.ReactNode }) {
-    const navigate = useNavigate();
-    const onNavigate = (page: string) => navigate(traderPathMap[page] || guestPathMap[page] || adminPathMap[page] || '/');
+  const navigate = useNavigate();
+  const onNavigate = (page: string, orderId?: string) => {
+    if (page === 'order-detail' && orderId) {
+      navigate(`${traderPathMap[page]}?id=${orderId}`);
+    } else {
+      navigate(traderPathMap[page] || guestPathMap[page] || adminPathMap[page] || '/');
+    }
+  };
+  
+  const childrenWithNavigate = React.Children.map(children, (child) => {
+    if (React.isValidElement(child)) {
+      return React.cloneElement(child, { onNavigate } as any);
+    }
+    return child;
+  });
+
     
-    const childrenWithNavigate = React.Children.map(children, (child) => {
-        if (React.isValidElement(child)) {
-            return React.cloneElement(child, { onNavigate } as any);
-        }
-        return child;
-    });
 
     return (
         <div className="dark min-h-screen bg-black">
