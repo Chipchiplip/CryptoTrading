@@ -53,7 +53,7 @@ namespace CryptoTrading.Services.Auth
             _configuration = configuration;
         }
 
-        // ====== ĐĂNG KÝ (REGISTER) - MẶC ĐỊNH ROLE/LEVEL ======
+        // ====== ĐĂNG KÝ (REGISTER) ======
         public async Task<AuthResponseDto> RegisterAsync(RegisterDto registerDto)
         {
             try
@@ -77,7 +77,6 @@ namespace CryptoTrading.Services.Auth
                     EmailConfirmationToken = emailConfirmToken,
                     EmailConfirmationTokenExpiry = _dateTimeProvider.UtcNow.AddHours(24),
 
-                    // ========== MẶC ĐỊNH ==========
                     Role = "User",
                     Level = "Beginner",
                     IsActive = true
@@ -283,7 +282,7 @@ namespace CryptoTrading.Services.Auth
         }
 
 
-        // ====== EXTERNAL AUTHENTICATION (THÊM/SỬA PHẦN NÀY) ======
+        // ====== EXTERNAL AUTHENTICATION ======
 
         public async Task<AuthResponseDto> LoginWithGoogleAsync(string idToken)
         {
@@ -294,7 +293,6 @@ namespace CryptoTrading.Services.Auth
                 throw new InvalidOperationException("Google Client ID is not configured.");
             }
 
-            // 1. Xác thực ID Token của Google
             GoogleJsonWebSignature.Payload payload;
             try
             {
@@ -309,28 +307,24 @@ namespace CryptoTrading.Services.Auth
                 throw new Exception("Invalid Google ID Token.");
             }
 
-            // 2. Kiểm tra/Tạo người dùng trong DB
             return await HandleExternalUserLogin(payload.Email, payload.Name, "Google");
         }
 
         public async Task<AuthResponseDto> LoginWithGitHubAsync(string code)
         {
-            // 1. Đổi 'code' lấy 'access_token' từ GitHub
             var accessToken = await GetGitHubAccessTokenAsync(code);
             if (string.IsNullOrEmpty(accessToken))
             {
                 throw new Exception("Could not retrieve GitHub access token.");
             }
 
-            // 2. Dùng 'access_token' để lấy thông tin người dùng
             var externalUser = await GetGitHubUserInfoAsync(accessToken);
 
-            // 3. Kiểm tra/Tạo người dùng trong DB
             return await HandleExternalUserLogin(externalUser.Email, externalUser.Name, "GitHub");
         }
 
         /// <summary>
-        /// (MỚI) Đổi code lấy Access Token từ GitHub.
+        /// Đổi code lấy Access Token từ GitHub.
         /// </summary>
         private async Task<string?> GetGitHubAccessTokenAsync(string code)
         {
@@ -370,7 +364,7 @@ namespace CryptoTrading.Services.Auth
         }
 
         /// <summary>
-        /// (CẬP NHẬT) Dùng Access Token để lấy thông tin User từ GitHub.
+        /// Dùng Access Token để lấy thông tin User từ GitHub.
         /// </summary>
         private async Task<ExternalUser> GetGitHubUserInfoAsync(string accessToken)
         {
@@ -378,7 +372,6 @@ namespace CryptoTrading.Services.Auth
             httpClient.DefaultRequestHeaders.UserAgent.ParseAdd("CryptoTrading-App");
             httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("token", accessToken);
 
-            // 1. Lấy thông tin cơ bản
             var userResponse = await httpClient.GetFromJsonAsync<GitHubUser>("https://api.github.com/user");
 
             if (userResponse == null)
@@ -386,7 +379,6 @@ namespace CryptoTrading.Services.Auth
                 throw new Exception("Could not retrieve GitHub user information.");
             }
 
-            // 2. Nếu email null (rất phổ biến), thử lấy từ /user/emails
             if (string.IsNullOrEmpty(userResponse.Email))
             {
                 _logger.LogWarning("GitHub /user did not return email. Trying /user/emails.");
@@ -412,7 +404,7 @@ namespace CryptoTrading.Services.Auth
         }
 
         /// <summary>
-        /// (MỚI - Tái cấu trúc) Logic chung để xử lý đăng nhập/đăng ký
+        /// Logic chung để xử lý đăng nhập/đăng ký
         /// </summary>
         private async Task<AuthResponseDto> HandleExternalUserLogin(string email, string? fullName, string provider)
         {
@@ -425,31 +417,32 @@ namespace CryptoTrading.Services.Auth
 
             if (user == null)
             {
-                // Tự động đăng ký
                 user = new User
                 {
                     Email = email,
-                    // Tạo một mật khẩu ngẫu nhiên, an toàn vì không ai dùng nó
                     PasswordHash = BCrypt.Net.BCrypt.HashPassword(Guid.NewGuid().ToString() + "P@ssw0rd!"),
                     FullName = fullName,
-                    EmailConfirmed = true, // Đã xác thực qua provider
+                    EmailConfirmed = true,
                     CreatedAt = _dateTimeProvider.UtcNow,
-                    Role = "User", // Mặc định
-                    Level = "Beginner", // Mặc định
+                    Role = "User",
+                    Level = "Beginner",
                     IsActive = true
                 };
                 await _unitOfWork.Users.AddAsync(user);
-                await _unitOfWork.SaveChangesAsync(); // Lưu để lấy UserId
+                await _unitOfWork.SaveChangesAsync();
                 _logger.LogInformation("New user registered via {Provider}: {Email}", provider, user.Email);
             }
             else
             {
-                // Đã có, cập nhật last login
+                if (!user.IsActive)
+                {
+                    _logger.LogWarning("External login attempt for locked account: {Email}", email);
+                    throw new Exception("Account is locked. Contact admin.");
+                }
                 user.LastLoginAt = _dateTimeProvider.UtcNow;
                 _unitOfWork.Users.Update(user);
             }
 
-            // Ghi lại hoạt động đăng nhập
             await _unitOfWork.LoginActivities.AddAsync(new LoginActivity
             {
                 UserId = user.Id,
@@ -473,7 +466,7 @@ namespace CryptoTrading.Services.Auth
                 AccessToken = accessToken,
                 RefreshToken = refreshToken,
                 ExpiresAt = DateTime.UtcNow.AddMinutes(_jwtSettings.AccessTokenExpirationMinutes),
-                User = MapToUserDto(user) // Giả sử bạn có hàm MapToUserDto
+                User = MapToUserDto(user)
             };
         }
 
@@ -756,7 +749,6 @@ namespace CryptoTrading.Services.Auth
 
                 user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(dto.NewPassword);
 
-                // Revoke all refresh tokens for security
                 user.RefreshToken = null;
                 user.RefreshTokenExpiryTime = null;
 
@@ -967,7 +959,6 @@ namespace CryptoTrading.Services.Auth
 
         public async Task<bool> Disable2FAAsync(DisableTwoFactorDto dto)
         {
-            // Lấy người dùng hiện tại từ token
             var user = await GetCurrentUserAsync();
 
             if (!user.TwoFactorEnabled)
@@ -975,14 +966,12 @@ namespace CryptoTrading.Services.Auth
                 throw new Exception("2FA is not currently enabled");
             }
 
-            // Yêu cầu xác nhận mật khẩu trước khi tắt 2FA
             if (!BCrypt.Net.BCrypt.Verify(dto.Password, user.PasswordHash))
             {
                 _logger.LogWarning("Failed 2FA disable attempt (wrong password) for user: {Email}", user.Email);
                 throw new Exception("Invalid password");
             }
 
-            // Tắt 2FA
             user.TwoFactorEnabled = false;
             user.TwoFactorSecret = null;
 
