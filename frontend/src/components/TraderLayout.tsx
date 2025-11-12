@@ -28,6 +28,7 @@ import { Button } from './ui/button';
 import { setAccessToken } from '../api/http';
 import { useNavigate } from 'react-router-dom';
 import { DashboardApi, DashboardSummary } from '../services/dashboard';
+import NotificationsPanel from './NotificationsPanel';
 
 interface TraderLayoutProps {
   children: React.ReactNode;
@@ -38,6 +39,7 @@ interface TraderLayoutProps {
 export default function TraderLayout({ children, currentPage, onNavigate }: TraderLayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [dashboardSummary, setDashboardSummary] = useState<DashboardSummary | null>(null);
   const [balanceLoading, setBalanceLoading] = useState(true);
   const userMenuRef = useRef<HTMLDivElement>(null);
@@ -197,6 +199,7 @@ export default function TraderLayout({ children, currentPage, onNavigate }: Trad
   );
 
   return (
+    <>
     <div className="flex h-screen bg-black text-white">
       {/* Desktop Sidebar */}
       <aside className="hidden lg:flex lg:flex-col w-64 bg-black border-r border-gray-800 h-screen">
@@ -248,7 +251,11 @@ export default function TraderLayout({ children, currentPage, onNavigate }: Trad
             </div>
             
             <div className="flex items-center gap-4">
-              <button className="relative p-2 hover:bg-gray-900 rounded-lg transition-colors">
+              <button
+                className="relative p-2 hover:bg-gray-900 rounded-lg transition-colors"
+                onClick={() => setNotificationsOpen(true)}
+                aria-label="Notifications"
+              >
                 <Bell className="w-5 h-5" />
                 <span className="absolute top-1 right-1 w-2 h-2 bg-emerald-500 rounded-full"></span>
               </button>
@@ -311,5 +318,11 @@ export default function TraderLayout({ children, currentPage, onNavigate }: Trad
         {children}
       </main>
     </div>
+    <NotificationsPanel
+      open={notificationsOpen}
+      onOpenChange={setNotificationsOpen}
+      onNavigate={onNavigate}
+    />
+    </>
   );
 }

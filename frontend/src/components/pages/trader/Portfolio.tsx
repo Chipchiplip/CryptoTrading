@@ -4,10 +4,6 @@ import { Card } from '../../ui/card';
 import { Badge } from '../../ui/badge';
 import { Alert, AlertDescription } from '../../ui/alert';
 import { PieChart, Pie, Cell, ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip } from 'recharts';
-import { TradingApi } from '../../../api/trading';
-import { MarketApi } from '../../../api/market';
-import { DashboardApi } from '../../../services/dashboard';
-import { CoinIcon } from '../../ui/CoinIcon';
 
 interface Holding {
   symbol: string;
@@ -49,72 +45,31 @@ export default function Portfolio() {
       setLoading(true);
       setError(null);
 
-      // Fetch portfolio overview from unified API
       const overviewRes = await PortfolioApi.getPortfolioOverview();
 
-      // Process NAV history for performance chart
-      if (navHistoryRes.ok && navHistoryRes.data) {
-        const navDataArray = navHistoryRes.data.data || navHistoryRes.data;
-        const navData = (Array.isArray(navDataArray) ? navDataArray : []).map((item: any) => ({
-          date: new Date(item.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-          value: item.value
-        }));
-        setPerformanceData(navData);
-      }
-
-      // Get crypto prices and images map
-      const cryptoPriceMap = new Map<string, number>();
-      const cryptoImageMap = new Map<string, string | null>();
-      if (cryptosRes.ok && cryptosRes.data) {
-        cryptosRes.data.forEach((crypto: any) => {
-          const symbol = crypto.symbol?.toUpperCase() || '';
-          cryptoPriceMap.set(symbol, crypto.currentPrice || crypto.current_price || 0);
-          // Handle both camelCase and snake_case image fields
-          const imageUrl = crypto.image || crypto.Image || crypto.image_url || crypto.imageUrl || null;
-          cryptoImageMap.set(symbol, imageUrl);
-        });
-      }
-
-      // Calculate realized PnL from trades
-      let realizedPnL = 0;
-      if (tradesRes.ok && tradesRes.data) {
-        const tradesArray = Array.isArray(tradesRes.data) ? tradesRes.data : (tradesRes.data.data || []);
-        tradesArray.forEach((trade: any) => {
-          if (trade.side === 'SELL') {
-            realizedPnL += (trade.priceUsd * trade.quantityCoin) - trade.feeUsd;
-          } else {
-            realizedPnL -= (trade.priceUsd * trade.quantityCoin) + trade.feeUsd;
-          }
-
-        });
-        return;
+      if (!overviewRes.ok || !overviewRes.data) {
+        throw new Error(overviewRes.error || 'Failed to load portfolio overview');
       }
 
       const data = overviewRes.data;
 
-
-      // Set portfolio summary
       setPortfolio({
-        totalValue: data.totalValue,
-        totalCost: data.totalCost,
-        unrealizedPnL: data.unrealizedPnL,
-        unrealizedPnLPercent: data.unrealizedPnLPercent,
-        realizedPnL: data.realizedPnL
+        totalValue: data.totalValue ?? 0,
+        totalCost: data.totalCost ?? 0,
+        unrealizedPnL: data.unrealizedPnL ?? 0,
+        unrealizedPnLPercent: data.unrealizedPnLPercent ?? 0,
+        realizedPnL: data.realizedPnL ?? 0,
       });
 
-      // Set holdings
-      setHoldings(data.holdings || []);
+      setHoldings(data.holdings ?? []);
 
-      // Process NAV history for performance chart
-      if (data.navHistory && data.navHistory.length > 0) {
-        const navData = data.navHistory.map(item => ({
-          date: new Date(item.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-          value: item.value
-        }));
-        setPerformanceData(navData);
-      } else {
-        setPerformanceData([]);
-      }
+      const navData = Array.isArray(data.navHistory)
+        ? data.navHistory.map(item => ({
+            date: new Date(item.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+            value: item.value,
+          }))
+        : [];
+      setPerformanceData(navData);
     } catch (err: any) {
       console.error('Error fetching portfolio data:', err);
       setError(err.message || 'Failed to load portfolio data');
