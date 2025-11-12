@@ -80,9 +80,11 @@ dotnet run --urls="http://localhost:5000"
 ## 🛠️ Development
 
 ### MySQL Database
-- Uses Pomelo.EntityFrameworkCore.MySql
-- Supports Aiven Cloud MySQL
+- Uses Pomelo.EntityFrameworkCore.MySql (v9.0.0)
+- Configured for Aiven Cloud MySQL
+- InnoDB engine with utf8mb4_0900_ai_ci collation
 - Auto-migrations enabled
+- Optimized composite indexes for performance
 
 ### Authentication
 - JWT Bearer tokens

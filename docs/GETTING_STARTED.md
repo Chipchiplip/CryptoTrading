@@ -12,7 +12,7 @@ Before you begin, ensure you have the following installed:
 ### Recommended VS Code Extensions
 - C# Dev Kit
 - Docker
-- SQL Server (mssql)
+- MySQL (cweijan.vscode-mysql-client2)
 - GitLens
 
 ## Step 1: Clone the Repository
@@ -24,7 +24,7 @@ cd CryptoTrading
 
 ## Step 2: Start Infrastructure (Optional)
 
-If you want to use Docker for SQL Server and Redis:
+If you want to use Docker for MySQL and Redis:
 
 ```bash
 docker-compose up -d
@@ -42,20 +42,20 @@ You should see:
 
 ## Step 3: Database Setup
 
-### Option A: LocalDB (Recommended for Development)
+### Option A: Aiven Cloud MySQL (Recommended for Development)
 
-The project is configured to use SQL Server LocalDB by default. No additional setup required.
+The project is configured to use Aiven Cloud MySQL by default. Connection string should be configured in `appsettings.Development.json`.
 
-Connection string in `appsettings.json`:
+Connection string in `appsettings.Development.json`:
 ```json
-"DefaultConnection": "Server=(localdb)\\mssqllocaldb;Database=CryptoTradingDb;Trusted_Connection=true;MultipleActiveResultSets=true"
+"DefaultConnection": "Server=your-mysql-host;Port=20158;Database=crypto_trading;User ID=avnadmin;Password=your-password;SslMode=Required;"
 ```
 
-### Option B: Docker SQL Server
+### Option B: Docker MySQL
 
 If using Docker, update the connection string in `appsettings.json`:
 ```json
-"DefaultConnection": "Server=localhost,1433;Database=CryptoTradingDb;User Id=sa;Password=YourStrong@Passw0rd;TrustServerCertificate=true"
+"DefaultConnection": "Server=localhost;Port=3306;Database=crypto_trading;User ID=root;Password=YourStrong@Passw0rd;SslMode=None;"
 ```
 
 ## Step 4: Configure API Settings
@@ -223,13 +223,13 @@ dotnet ef database update
 
 ## Common Issues
 
-### Issue: Can't connect to LocalDB
+### Issue: Can't connect to MySQL
 
 **Solution**:
 ```bash
-# Install SQL Server LocalDB if not already installed
-# Windows: Download from Microsoft website
-# Or use Docker SQL Server instead
+# Check MySQL connection string in appsettings.Development.json
+# Verify Aiven Cloud MySQL credentials
+# Or use Docker MySQL instead
 ```
 
 ### Issue: Port 5186 already in use

@@ -59,29 +59,29 @@ sqlcmd -S localhost,1433 -U sa -P YourStrong@Password123 -i database/migrations/
 sqlcmd -S localhost,1433 -U sa -P YourStrong@Password123 -i database/migrations/002_SeedData.sql
 ```
 
-### Using SQL Server Management Studio (SSMS)
+### Using MySQL Workbench or VS Code MySQL Extension
 
-1. Connect to `localhost,1433`
-2. Login: `sa` / `YourStrong@Password123`
+1. Connect to `localhost:3306` (Docker) or Aiven Cloud MySQL
+2. Login with configured credentials
 3. Open and execute migration files in order
 
 ## Key Features
 
-### Temporal Tables
-Orders and Subscriptions use SQL Server Temporal Tables for automatic history tracking:
+### Audit Trails
+Orders and Subscriptions include audit fields for tracking changes:
 ```sql
--- Query order history
-SELECT * FROM trading.Orders 
-FOR SYSTEM_TIME ALL 
-WHERE Id = @OrderId
-ORDER BY ValidFrom;
+-- Query order history using audit fields
+SELECT * FROM Orders 
+WHERE Id = @OrderId 
+ORDER BY UpdatedAt DESC;
 ```
 
-### Optimistic Concurrency
-All tables use `ROWVERSION` for optimistic concurrency control:
-```csharp
-// EF Core will automatically handle concurrency conflicts
-context.SaveChanges(); // Throws DbUpdateConcurrencyException if row changed
+### Optimized Indexes
+All tables use composite indexes for optimal query performance:
+```sql
+-- Example: Orders table indexes
+KEY `IX_Orders_CryptocurrencyId_Status` (`CryptocurrencyId`,`Status`)
+KEY `IX_Orders_UserId_CreatedAt` (`UserId`,`CreatedAt`)
 ```
 
 ### Idempotency
