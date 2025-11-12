@@ -31,6 +31,8 @@ namespace CryptoTrading.Data
 
         // Payment
         public DbSet<DepositTransaction> DepositTransactions { get; set; }
+        public DbSet<Subscription> Subscriptions { get; set; }
+        public DbSet<PaymentHistory> PaymentHistories { get; set; }
 
         // ========== BOT TRADING ==========
         public DbSet<BotStrategyDefinition> BotStrategyDefinitions { get; set; }
@@ -293,6 +295,55 @@ namespace CryptoTrading.Data
                 entity.HasIndex(e => e.NextRunAt);
 
 
+            });
+
+            // ==========================
+            // SUBSCRIPTION CONFIG
+            // ==========================
+            modelBuilder.Entity<Subscription>(entity =>
+            {
+                entity.ToTable("Subscriptions");
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.Id).ValueGeneratedOnAdd();
+                entity.HasIndex(e => e.UserId).IsUnique();
+                entity.HasIndex(e => new { e.UserId, e.Status });
+
+                entity.Property(e => e.Status).HasMaxLength(16).IsRequired();
+                entity.Property(e => e.VnpayTransactionId).HasMaxLength(128);
+
+                entity.HasOne(e => e.User)
+                    .WithMany()
+                    .HasForeignKey(e => e.UserId)
+                    .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            // ==========================
+            // PAYMENT HISTORY CONFIG
+            // ==========================
+            modelBuilder.Entity<PaymentHistory>(entity =>
+            {
+                entity.ToTable("PaymentHistories");
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.Id).ValueGeneratedOnAdd();
+                entity.HasIndex(e => new { e.UserId, e.CreatedAtUtc });
+                entity.HasIndex(e => e.VnpayOrderId);
+
+                entity.Property(e => e.Status).HasMaxLength(16).IsRequired();
+                entity.Property(e => e.Currency).HasMaxLength(3).HasDefaultValue("VND");
+                entity.Property(e => e.PaymentMethod).HasMaxLength(32);
+                entity.Property(e => e.VnpayTransactionId).HasMaxLength(128);
+                entity.Property(e => e.VnpayOrderId).HasMaxLength(128);
+                entity.Property(e => e.Amount).HasColumnType("decimal(18,2)");
+
+                entity.HasOne(e => e.User)
+                    .WithMany()
+                    .HasForeignKey(e => e.UserId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasOne(e => e.Subscription)
+                    .WithMany()
+                    .HasForeignKey(e => e.SubscriptionId)
+                    .OnDelete(DeleteBehavior.SetNull);
             });
         }
     }

@@ -5,6 +5,7 @@ using CryptoTrading.Data;
 using CryptoTrading.Models;
 using CryptoTrading.Models.Payment;
 using CryptoTrading.Interfaces;
+using CryptoTrading.Services;
 using Microsoft.EntityFrameworkCore;
 
 namespace CryptoTrading.Controllers;
@@ -18,19 +19,22 @@ public class PaymentController : ControllerBase
     private readonly ICurrentUser _currentUser;
     private readonly ILogger<PaymentController> _logger;
     private readonly IConfiguration _configuration;
+    private readonly ISubscriptionService _subscriptionService;
 
     public PaymentController(
         IVnPayService vnPayService,
         ApplicationDbContext context,
         ICurrentUser currentUser,
         ILogger<PaymentController> logger,
-        IConfiguration configuration)
+        IConfiguration configuration,
+        ISubscriptionService subscriptionService)
     {
         _vnPayService = vnPayService;
         _context = context;
         _currentUser = currentUser;
         _logger = logger;
         _configuration = configuration;
+        _subscriptionService = subscriptionService;
     }
 
     /// <summary>
@@ -46,37 +50,326 @@ public class PaymentController : ControllerBase
     /// Get subscription plans
     /// </summary>
     [HttpGet("plans")]
+    [AllowAnonymous]
     public IActionResult GetPlans()
     {
-        // TODO: Implement payment service
         var plans = new object[]
         {
-            new { id = 0, name = "Free", price = 0, features = new[] { "Basic trading", "1 watchlist" } },
-            new { id = 1, name = "Plus", price = 9.99m, features = new[] { "Advanced trading", "5 watchlists", "Basic bots" } },
-            new { id = 2, name = "Pro", price = 29.99m, features = new[] { "Professional trading", "Unlimited watchlists", "Advanced bots", "Priority support" } }
+            new
+            {
+                id = 0,
+                name = "Free",
+                price = 0m,
+                priceVnd = 0,
+                period = "month",
+                features = new[]
+                {
+                    "Basic trading features",
+                    "10 trades per day",
+                    "Email support",
+                    "Standard trading fees (0.2%)"
+                }
+            },
+            new
+            {
+                id = 1,
+                name = "Pro",
+                price = 29m,
+                priceVnd = 696000, // ~29 USD * 24000
+                period = "month",
+                features = new[]
+                {
+                    "All Free features",
+                    "Unlimited trades",
+                    "Priority support",
+                    "Reduced fees (0.1%)",
+                    "Advanced charts",
+                    "API access"
+                }
+            },
+            new
+            {
+                id = 2,
+                name = "Premium",
+                price = 99m,
+                priceVnd = 2376000, // ~99 USD * 24000
+                period = "month",
+                features = new[]
+                {
+                    "All Pro features",
+                    "24/7 dedicated support",
+                    "Lowest fees (0.05%)",
+                    "Advanced analytics",
+                    "Custom trading bots",
+                    "Priority withdrawals",
+                    "Personal account manager"
+                }
+            }
         };
         
-        return Ok(new { message = "Get plans endpoint - to be implemented by team member", plans });
+        return Ok(new { plans });
     }
 
     /// <summary>
-    /// Create checkout session
+    /// Create checkout session for subscription via VNPay
     /// </summary>
-    [HttpPost("checkout")]
-    public IActionResult CreateCheckoutSession([FromBody] CreateCheckoutDto dto)
+    [HttpPost("subscription/checkout")]
+    [Authorize]
+    public async Task<IActionResult> CreateSubscriptionCheckout([FromBody] CreateSubscriptionCheckoutDto dto)
     {
-        // TODO: Implement payment service
-        return Ok(new { message = "Create checkout session endpoint - to be implemented by team member", planType = dto.PlanType });
+        try
+        {
+            var userId = _currentUser.UserId;
+            if (userId == null)
+                return Unauthorized();
+
+            // Validate plan type
+            if (dto.PlanType < 0 || dto.PlanType > 2)
+                return BadRequest(new { message = "Invalid plan type" });
+
+            // Free plan không cần thanh toán
+            if (dto.PlanType == 0)
+            {
+                var periodStart = DateTime.UtcNow;
+                var periodEnd = periodStart.AddMonths(1);
+                await _subscriptionService.CreateOrUpdateSubscriptionAsync(userId.Value, 0, periodStart, periodEnd);
+                return Ok(new { message = "Free plan activated", planType = 0 });
+            }
+
+            // Lấy giá theo plan
+            var planPrices = new Dictionary<int, double>
+            {
+                { 1, 696000 },  // Pro: ~29 USD
+                { 2, 2376000 } // Premium: ~99 USD
+            };
+
+            var amount = planPrices[dto.PlanType];
+            var planNames = new Dictionary<int, string>
+            {
+                { 1, "Pro" },
+                { 2, "Premium" }
+            };
+
+            // Lấy thông tin user
+            var user = await _context.Users.FindAsync(userId.Value);
+            if (user == null)
+                return NotFound(new { message = "User not found" });
+
+            // Tạo order ID unique
+            var orderId = $"SUB_{userId}_{DateTime.UtcNow.Ticks}";
+
+            // Tạo payment history record
+            var paymentHistory = new PaymentHistory
+            {
+                UserId = userId.Value,
+                Amount = (decimal)amount,
+                Currency = "VND",
+                Status = "pending",
+                VnpayOrderId = orderId,
+                PaymentMethod = "VNPay",
+                PlanType = dto.PlanType,
+                CreatedAtUtc = DateTime.UtcNow
+            };
+
+            _context.PaymentHistories.Add(paymentHistory);
+            await _context.SaveChangesAsync();
+
+            // Tạo payment information model
+            var paymentModel = new PaymentInformationModel
+            {
+                OrderType = "subscription",
+                Amount = amount,
+                OrderDescription = $"Đăng ký gói {planNames[dto.PlanType]} - {amount:N0} VND/tháng",
+                Name = user.FullName ?? user.Email ?? "User",
+                UserId = userId.Value
+            };
+
+            // Tạo payment URL với subscription callback URL
+            var subscriptionCallbackUrl = _configuration["Vnpay:SubscriptionCallbackUrl"]
+                ?? _configuration["Vnpay:PaymentBackReturnUrl"]
+                ?? "http://localhost:5299/api/payment/subscription/vnpay/callback";
+            var paymentUrl = _vnPayService.CreatePaymentUrl(paymentModel, HttpContext, orderId, subscriptionCallbackUrl);
+
+            return Ok(new
+            {
+                paymentUrl,
+                orderId,
+                paymentId = paymentHistory.Id,
+                planType = dto.PlanType,
+                amount
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error creating subscription checkout");
+            return StatusCode(500, new { message = "Failed to create checkout session" });
+        }
     }
 
     /// <summary>
     /// Get user subscription
     /// </summary>
     [HttpGet("subscription")]
-    public IActionResult GetSubscription()
+    [Authorize]
+    public async Task<IActionResult> GetSubscription()
     {
-        // TODO: Implement payment service
-        return Ok(new { message = "Get subscription endpoint - to be implemented by team member" });
+        try
+        {
+            var userId = _currentUser.UserId;
+            if (userId == null)
+                return Unauthorized();
+
+            var subscription = await _subscriptionService.GetUserSubscriptionAsync(userId.Value);
+            var isActive = await _subscriptionService.IsSubscriptionActiveAsync(userId.Value);
+            var planType = await _subscriptionService.GetUserPlanTypeAsync(userId.Value);
+
+            if (subscription == null)
+            {
+                return Ok(new
+                {
+                    planType = 0,
+                    status = "free",
+                    isActive = true,
+                    currentPeriodStart = DateTime.UtcNow,
+                    currentPeriodEnd = DateTime.UtcNow.AddYears(100) // Free plan không hết hạn
+                });
+            }
+
+            return Ok(new
+            {
+                planType = subscription.PlanType,
+                status = subscription.Status,
+                isActive = isActive && subscription.Status == "active",
+                currentPeriodStart = subscription.CurrentPeriodStartUtc,
+                currentPeriodEnd = subscription.CurrentPeriodEndUtc,
+                canceledAt = subscription.CanceledAtUtc
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error getting subscription");
+            return StatusCode(500, new { message = "Failed to get subscription" });
+        }
+    }
+
+    /// <summary>
+    /// Cancel subscription
+    /// </summary>
+    [HttpPost("subscription/cancel")]
+    [Authorize]
+    public async Task<IActionResult> CancelSubscription()
+    {
+        try
+        {
+            var userId = _currentUser.UserId;
+            if (userId == null)
+                return Unauthorized();
+
+            var success = await _subscriptionService.CancelSubscriptionAsync(userId.Value);
+            if (!success)
+                return BadRequest(new { message = "No active subscription to cancel" });
+
+            return Ok(new { message = "Subscription canceled successfully" });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error canceling subscription");
+            return StatusCode(500, new { message = "Failed to cancel subscription" });
+        }
+    }
+
+    /// <summary>
+    /// Callback từ VNPay cho subscription payment
+    /// </summary>
+    [HttpGet("subscription/vnpay/callback")]
+    [AllowAnonymous]
+    public async Task<IActionResult> SubscriptionPaymentCallback()
+    {
+        try
+        {
+            var response = _vnPayService.PaymentExecute(Request.Query);
+
+            if (!response.Success)
+            {
+                _logger.LogWarning("VNPay subscription callback failed: OrderId={OrderId}", response.OrderId);
+                return Redirect(GetFrontendUrl() + "/subscription?status=failed&message=invalid_signature");
+            }
+
+            // Tìm payment history
+            var paymentHistory = await _context.PaymentHistories
+                .FirstOrDefaultAsync(p => p.VnpayOrderId == response.OrderId);
+
+            if (paymentHistory == null)
+            {
+                _logger.LogWarning("Payment history not found: OrderId={OrderId}", response.OrderId);
+                return Redirect(GetFrontendUrl() + "/subscription?status=failed&message=transaction_not_found");
+            }
+
+            // Nếu đã xử lý rồi thì không xử lý lại
+            if (paymentHistory.Status != "pending")
+            {
+                return Redirect(GetFrontendUrl() + $"/subscription?status={paymentHistory.Status.ToLower()}");
+            }
+
+            // Kiểm tra response code (00 = success)
+            if (response.VnPayResponseCode == "00")
+            {
+                using var transaction = await _context.Database.BeginTransactionAsync();
+                try
+                {
+                    // Cập nhật payment history
+                    paymentHistory.Status = "success";
+                    paymentHistory.VnpayTransactionId = response.TransactionId;
+                    paymentHistory.UpdatedAtUtc = DateTime.UtcNow;
+
+                    // Lấy plan type từ payment history
+                    int planType = paymentHistory.PlanType ?? 1; // Default Pro nếu không có
+
+                    // Tạo hoặc cập nhật subscription
+                    var periodStart = DateTime.UtcNow;
+                    var periodEnd = periodStart.AddMonths(1);
+
+                    var subscription = await _subscriptionService.CreateOrUpdateSubscriptionAsync(
+                        paymentHistory.UserId,
+                        planType,
+                        periodStart,
+                        periodEnd,
+                        response.TransactionId
+                    );
+
+                    // Cập nhật payment history với subscription ID
+                    paymentHistory.SubscriptionId = subscription.Id;
+
+                    await _context.SaveChangesAsync();
+                    await transaction.CommitAsync();
+
+                    _logger.LogInformation("Subscription payment successful: UserId={UserId}, PlanType={PlanType}, OrderId={OrderId}",
+                        paymentHistory.UserId, planType, response.OrderId);
+
+                    return Redirect(GetFrontendUrl() + $"/subscription?status=success&plan={planType}");
+                }
+                catch (Exception ex)
+                {
+                    await transaction.RollbackAsync();
+                    _logger.LogError(ex, "Error processing subscription payment - Transaction rolled back: OrderId={OrderId}",
+                        response.OrderId);
+                    throw;
+                }
+            }
+            else
+            {
+                paymentHistory.Status = "failed";
+                paymentHistory.UpdatedAtUtc = DateTime.UtcNow;
+                await _context.SaveChangesAsync();
+
+                return Redirect(GetFrontendUrl() + "/subscription?status=failed");
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error processing subscription payment callback");
+            return Redirect(GetFrontendUrl() + "/subscription?status=error");
+        }
     }
 
     /// <summary>
@@ -304,3 +597,4 @@ public class PaymentController : ControllerBase
 // DTOs
 public record CreateDepositRequest(double Amount);
 public record CreateCheckoutDto(int PlanType, string? SuccessUrl = null, string? CancelUrl = null);
+public record CreateSubscriptionCheckoutDto(int PlanType);
