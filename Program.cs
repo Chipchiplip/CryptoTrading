@@ -180,6 +180,9 @@ builder.Services.AddTransient<CryptoTrading.Services.Bot.Strategies.GridTradingS
 // VNPay Service
 builder.Services.AddScoped<CryptoTrading.Services.Payment.IVnPayService, CryptoTrading.Services.Payment.VnPayService>();
 
+// Subscription Service
+builder.Services.AddScoped<ISubscriptionService, SubscriptionService>();
+
 // Background Services
 builder.Services.AddHostedService<CryptoSyncBackgroundService>();
 builder.Services.AddHostedService<CryptoTrading.Services.RealtimeBroadcastService>();

@@ -76,6 +76,24 @@ export interface UserSubscription {
   canceledAt?: string;
 }
 
+export interface BillingHistoryItem {
+  id: string;
+  invoiceId: string;
+  date: string;
+  plan: string;
+  planType: number;
+  amount: number;
+  amountUsd: number;
+  currency: string;
+  status: string;
+  paymentMethod: string;
+  transactionId?: string;
+}
+
+export interface BillingHistoryResponse {
+  billingHistory: BillingHistoryItem[];
+}
+
 export const PaymentApi = {
   createVnpayDeposit: (request: CreateDepositRequest) =>
     apiPost<CreateDepositResponse>('/api/payment/deposit/vnpay', request),
@@ -88,5 +106,7 @@ export const PaymentApi = {
   getSubscription: () => apiGet<UserSubscription>('/api/payment/subscription'),
 
   cancelSubscription: () => apiPost<{ message: string }>('/api/payment/subscription/cancel', {}),
+
+  getBillingHistory: () => apiGet<BillingHistoryResponse>('/api/payment/billing-history'),
 };
 

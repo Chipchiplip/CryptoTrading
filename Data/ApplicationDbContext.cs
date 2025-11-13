@@ -294,7 +294,6 @@ namespace CryptoTrading.Data
                     .OnDelete(DeleteBehavior.Cascade);
             });
 
-            });
             // ==========================
             // BOT STRATEGY DEFINITION CONFIG
             // ==========================

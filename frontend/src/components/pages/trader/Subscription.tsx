@@ -3,7 +3,7 @@ import { Check, Crown, Zap, Star, Loader2 } from 'lucide-react';
 import { Card } from '../../ui/card';
 import { Button } from '../../ui/button';
 import { Badge } from '../../ui/badge';
-import { PaymentApi, type SubscriptionPlan } from '../../../api/payment';
+import { PaymentApi, type SubscriptionPlan, type BillingHistoryItem } from '../../../api/payment';
 
 const planIcons: Record<string, typeof Star> = {
   Free: Star,
@@ -18,6 +18,7 @@ export default function Subscription() {
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [billingHistory, setBillingHistory] = useState<BillingHistoryItem[]>([]);
 
   useEffect(() => {
     loadData();
@@ -44,9 +45,10 @@ export default function Subscription() {
     setError(null);
 
     try {
-      const [plansRes, subscriptionRes] = await Promise.all([
+      const [plansRes, subscriptionRes, billingRes] = await Promise.all([
         PaymentApi.getPlans(),
         PaymentApi.getSubscription(),
+        PaymentApi.getBillingHistory(),
       ]);
 
       if (!plansRes.ok) {
@@ -59,6 +61,10 @@ export default function Subscription() {
         setCurrentPlanType(subscriptionRes.data.planType);
       }
 
+      if (billingRes.ok) {
+        setBillingHistory(billingRes.data.billingHistory);
+      }
+
       setPlans(plansRes.data.plans);
     } catch (e: any) {
       setError(e?.message || 'Failed to load subscription data');
@@ -68,9 +74,15 @@ export default function Subscription() {
   };
 
   const loadSubscription = async () => {
-    const res = await PaymentApi.getSubscription();
-    if (res.ok) {
-      setCurrentPlanType(res.data.planType);
+    const [subscriptionRes, billingRes] = await Promise.all([
+      PaymentApi.getSubscription(),
+      PaymentApi.getBillingHistory(),
+    ]);
+    if (subscriptionRes.ok) {
+      setCurrentPlanType(subscriptionRes.data.planType);
+    }
+    if (billingRes.ok) {
+      setBillingHistory(billingRes.data.billingHistory);
     }
   };
 
@@ -110,6 +122,34 @@ export default function Subscription() {
     }
   };
 
+  const formatDate = (dateString: string) => {
+    try {
+      const date = new Date(dateString);
+      return date.toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+    } catch {
+      return dateString;
+    }
+  };
+
+  const getStatusBadgeClass = (status: string) => {
+    switch (status.toLowerCase()) {
+      case 'success':
+        return 'bg-emerald-500/10 text-emerald-500';
+      case 'pending':
+        return 'bg-yellow-500/10 text-yellow-500';
+      case 'failed':
+        return 'bg-red-500/10 text-red-500';
+      default:
+        return 'bg-gray-500/10 text-gray-500';
+    }
+  };
+
   if (loading) {
     return (
       <div className="p-4 lg:p-8 flex items-center justify-center min-h-[400px]">
@@ -120,8 +160,6 @@ export default function Subscription() {
       </div>
     );
   }
-
-  const billingHistory: any[] = []; // TODO: Implement billing history API
 
   return (
     <div className="p-4 lg:p-8">
@@ -215,40 +253,58 @@ export default function Subscription() {
       {/* Billing History */}
       <Card className="bg-gray-900 border-gray-800 p-6">
         <h2 className="text-xl mb-6">Billing History</h2>
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead>
-              <tr className="text-left text-gray-400 text-sm border-b border-gray-800">
-                <th className="pb-3">Invoice ID</th>
-                <th className="pb-3">Date</th>
-                <th className="pb-3">Plan</th>
-                <th className="pb-3 text-right">Amount</th>
-                <th className="pb-3">Status</th>
-                <th className="pb-3 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {billingHistory.map((invoice) => (
-                <tr key={invoice.id} className="border-b border-gray-800">
-                  <td className="py-4 text-emerald-500">{invoice.id}</td>
-                  <td className="py-4 text-gray-300">{invoice.date}</td>
-                  <td className="py-4 text-white">{invoice.plan}</td>
-                  <td className="py-4 text-right text-white">${invoice.amount.toFixed(2)}</td>
-                  <td className="py-4">
-                    <Badge className={invoice.status === 'Active' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-gray-500/10 text-gray-500'}>
-                      {invoice.status}
-                    </Badge>
-                  </td>
-                  <td className="py-4 text-right">
-                    <Button size="sm" variant="ghost" className="text-emerald-500">
-                      Download
-                    </Button>
-                  </td>
+        {billingHistory.length === 0 ? (
+          <div className="text-center py-8 text-gray-400">
+            <p>No billing history found.</p>
+            <p className="text-sm mt-2">Your subscription payments will appear here.</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="text-left text-gray-400 text-sm border-b border-gray-800">
+                  <th className="pb-3">Invoice ID</th>
+                  <th className="pb-3">Date</th>
+                  <th className="pb-3">Plan</th>
+                  <th className="pb-3 text-right">Amount</th>
+                  <th className="pb-3">Status</th>
+                  <th className="pb-3 text-right">Actions</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {billingHistory.map((invoice) => (
+                  <tr key={invoice.id} className="border-b border-gray-800">
+                    <td className="py-4 text-emerald-500 font-mono text-sm">{invoice.invoiceId}</td>
+                    <td className="py-4 text-gray-300">{formatDate(invoice.date)}</td>
+                    <td className="py-4 text-white">{invoice.plan}</td>
+                    <td className="py-4 text-right text-white">
+                      {invoice.currency === 'VND' ? (
+                        <div>
+                          <div>{invoice.amount.toLocaleString('vi-VN')} VND</div>
+                          <div className="text-xs text-gray-400">~${invoice.amountUsd.toFixed(2)}</div>
+                        </div>
+                      ) : (
+                        `$${invoice.amountUsd.toFixed(2)}`
+                      )}
+                    </td>
+                    <td className="py-4">
+                      <Badge className={getStatusBadgeClass(invoice.status)}>
+                        {invoice.status.charAt(0).toUpperCase() + invoice.status.slice(1)}
+                      </Badge>
+                    </td>
+                    <td className="py-4 text-right">
+                      {invoice.status === 'success' && (
+                        <Button size="sm" variant="ghost" className="text-emerald-500">
+                          Download
+                        </Button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </Card>
     </div>
   );

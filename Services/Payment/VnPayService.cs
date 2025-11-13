@@ -11,13 +11,14 @@ namespace CryptoTrading.Services.Payment
             _configuration = configuration;
         }
 
-        public string CreatePaymentUrl(PaymentInformationModel model, HttpContext context, string orderId)
+        public string CreatePaymentUrl(PaymentInformationModel model, HttpContext context, string orderId, string? returnUrl = null)
         {
             var timeZoneById = TimeZoneInfo.FindSystemTimeZoneById(_configuration["TimeZoneId"] ?? "SE Asia Standard Time");
             var timeNow = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, timeZoneById);
 
             var pay = new VnPayLibrary();
-            var urlCallBack = _configuration["PaymentCallBack:ReturnUrl"] ?? _configuration["Vnpay:PaymentBackReturnUrl"];
+            // Sử dụng returnUrl được truyền vào, nếu không có thì dùng default
+            var urlCallBack = returnUrl ?? _configuration["PaymentCallBack:ReturnUrl"] ?? _configuration["Vnpay:PaymentBackReturnUrl"];
 
             pay.AddRequestData("vnp_Version", _configuration["Vnpay:Version"] ?? "2.1.0");
             pay.AddRequestData("vnp_Command", _configuration["Vnpay:Command"] ?? "pay");

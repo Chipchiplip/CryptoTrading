@@ -16,6 +16,7 @@ import { adminApi, Role, Level, UserListDto } from '../../../api/admin';
 import { AuthApi, Enable2FAResponse, UserInfo, UserProfileDto, LoginActivityDto } from '../../../api/auth';
 import { ApiResult } from '../../../api/http'
 import { getUserInfo, setAccessToken, getAccessToken } from '../../../api/http';
+import { UserSubscription } from '../../../api/payment';
 const commonTimezones = [
   { value: "Etc/GMT+12", label: "(GMT-12:00) International Date Line West" },
   { value: "Pacific/Midway", label: "(GMT-11:00) Midway Island, Samoa" },
@@ -72,6 +73,7 @@ export default function Settings() {
   const [adminError, setAdminError] = useState('');
   const [adminRoles, setAdminRoles] = useState<Role[]>([]);
   const [adminLevels, setAdminLevels] = useState<Level[]>([]);
+  const [userSubscriptions, setUserSubscriptions] = useState<Map<number, UserSubscription>>(new Map());
 
   const [loginActivity, setLoginActivity] = useState<LoginActivityDto[]>([]);
   const [activityLoading, setActivityLoading] = useState(false);
@@ -235,6 +237,8 @@ export default function Settings() {
             const responseData = (usersResult.data as any).data;
             if (responseData && Array.isArray(responseData.users)) {
                 setAdminUsers(responseData.users);
+                // Load subscriptions for all users
+                await loadSubscriptionsForUsers(responseData.users);
             } else {
                 setAdminError("Cấu trúc dữ liệu người dùng không hợp lệ.");
                 setAdminUsers([]);
@@ -261,6 +265,38 @@ export default function Settings() {
         setAdminLoading(false);
     }
 }, []);
+
+  const loadSubscriptionsForUsers = async (usersList: UserListDto[]) => {
+    const subscriptionPromises = usersList.map(async (user) => {
+      try {
+        const subResult = await adminApi.getUserSubscription(user.id);
+        if (subResult.ok && subResult.data.data) {
+          return { userId: user.id, subscription: subResult.data.data as UserSubscription };
+        }
+        // Default to Free plan if fetch fails
+        return { userId: user.id, subscription: { planType: 0, status: 'free', isActive: true, currentPeriodStart: new Date().toISOString(), currentPeriodEnd: new Date().toISOString() } as UserSubscription };
+      } catch (err) {
+        // Default to Free plan if fetch fails
+        return { userId: user.id, subscription: { planType: 0, status: 'free', isActive: true, currentPeriodStart: new Date().toISOString(), currentPeriodEnd: new Date().toISOString() } as UserSubscription };
+      }
+    });
+
+    const subscriptionResults = await Promise.all(subscriptionPromises);
+    const subscriptionsMap = new Map<number, UserSubscription>();
+    subscriptionResults.forEach(({ userId, subscription }) => {
+      subscriptionsMap.set(userId, subscription);
+    });
+    setUserSubscriptions(subscriptionsMap);
+  };
+
+  const getPlanName = (planType: number | undefined): string => {
+    const planNames: Record<number, string> = {
+      0: 'Free',
+      1: 'Pro',
+      2: 'Premium'
+    };
+    return planNames[planType ?? 0] || 'Free';
+  };
 
   const loadLoginActivity = useCallback(async () => {
     setActivityLoading(true);
@@ -659,7 +695,7 @@ export default function Settings() {
                       <TableRow className="border-gray-800 hover:bg-gray-900">
                         <TableHead className="text-white">User</TableHead>
                         <TableHead className="text-white">Role</TableHead>
-                        <TableHead className="text-white">Level</TableHead>
+                        <TableHead className="text-white">Subscription</TableHead>
                         <TableHead className="text-white">Status</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -689,21 +725,15 @@ export default function Settings() {
                         </Select>
                       </TableCell>
                       <TableCell>
-                        <Select
-                          value={String(adminLevels.find(l => l.name === user.level)?.id ?? "")}
-                          onValueChange={(value: string) => handleAdminUpdate(user.id, 'level', value)}
-                        >
-                          <SelectTrigger className="bg-gray-800 border-gray-700 w-24">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent className="bg-gray-800 border-gray-700 text-white">
-                            {adminLevels.map(level => (
-                              <SelectItem key={level.id} value={String(level.id)}>
-                                {level.name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                        <Badge className={
+                          userSubscriptions.get(user.id)?.planType === 0 
+                            ? 'bg-gray-500/10 text-gray-400' 
+                            : userSubscriptions.get(user.id)?.planType === 1
+                            ? 'bg-blue-500/10 text-blue-400'
+                            : 'bg-purple-500/10 text-purple-400'
+                        }>
+                          {getPlanName(userSubscriptions.get(user.id)?.planType)}
+                        </Badge>
                       </TableCell>
                       <TableCell>
                         <Select

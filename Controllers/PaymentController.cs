@@ -279,6 +279,56 @@ public class PaymentController : ControllerBase
     }
 
     /// <summary>
+    /// Get billing history for subscription payments
+    /// </summary>
+    [HttpGet("billing-history")]
+    [Authorize]
+    public async Task<IActionResult> GetBillingHistory()
+    {
+        try
+        {
+            var userId = _currentUser.UserId;
+            if (userId == null)
+                return Unauthorized();
+
+            // Lấy tất cả payment history có PlanType (chỉ subscription payments)
+            var paymentHistories = await _context.PaymentHistories
+                .Where(p => p.UserId == userId && p.PlanType != null)
+                .OrderByDescending(p => p.CreatedAtUtc)
+                .ToListAsync();
+
+            var planNames = new Dictionary<int, string>
+            {
+                { 0, "Free" },
+                { 1, "Pro" },
+                { 2, "Premium" }
+            };
+
+            var billingHistory = paymentHistories.Select(p => new
+            {
+                id = p.Id.ToString(),
+                invoiceId = p.VnpayOrderId ?? p.Id.ToString(),
+                date = p.CreatedAtUtc.ToString("yyyy-MM-dd HH:mm:ss"),
+                plan = planNames.ContainsKey(p.PlanType ?? 0) ? planNames[p.PlanType ?? 0] : "Unknown",
+                planType = p.PlanType ?? 0,
+                amount = p.Amount,
+                amountUsd = p.Currency == "VND" ? (p.Amount / 24000m) : p.Amount, // Convert VND to USD
+                currency = p.Currency,
+                status = p.Status,
+                paymentMethod = p.PaymentMethod ?? "VNPay",
+                transactionId = p.VnpayTransactionId
+            }).ToList();
+
+            return Ok(new { billingHistory });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error getting billing history");
+            return StatusCode(500, new { message = "Failed to get billing history" });
+        }
+    }
+
+    /// <summary>
     /// Callback từ VNPay cho subscription payment
     /// </summary>
     [HttpGet("subscription/vnpay/callback")]
