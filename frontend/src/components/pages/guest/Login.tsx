@@ -139,7 +139,6 @@ export default function Login({ onNavigate }: LoginProps) {
         throw new Error(data.message || "Google login failed on server.");
       }
 
-     feature/mysql-database-integration
       setAccessToken(data.accessToken, data.user);
 
 

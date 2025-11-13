@@ -267,7 +267,32 @@ namespace CryptoTrading.Data
                 entity.Property(e => e.Id).ValueGeneratedOnAdd();
                 entity.HasIndex(e => new { e.UserId, e.CreatedAt });
                 entity.HasIndex(e => e.OrderId).IsUnique();
-                
+                entity.Property(e => e.OrderId)
+                      .IsRequired()
+                      .HasMaxLength(50);
+                entity.Property(e => e.Amount)
+                      .HasColumnType("decimal(18,2)");
+                entity.Property(e => e.Currency)
+                      .IsRequired()
+                      .HasMaxLength(20)
+                      .HasDefaultValue("VND");
+                entity.Property(e => e.Status)
+                      .HasMaxLength(20)
+                      .HasDefaultValue("PENDING");
+                entity.Property(e => e.VnpayTransactionId)
+                      .HasMaxLength(50);
+                entity.Property(e => e.VnpayResponseCode)
+                      .HasMaxLength(10);
+                entity.Property(e => e.VnpayMessage)
+                      .HasMaxLength(255);
+                entity.Property(e => e.CreatedAt)
+                      .HasDefaultValueSql("CURRENT_TIMESTAMP(6)");
+
+                entity.HasOne(e => e.User)
+                    .WithMany()
+                    .HasForeignKey(e => e.UserId)
+                    .OnDelete(DeleteBehavior.Cascade);
+            });
 
             });
             // ==========================
@@ -291,10 +316,42 @@ namespace CryptoTrading.Data
             {
                 entity.ToTable("TradingBots");
                 entity.HasKey(e => e.Id);
+                entity.Property(e => e.Id).ValueGeneratedOnAdd();
                 entity.HasIndex(e => new { e.UserId, e.Status });
                 entity.HasIndex(e => e.NextRunAt);
+                entity.Property(e => e.Name)
+                      .IsRequired()
+                      .HasMaxLength(200);
+                entity.Property(e => e.Status)
+                      .IsRequired()
+                      .HasMaxLength(50)
+                      .HasDefaultValue("Draft");
+                entity.Property(e => e.RiskProfile)
+                      .HasMaxLength(50);
+                entity.Property(e => e.BaseAsset)
+                      .IsRequired()
+                      .HasMaxLength(20);
+                entity.Property(e => e.QuoteAsset)
+                      .IsRequired()
+                      .HasMaxLength(20);
+                entity.Property(e => e.PositionSizing)
+                      .HasColumnType("JSON");
+                entity.Property(e => e.Parameters)
+                      .HasColumnType("JSON");
+                entity.Property(e => e.LastStatusReason)
+                      .HasMaxLength(1000);
+                entity.Property(e => e.CreatedAt)
+                      .HasDefaultValueSql("CURRENT_TIMESTAMP(6)");
 
+                entity.HasOne(e => e.User)
+                    .WithMany()
+                    .HasForeignKey(e => e.UserId)
+                    .OnDelete(DeleteBehavior.Cascade);
 
+                entity.HasOne(e => e.StrategyDefinition)
+                    .WithMany()
+                    .HasForeignKey(e => e.StrategyDefinitionId)
+                    .OnDelete(DeleteBehavior.Cascade);
             });
 
             // ==========================
