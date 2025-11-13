@@ -277,9 +277,28 @@ public class TradingController : ControllerBase
 
     private async Task<DashboardNavHistoryDto> GetDashboardNavHistoryData(int userId, string? from)
     {
-        var fromDate = string.IsNullOrEmpty(from) 
-            ? DateTime.UtcNow.AddDays(-29).Date 
-            : DateTime.Parse(from).Date;
+        var toDate = DateTime.UtcNow.Date;
+        var defaultStart = toDate.AddDays(-29);
+        DateTime fromDate;
+        if (!string.IsNullOrEmpty(from) && DateTime.TryParse(from, out var parsed))
+        {
+            fromDate = parsed.Date;
+        }
+        else
+        {
+            fromDate = defaultStart;
+        }
+
+        if (fromDate > toDate)
+        {
+            fromDate = toDate;
+        }
+
+        var maxWindowStart = toDate.AddDays(-29);
+        if (fromDate < maxWindowStart)
+        {
+            fromDate = maxWindowStart;
+        }
 
         var data = new List<DashboardNavDataPointDto>();
         
@@ -311,7 +330,7 @@ public class TradingController : ControllerBase
             var priceData = await _db.CryptoPrices
                 .Where(p => cryptoIds.Contains(p.CryptocurrencyId) && 
                            p.CollectedAtUtc.Date >= fromDate && 
-                           p.CollectedAtUtc.Date <= DateTime.UtcNow.Date)
+                           p.CollectedAtUtc.Date <= toDate)
                 .Select(p => new { p.CryptocurrencyId, Date = p.CollectedAtUtc.Date, p.PriceUsd, p.CollectedAtUtc })
                 .ToListAsync();
             
@@ -331,8 +350,47 @@ public class TradingController : ControllerBase
             }
         }
 
+        // Preload USD wallet ids once
+        var usdWalletIds = await _db.Wallets
+            .Where(w => w.UserId == userId && w.AssetType == "FIAT" && w.CurrencyCode == "USD")
+            .Select(w => w.Id)
+            .ToListAsync();
+
+        var usdDailyChanges = new Dictionary<DateTime, decimal>();
+        decimal usdBalanceBeforeStart = 0m;
+
+        if (usdWalletIds.Any())
+        {
+            var usdMovements = await _db.WalletMovements
+                .Where(m => usdWalletIds.Contains(m.WalletId) && m.CreatedAt.Date <= toDate)
+                .Select(m => new { m.CreatedAt.Date, m.Amount })
+                .ToListAsync();
+
+            foreach (var movement in usdMovements.Where(m => m.Date < fromDate))
+            {
+                usdBalanceBeforeStart += movement.Amount;
+            }
+
+            foreach (var grp in usdMovements.Where(m => m.Date >= fromDate).GroupBy(m => m.Date))
+            {
+                usdDailyChanges[grp.Key] = grp.Sum(x => x.Amount);
+            }
+        }
+
+        var totalDays = (toDate - fromDate).Days;
+        if (totalDays < 0)
+        {
+            totalDays = 0;
+        }
+        if (totalDays > 29)
+        {
+            totalDays = 29;
+        }
+
+        decimal runningUsdBalance = usdBalanceBeforeStart;
+
         // For each day in the range, calculate NAV using preloaded prices
-        for (int i = 29; i >= 0; i--)
+        for (int i = totalDays; i >= 0; i--)
         {
             var date = fromDate.AddDays(i);
             decimal nav = 0m;
@@ -353,22 +411,12 @@ public class TradingController : ControllerBase
                 nav += pos.QtyCoin * latestPrice;
             }
 
-            // Add USD balance (FIAT wallets)
-            var usdWallets = await _db.Wallets
-                .Where(w => w.UserId == userId && w.AssetType == "FIAT" && w.CurrencyCode == "USD")
-                .ToListAsync();
-
-            var usdWalletIds = usdWallets.Select(w => w.Id).ToList();
-            if (usdWalletIds.Any())
+            if (usdDailyChanges.TryGetValue(date, out var delta))
             {
-                var usdBalance = await _db.WalletMovements
-                    .Where(m => usdWalletIds.Contains(m.WalletId) && m.CreatedAt.Date <= date)
-                    .GroupBy(m => m.WalletId)
-                    .Select(g => g.Sum(m => m.Amount))
-                    .SumAsync();
-
-                nav += usdBalance;
+                runningUsdBalance += delta;
             }
+
+            nav += runningUsdBalance;
 
             data.Add(new DashboardNavDataPointDto
             {
@@ -380,7 +428,7 @@ public class TradingController : ControllerBase
         return new DashboardNavHistoryDto
         {
             From = fromDate.ToString("yyyy-MM-dd"),
-            To = DateTime.UtcNow.Date.ToString("yyyy-MM-dd"),
+            To = toDate.ToString("yyyy-MM-dd"),
             Data = data
         };
     }

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Wallet, ArrowUpFromLine, Eye, EyeOff, TrendingUp, TrendingDown, Loader2 } from 'lucide-react';
+import { Wallet, ArrowDownToLine, Eye, EyeOff, TrendingUp, TrendingDown, Loader2 } from 'lucide-react';
 import { Card } from '../../ui/card';
 import { Button } from '../../ui/button';
 import { Badge } from '../../ui/badge';
@@ -123,10 +123,10 @@ export default function Wallets({ onNavigate }: WalletsProps) {
             <Button
               variant="outline"
               className="border-gray-700 hover:bg-gray-800"
-              onClick={() => onNavigate?.('withdraw')}
+              onClick={() => onNavigate?.('deposit')}
             >
-              <ArrowUpFromLine className="w-4 h-4 mr-2" />
-              Withdraw
+              <ArrowDownToLine className="w-4 h-4 mr-2" />
+              Deposit
             </Button>
           </div>
         </div>
