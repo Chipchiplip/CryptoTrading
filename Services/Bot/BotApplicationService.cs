@@ -221,24 +221,111 @@ namespace CryptoTrading.Services.Bot
                 throw new InvalidOperationException($"Cannot start bot in status: {bot.Status}");
             }
 
-            // Validate configuration
+            // Get strategy instance
             var strategy = _strategyRegistry.GetStrategy(bot.StrategyDefinition!.StrategyKey);
             if (strategy == null)
             {
                 throw new InvalidOperationException("Strategy implementation not found");
             }
 
-            // TODO: Perform strategy validation
-            // For now, just update status
+            // STEP 1: Validate strategy configuration
+            try
+            {
+                var parameters = string.IsNullOrEmpty(bot.Parameters)
+                    ? new Dictionary<string, object>()
+                    : JsonSerializer.Deserialize<Dictionary<string, object>>(bot.Parameters)
+                        ?? new Dictionary<string, object>();
+
+                var validationResult = await strategy.ValidateAsync(parameters);
+                if (!validationResult.IsValid)
+                {
+                    var errors = string.Join(", ", validationResult.Errors);
+                    _logger.LogError("Bot {BotId} validation failed: {Errors}", botId, errors);
+
+                    bot.Status = "Error";
+                    bot.LastStatusReason = $"Configuration validation failed: {errors}";
+                    bot.UpdatedAt = DateTime.UtcNow;
+                    await _context.SaveChangesAsync();
+
+                    throw new InvalidOperationException($"Strategy validation failed: {errors}");
+                }
+
+                _logger.LogDebug("Bot {BotId} configuration validated successfully", botId);
+            }
+            catch (Exception ex) when (ex is not InvalidOperationException)
+            {
+                _logger.LogError(ex, "Bot {BotId} validation threw exception", botId);
+
+                bot.Status = "Error";
+                bot.LastStatusReason = $"Validation error: {ex.Message}";
+                bot.UpdatedAt = DateTime.UtcNow;
+                await _context.SaveChangesAsync();
+
+                throw new InvalidOperationException($"Strategy validation failed: {ex.Message}", ex);
+            }
+
+            // STEP 2: Check risk limits
+            decimal requiredCapital = 1000m; // Default
+            try
+            {
+                if (!string.IsNullOrEmpty(bot.PositionSizing))
+                {
+                    var sizing = JsonSerializer.Deserialize<Dictionary<string, object>>(bot.PositionSizing);
+                    if (sizing != null && sizing.TryGetValue("capitalAllocation", out var capital))
+                    {
+                        requiredCapital = Convert.ToDecimal(capital);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to parse position sizing for bot {BotId}, using default", botId);
+            }
+
+            var limitsOk = await _serviceProvider.GetRequiredService<IRiskManager>()
+                .CheckLimitsAsync(userId, requiredCapital);
+
+            if (!limitsOk)
+            {
+                _logger.LogWarning("Bot {BotId} risk limits check failed", botId);
+
+                bot.Status = "Paused";
+                bot.LastStatusReason = "Risk limits exceeded. Please adjust your configuration or close other positions.";
+                bot.UpdatedAt = DateTime.UtcNow;
+                await _context.SaveChangesAsync();
+
+                throw new InvalidOperationException(
+                    "Risk limits exceeded. You may have too many active bots or insufficient capital.");
+            }
+
+            _logger.LogDebug("Bot {BotId} risk limits check passed", botId);
+
+            // STEP 3: Check cooldown (prevent rapid restart)
+            if (bot.UpdatedAt.HasValue)
+            {
+                var timeSinceLastUpdate = DateTime.UtcNow - bot.UpdatedAt.Value;
+                if (timeSinceLastUpdate < TimeSpan.FromSeconds(10))
+                {
+                    _logger.LogWarning("Bot {BotId} cooldown violation: {Seconds}s since last update",
+                        botId, timeSinceLastUpdate.TotalSeconds);
+
+                    throw new InvalidOperationException(
+                        $"Please wait {10 - (int)timeSinceLastUpdate.TotalSeconds} seconds before restarting the bot.");
+                }
+            }
+
+            // All checks passed - start the bot
             bot.Status = "Starting";
             bot.NextRunAt = DateTime.UtcNow;
+            bot.LastStatusReason = "All validation checks passed, bot is starting";
             bot.UpdatedAt = DateTime.UtcNow;
 
             await _context.SaveChangesAsync();
 
-            _logger.LogInformation("Bot {BotId} starting", botId);
+            _logger.LogInformation(
+                "Bot {BotId} starting successfully (Strategy: {Strategy}, Capital: {Capital})",
+                botId, bot.StrategyDefinition.StrategyKey, requiredCapital);
 
-            // Return operation ID (for now, just return bot ID)
             return botId.ToString();
         }
 

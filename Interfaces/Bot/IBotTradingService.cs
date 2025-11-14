@@ -92,6 +92,19 @@ namespace CryptoTrading.Interfaces.Bot
     {
         Task<bool> CheckLimitsAsync(int userId, decimal requiredCapital, CancellationToken cancellationToken = default);
         Task<decimal> GetMaxExposureAsync(int userId, CancellationToken cancellationToken = default);
+
+        // Phase 3 additions - Dynamic capital and pre-execution guardrails
+        Task<decimal> GetBotCapitalLimitAsync(int userId, Guid botId, CancellationToken cancellationToken = default);
+        Task<bool> CheckKillSwitchAsync(Guid botId, int userId, CancellationToken cancellationToken = default);
+        Task<bool> CheckCooldownAsync(Guid botId, TimeSpan minCooldown, CancellationToken cancellationToken = default);
+        Task<bool> CheckRateLimitAsync(Guid botId, int maxOrdersPerCycle, CancellationToken cancellationToken = default);
+
+        // Phase 3B additions - Order tracking for rate limiting
+        Task ResetOrderCountForNewCycleAsync(Guid botId, CancellationToken cancellationToken = default);
+        Task RecordOrderPlacedAsync(Guid botId, CancellationToken cancellationToken = default);
+
+        // Phase 4 additions - Kill switch trade result tracking
+        Task RecordTradeResultAsync(Guid botId, decimal pnl, CancellationToken cancellationToken = default);
     }
 
     /// <summary>

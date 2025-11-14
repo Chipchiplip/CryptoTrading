@@ -484,14 +484,44 @@ namespace CryptoTrading.Services.Bot.Strategies
                     DetectedMomentum = opportunity.PriceChangePercent
                 };
 
-                state.ActivePositions.Add(position);
-                
-                context.Logger.LogInfo("Trading", 
-                    $"Opened momentum position: {opportunity.Symbol} {quantity:F6} @ ${opportunity.CurrentPrice:F2} " +
-                    $"(Momentum: +{opportunity.PriceChangePercent:F2}%, TP: ${position.TakeProfitPrice:F2}, SL: ${position.StopLossPrice:F2})");
+                // Execute real BUY order through trading service
+                try
+                {
+                    var orderRequest = new PlaceOrderRequest
+                    {
+                        Symbol = opportunity.Symbol,
+                        Side = "BUY",
+                        Type = "MARKET",
+                        Quantity = quantity,
+                        IdempotencyKey = $"momentum-entry-{context.BotId}-{opportunity.Symbol}-{DateTime.UtcNow.Ticks}"
+                    };
 
-                // TODO: Execute actual trade through trading service
-                // await context.TradingService.PlaceMarketOrderAsync(opportunity.Symbol, "BUY", quantity);
+                    var order = await context.TradingService.PlaceOrderAsync(orderRequest);
+
+                    if (order != null && order.Status == "FILLED")
+                    {
+                        // Update position with actual fill price
+                        position.EntryPrice = order.FilledPrice;
+                        position.TakeProfitPrice = order.FilledPrice * (1 + takeProfitPercent);
+                        position.StopLossPrice = order.FilledPrice * (1 - stopLossPercent);
+
+                        state.ActivePositions.Add(position);
+
+                        context.Logger.LogInfo("Trading",
+                            $"Opened momentum position: {opportunity.Symbol} {quantity:F6} @ ${order.FilledPrice:F2} " +
+                            $"(Momentum: +{opportunity.PriceChangePercent:F2}%, TP: ${position.TakeProfitPrice:F2}, SL: ${position.StopLossPrice:F2})");
+                    }
+                    else
+                    {
+                        context.Logger.LogWarning("Trading",
+                            $"Failed to open position for {opportunity.Symbol}: Order status {order?.Status}");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    context.Logger.LogError("Trading",
+                        $"Error placing BUY order for {opportunity.Symbol}: {ex.Message}");
+                }
             }
         }
 
@@ -535,31 +565,62 @@ namespace CryptoTrading.Services.Bot.Strategies
 
                     if (shouldClose)
                     {
-                        var pnl = (exitPrice - position.EntryPrice) * position.Quantity;
-                        var pnlPercent = (exitPrice - position.EntryPrice) / position.EntryPrice * 100;
-
-                        // Record trade
-                        state.DailyTrades.Add(new TradeRecord
+                        // Execute real SELL order through trading service
+                        try
                         {
-                            Symbol = position.Symbol,
-                            EntryPrice = position.EntryPrice,
-                            ExitPrice = exitPrice,
-                            Quantity = position.Quantity,
-                            EntryTime = position.EntryTime,
-                            ExitTime = DateTime.UtcNow,
-                            PnL = pnl,
-                            ExitReason = exitReason
-                        });
+                            var orderRequest = new PlaceOrderRequest
+                            {
+                                Symbol = position.Symbol,
+                                Side = "SELL",
+                                Type = "MARKET",
+                                Quantity = position.Quantity,
+                                IdempotencyKey = $"momentum-exit-{context.BotId}-{position.Symbol}-{DateTime.UtcNow.Ticks}"
+                            };
 
-                        state.DailyPnL += pnl;
-                        positionsToClose.Add(position);
+                            var order = await context.TradingService.PlaceOrderAsync(orderRequest);
 
-                        context.Logger.LogInfo("Trading",
-                            $"Closed position: {position.Symbol} {position.Quantity:F6} @ ${exitPrice:F2} " +
-                            $"({exitReason}, PnL: ${pnl:F2} / {pnlPercent:F2}%)");
+                            if (order != null && order.Status == "FILLED")
+                            {
+                                // Use actual fill price for PnL calculation
+                                var actualExitPrice = order.FilledPrice;
+                                var pnl = (actualExitPrice - position.EntryPrice) * position.Quantity - order.Fee;
+                                var pnlPercent = (actualExitPrice - position.EntryPrice) / position.EntryPrice * 100;
 
-                        // TODO: Execute actual trade through trading service
-                        // await context.TradingService.PlaceMarketOrderAsync(position.Symbol, "SELL", position.Quantity);
+                                // Record trade with actual results
+                                state.DailyTrades.Add(new TradeRecord
+                                {
+                                    Symbol = position.Symbol,
+                                    EntryPrice = position.EntryPrice,
+                                    ExitPrice = actualExitPrice,
+                                    Quantity = position.Quantity,
+                                    EntryTime = position.EntryTime,
+                                    ExitTime = DateTime.UtcNow,
+                                    PnL = pnl,
+                                    ExitReason = exitReason
+                                });
+
+                                state.DailyPnL += pnl;
+                                positionsToClose.Add(position);
+
+                                context.Logger.LogInfo("Trading",
+                                    $"Closed position: {position.Symbol} {position.Quantity:F6} @ ${actualExitPrice:F2} " +
+                                    $"({exitReason}, PnL: ${pnl:F2} / {pnlPercent:F2}%, Fee: ${order.Fee:F2})");
+
+                                // Record trade result with kill switch service
+                                // This will update consecutive loss tracking and trigger kill switch if threshold reached
+                                await context.RiskManager.RecordTradeResultAsync(context.BotId, pnl, cancellationToken);
+                            }
+                            else
+                            {
+                                context.Logger.LogWarning("Trading",
+                                    $"Failed to close position for {position.Symbol}: Order status {order?.Status}");
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            context.Logger.LogError("Trading",
+                                $"Error placing SELL order for {position.Symbol}: {ex.Message}");
+                        }
                     }
                 }
                 catch (Exception ex)

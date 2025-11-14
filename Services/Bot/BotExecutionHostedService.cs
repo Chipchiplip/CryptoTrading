@@ -151,6 +151,20 @@ namespace CryptoTrading.Services.Bot
             // Add execution interval
             parameters.Values["refreshIntervalSeconds"] = bot.ExecutionIntervalSeconds;
 
+            // Get dynamic capital allocation
+            decimal allowedCapital;
+            try
+            {
+                // Use RiskManager to get bot-specific capital limit
+                allowedCapital = await riskManager.GetBotCapitalLimitAsync(bot.UserId, bot.Id, stoppingToken);
+                _logger.LogDebug("Bot {BotId} allowed capital: {Capital}", bot.Id, allowedCapital);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to get bot capital limit for {BotId}, using default", bot.Id);
+                allowedCapital = 5000m; // Conservative default
+            }
+
             // Create bot context
             var botLogger = new BotLogger(context, bot.Id, loggerFactory.CreateLogger<BotLogger>());
             var eventCollector = new EventCollector();
@@ -161,7 +175,7 @@ namespace CryptoTrading.Services.Bot
                 UserId = bot.UserId,
                 BaseAsset = bot.BaseAsset,
                 QuoteAsset = bot.QuoteAsset,
-                AllowedCapital = 100000m, // TODO: Get from user limits
+                AllowedCapital = allowedCapital, // Dynamic capital from RiskManager
                 TradingService = new BotTradingServiceWrapper(tradingService, bot.UserId, bot.Id),
                 MarketData = marketDataProvider,
                 PortfolioService = portfolioService,
@@ -172,9 +186,47 @@ namespace CryptoTrading.Services.Bot
                 SaveStateAsyncFunc = async (state, ct) => await SaveStateObjectAsync(context, bot.Id, state, ct)
             };
 
+            // PRE-EXECUTION GUARDRAILS
             try
             {
-                _logger.LogInformation("Executing bot {BotId} with strategy {StrategyKey}", bot.Id, strategy.Key);
+                // Check kill switch
+                var killSwitchTriggered = await riskManager.CheckKillSwitchAsync(bot.Id, bot.UserId, stoppingToken);
+                if (killSwitchTriggered)
+                {
+                    _logger.LogWarning("Bot {BotId} stopped by kill switch", bot.Id);
+                    bot.Status = "Stopped";
+                    bot.LastStatusReason = "Kill switch triggered due to risk limits";
+                    await context.SaveChangesAsync(stoppingToken);
+                    return;
+                }
+
+                // Check cooldown (get from config or use default)
+                var minCooldownSeconds = 30; // Default 30 seconds
+                var minCooldown = TimeSpan.FromSeconds(minCooldownSeconds);
+                var cooldownPassed = await riskManager.CheckCooldownAsync(bot.Id, minCooldown, stoppingToken);
+
+                if (!cooldownPassed)
+                {
+                    _logger.LogDebug("Bot {BotId} in cooldown period, skipping execution", bot.Id);
+                    // Reschedule for after cooldown
+                    bot.NextRunAt = DateTime.UtcNow.AddSeconds(minCooldownSeconds);
+                    await context.SaveChangesAsync(stoppingToken);
+                    return;
+                }
+
+                _logger.LogDebug("Bot {BotId} pre-execution checks passed", bot.Id);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error in pre-execution guardrails for bot {BotId}", bot.Id);
+                // Continue execution if guardrails fail (fail-open for safety)
+            }
+
+            try
+            {
+                _logger.LogInformation(
+                    "Executing bot {BotId} with strategy {StrategyKey}, capital: {Capital}",
+                    bot.Id, strategy.Key, allowedCapital);
 
                 // Execute strategy
                 var result = await strategy.ExecuteAsync(botContext, parameters, stoppingToken);

@@ -33,7 +33,9 @@ namespace CryptoTrading.Services.Bot.Strategies
                 ["upperBound"] = 60000m,
                 ["orderSize"] = 0.01m,
                 ["capitalAllocation"] = 10000m,
-                ["rebalanceMode"] = "balanced"
+                ["rebalanceMode"] = "balanced",
+                ["minOrderCooldownSeconds"] = 30,
+                ["maxOrdersPerCycle"] = 5
             },
             ParametersSchemaJson = @"{
                 ""type"": ""object"",
@@ -45,7 +47,9 @@ namespace CryptoTrading.Services.Bot.Strategies
                     ""capitalAllocation"": { ""type"": ""number"", ""minimum"": 100 },
                     ""rebalanceMode"": { ""type"": ""string"", ""enum"": [""balanced"", ""buy-heavy"", ""sell-heavy""] },
                     ""takeProfitPercent"": { ""type"": ""number"", ""minimum"": 0 },
-                    ""stopLossPercent"": { ""type"": ""number"", ""minimum"": 0 }
+                    ""stopLossPercent"": { ""type"": ""number"", ""minimum"": 0 },
+                    ""minOrderCooldownSeconds"": { ""type"": ""integer"", ""minimum"": 1, ""maximum"": 3600 },
+                    ""maxOrdersPerCycle"": { ""type"": ""integer"", ""minimum"": 1, ""maximum"": 50 }
                 },
                 ""required"": [""gridLevels"", ""lowerBound"", ""upperBound"", ""orderSize"", ""capitalAllocation""]
             }"
@@ -110,20 +114,23 @@ namespace CryptoTrading.Services.Bot.Strategies
         }
 
         public async Task<BotExecutionResult> ExecuteAsync(
-            BotContext context, 
-            BotParameters parameters, 
+            BotContext context,
+            BotParameters parameters,
             CancellationToken cancellationToken = default)
         {
             try
             {
+                // Reset order count for new cycle
+                await context.RiskManager.ResetOrderCountForNewCycleAsync(context.BotId, cancellationToken);
+
                 // Load or initialize state
-                var state = await context.LoadStateAsync<GridRuntimeState>(cancellationToken) 
+                var state = await context.LoadStateAsync<GridRuntimeState>(cancellationToken)
                     ?? InitializeState(parameters);
 
                 // Get current market price
                 var currentPrice = await context.MarketData.GetMidPriceAsync(
-                    context.BaseAsset, 
-                    context.QuoteAsset, 
+                    context.BaseAsset,
+                    context.QuoteAsset,
                     cancellationToken);
 
                 if (currentPrice <= 0)
@@ -132,6 +139,10 @@ namespace CryptoTrading.Services.Bot.Strategies
                 }
 
                 context.Logger.LogInfo("Execution", $"Current price: ${currentPrice:F2}");
+
+                // Get rate limit parameters
+                var minCooldownSeconds = parameters.GetValue("minOrderCooldownSeconds", 30);
+                var maxOrdersPerCycle = parameters.GetValue("maxOrdersPerCycle", 5);
 
                 // Process grid lines
                 var events = new List<BotEvent>();
@@ -145,6 +156,29 @@ namespace CryptoTrading.Services.Bot.Strategies
                     // Check if we should place a buy order
                     if (line.ShouldPlaceBuy(currentPrice) && !line.HasPendingOrder)
                     {
+                        // PRE-ORDER CHECKS: Cooldown and rate limit
+                        var cooldownPassed = await context.RiskManager.CheckCooldownAsync(
+                            context.BotId,
+                            TimeSpan.FromSeconds(minCooldownSeconds),
+                            cancellationToken);
+
+                        var withinRateLimit = await context.RiskManager.CheckRateLimitAsync(
+                            context.BotId,
+                            maxOrdersPerCycle,
+                            cancellationToken);
+
+                        if (!cooldownPassed)
+                        {
+                            context.Logger.LogDebug("OrderSkipped", $"BUY order skipped (cooldown not passed) at ${line.Price:F2}");
+                            continue; // Skip this order
+                        }
+
+                        if (!withinRateLimit)
+                        {
+                            context.Logger.LogDebug("OrderSkipped", $"BUY order skipped (rate limit reached) at ${line.Price:F2}");
+                            break; // Stop processing more grid lines this cycle
+                        }
+
                         try
                         {
                             var orderId = await context.TradingService.PlaceOrderAsync(
@@ -160,7 +194,10 @@ namespace CryptoTrading.Services.Bot.Strategies
 
                             line.MarkPending(orderId, "BUY");
                             ordersPlaced++;
-                            
+
+                            // Record order placed for rate limiting tracking
+                            await context.RiskManager.RecordOrderPlacedAsync(context.BotId, cancellationToken);
+
                             context.Logger.LogInfo("OrderPlaced", $"BUY order at ${line.Price:F2}", new { orderId, line.Price });
                             events.Add(new BotEvent
                             {
@@ -177,6 +214,29 @@ namespace CryptoTrading.Services.Bot.Strategies
                     // Check if we should place a sell order
                     else if (line.ShouldPlaceSell(currentPrice) && !line.HasPendingOrder)
                     {
+                        // PRE-ORDER CHECKS: Cooldown and rate limit
+                        var cooldownPassed = await context.RiskManager.CheckCooldownAsync(
+                            context.BotId,
+                            TimeSpan.FromSeconds(minCooldownSeconds),
+                            cancellationToken);
+
+                        var withinRateLimit = await context.RiskManager.CheckRateLimitAsync(
+                            context.BotId,
+                            maxOrdersPerCycle,
+                            cancellationToken);
+
+                        if (!cooldownPassed)
+                        {
+                            context.Logger.LogDebug("OrderSkipped", $"SELL order skipped (cooldown not passed) at ${line.Price:F2}");
+                            continue; // Skip this order
+                        }
+
+                        if (!withinRateLimit)
+                        {
+                            context.Logger.LogDebug("OrderSkipped", $"SELL order skipped (rate limit reached) at ${line.Price:F2}");
+                            break; // Stop processing more grid lines this cycle
+                        }
+
                         try
                         {
                             var orderId = await context.TradingService.PlaceOrderAsync(
@@ -192,7 +252,10 @@ namespace CryptoTrading.Services.Bot.Strategies
 
                             line.MarkPending(orderId, "SELL");
                             ordersPlaced++;
-                            
+
+                            // Record order placed for rate limiting tracking
+                            await context.RiskManager.RecordOrderPlacedAsync(context.BotId, cancellationToken);
+
                             context.Logger.LogInfo("OrderPlaced", $"SELL order at ${line.Price:F2}", new { orderId, line.Price });
                             events.Add(new BotEvent
                             {
@@ -231,6 +294,19 @@ namespace CryptoTrading.Services.Bot.Strategies
 
                 // Update metrics
                 state.UpdateMetrics(currentPrice);
+
+                // Track cycle-level PnL change for kill switch
+                // Note: Grid strategy tracks unrealized PnL. For more accurate kill switch tracking,
+                // implement order fill monitoring to track realized PnL per completed buy-sell pair.
+                var cyclePnLChange = state.UnrealizedPnl - state.LastPnL;
+                if (Math.Abs(cyclePnLChange) > 0.01m) // Only track significant changes (> 1 cent)
+                {
+                    await context.RiskManager.RecordTradeResultAsync(context.BotId, cyclePnLChange, cancellationToken);
+                    state.LastPnL = state.UnrealizedPnl;
+
+                    context.Logger.LogDebug("RiskTracking",
+                        $"Recorded cycle PnL change: ${cyclePnLChange:F2} (Total unrealized: ${state.UnrealizedPnl:F2})");
+                }
 
                 // Save state
                 await context.SaveStateAsync(state, cancellationToken);
