@@ -138,9 +138,17 @@ public async Task<MarketQuote?> GetQuoteAsync(string symbol)
 ```csharp
 // Lấy quote đầy đủ
 MarketQuote? quote = await _marketData.GetQuoteAsync("BTCUSDT");
+if (quote != null)
+{
+    // Sử dụng quote.Bid, quote.Ask, quote.Mid
+}
 
 // Lấy Mid Price (dùng cho bot, risk, PnL)
 decimal? midPrice = await _marketData.GetMidPriceAsync("BTCUSDT");
+if (midPrice.HasValue)
+{
+    // Sử dụng midPrice.Value
+}
 
 // Lấy Bid (dùng cho SELL orders)
 decimal? bidPrice = await _marketData.GetBidPriceAsync("BTCUSDT");
@@ -156,10 +164,14 @@ decimal? askPrice = await _marketData.GetAskPriceAsync("BTCUSDT");
 ### Trong `Program.cs` hoặc `Startup.cs`:
 
 ```csharp
+using CryptoTrading.Services;
+using CryptoTradingApp.Services.Market;
+
 // ===== Simplified Market Data Architecture =====
 
-// 1. Register existing CoinGecko service (already configured)
-services.AddHttpClient<ICoinGeckoService, CoinGeckoService>();
+// 1. Register existing CoinGecko service (already configured in Program.cs)
+// Note: ICoinGeckoService is already registered as HttpClient in Program.cs
+// builder.Services.AddHttpClient<ICoinGeckoService, CoinGeckoService>(...);
 
 // 2. Register upstream price source (adapter)
 services.AddScoped<IUpstreamPriceSource, CoinGeckoPriceSource>();
@@ -174,7 +186,10 @@ services.AddSingleton<ISimplifiedPriceValidator, SimplifiedPriceValidator>();
 services.AddScoped<SimplifiedMarketDataProvider>();
 ```
 
-**Lưu ý**: Không cần thay đổi `ICoinGeckoService` cũ, vẫn hoạt động bình thường.
+**Lưu ý**: 
+- `ICoinGeckoService` đã được register trong `Program.cs` (dòng 154-160), không cần register lại
+- Namespace: `ICoinGeckoService` nằm trong `CryptoTrading.Services`
+- Namespace: Các simplified market data services nằm trong `CryptoTradingApp.Services.Market`
 
 ---
 
@@ -191,7 +206,7 @@ public class GridTradingStrategy : ITradingStrategy
     {
         // Lấy Mid Price để tính toán grid levels
         var midPrice = await _marketData.GetMidPriceAsync(symbol);
-        if (midPrice == null)
+        if (!midPrice.HasValue)
         {
             _logger.LogWarning("Cannot get mid price for {Symbol}", symbol);
             return;
@@ -218,7 +233,7 @@ public async Task<Order> PlaceMarketOrderAsync(PlaceOrderRequest request)
     // Market Order logic:
     // - BUY order: execute tại ASK price (bạn mua từ người bán)
     // - SELL order: execute tại BID price (bạn bán cho người mua)
-    decimal executionPrice = request.Side == OrderSide.Buy
+    decimal executionPrice = request.Side == "BUY"
         ? quote.Ask  // BUY = lấy ASK
         : quote.Bid; // SELL = lấy BID
 
@@ -227,17 +242,26 @@ public async Task<Order> PlaceMarketOrderAsync(PlaceOrderRequest request)
         request.Side, request.Symbol, executionPrice);
 
     // Create order with execution price
+    // Note: Cần lấy CryptocurrencyId từ Symbol trước
+    var cryptoId = await GetCryptocurrencyIdAsync(request.Symbol);
     var order = new Order
     {
-        Symbol = request.Symbol,
-        Side = request.Side,
-        Type = OrderType.Market,
-        Quantity = request.Quantity,
-        Price = executionPrice,  // Filled at Bid/Ask
-        Status = OrderStatus.Filled
+        UserId = GetCurrentUserId(),  // Từ authentication context
+        CryptocurrencyId = cryptoId,
+        Side = request.Side,  // "BUY" or "SELL"
+        Type = "MARKET",
+        QuantityCoin = request.Quantity,
+        PriceUsd = executionPrice,  // Filled at Bid/Ask
+        Status = "FILLED",
+        FilledQty = request.Quantity,
+        CreatedAt = DateTime.UtcNow,
+        UpdatedAt = DateTime.UtcNow
     };
 
-    // ... save to database, update balance, etc.
+    _context.Orders.Add(order);
+    await _context.SaveChangesAsync();
+    
+    // ... update balance, wallet, etc.
     return order;
 }
 ```
@@ -248,39 +272,45 @@ public async Task<Order> PlaceMarketOrderAsync(PlaceOrderRequest request)
 public async Task CheckAndFillLimitOrdersAsync()
 {
     var pendingOrders = await _context.Orders
-        .Where(o => o.Status == OrderStatus.Pending && o.Type == OrderType.Limit)
+        .Where(o => o.Status == "NEW" && o.Type == "LIMIT")
         .ToListAsync();
 
     foreach (var order in pendingOrders)
     {
-        var quote = await _marketData.GetQuoteAsync(order.Symbol);
+        // Lấy symbol từ Cryptocurrency navigation property
+        // Hoặc từ một mapping service: Symbol = GetSymbolFromCryptoId(order.CryptocurrencyId)
+        var symbol = $"{order.Cryptocurrency.Symbol}USDT";  // Ví dụ: "BTCUSDT"
+        var quote = await _marketData.GetQuoteAsync(symbol);
         if (quote == null) continue;
 
         bool shouldFill = false;
 
         // Limit BUY: fill khi Ask <= Limit Price
-        if (order.Side == OrderSide.Buy && quote.Ask <= order.LimitPrice)
+        // Note: Order.PriceUsd chứa limit price cho LIMIT orders
+        if (order.Side == "BUY" && order.PriceUsd.HasValue && quote.Ask <= order.PriceUsd.Value)
         {
-            order.Price = quote.Ask;  // Fill at Ask
+            order.PriceUsd = quote.Ask;  // Fill at Ask
+            order.FilledQty = order.QuantityCoin;  // Fill toàn bộ
             shouldFill = true;
         }
 
         // Limit SELL: fill khi Bid >= Limit Price
-        if (order.Side == OrderSide.Sell && quote.Bid >= order.LimitPrice)
+        if (order.Side == "SELL" && order.PriceUsd.HasValue && quote.Bid >= order.PriceUsd.Value)
         {
-            order.Price = quote.Bid;  // Fill at Bid
+            order.PriceUsd = quote.Bid;  // Fill at Bid
+            order.FilledQty = order.QuantityCoin;  // Fill toàn bộ
             shouldFill = true;
         }
 
         if (shouldFill)
         {
-            order.Status = OrderStatus.Filled;
-            order.FilledAt = DateTime.UtcNow;
+            order.Status = "FILLED";
+            order.UpdatedAt = DateTime.UtcNow;
             await _context.SaveChangesAsync();
 
             _logger.LogInformation(
-                "Limit {Side} order filled: {Symbol} @ {Price} (Limit={Limit})",
-                order.Side, order.Symbol, order.Price, order.LimitPrice);
+                "Limit {Side} order filled: {Symbol} @ {Price}",
+                order.Side, order.Symbol, order.PriceUsd);
         }
     }
 }
@@ -298,7 +328,7 @@ public async Task<decimal> CalculateUnrealizedPnLAsync(int botId)
     {
         // Dùng MID PRICE để tính PnL (fair value)
         var currentMidPrice = await _marketData.GetMidPriceAsync(position.Symbol);
-        if (currentMidPrice == null) continue;
+        if (!currentMidPrice.HasValue) continue;
 
         // PnL = (Current Mid - Entry Price) * Quantity
         var pnl = (currentMidPrice.Value - position.EntryPrice) * position.Quantity;
@@ -351,14 +381,15 @@ public async Task<BacktestResult> RunBacktestAsync(Strategy strategy)
 **Logic**:
 ```csharp
 var quote = await GetQuoteAsync(symbol);
+if (quote == null) throw new InvalidOperationException("Cannot get market quote");
 
-if (side == OrderSide.Buy)
+if (side == "BUY")
 {
     // BUY market order: execute tại ASK
     // Lý do: Bạn mua từ người đang bán (họ offer ở Ask)
     executionPrice = quote.Ask;
 }
-else if (side == OrderSide.Sell)
+else if (side == "SELL")
 {
     // SELL market order: execute tại BID
     // Lý do: Bạn bán cho người đang mua (họ bid ở Bid)
@@ -380,8 +411,9 @@ else if (side == OrderSide.Sell)
 **Logic**:
 ```csharp
 var quote = await GetQuoteAsync(symbol);
+if (quote == null) return; // Không có quote, không thể fill
 
-if (side == OrderSide.Buy && limitPrice != null)
+if (side == "BUY" && limitPrice != null)
 {
     // BUY limit: chỉ fill khi Ask <= Limit Price
     if (quote.Ask <= limitPrice)
@@ -390,7 +422,7 @@ if (side == OrderSide.Buy && limitPrice != null)
         // Fill order
     }
 }
-else if (side == OrderSide.Sell && limitPrice != null)
+else if (side == "SELL" && limitPrice != null)
 {
     // SELL limit: chỉ fill khi Bid >= Limit Price
     if (quote.Bid >= limitPrice)

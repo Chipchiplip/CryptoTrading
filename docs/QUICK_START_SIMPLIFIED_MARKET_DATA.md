@@ -32,6 +32,11 @@ public class MyTradingStrategy
     {
         // Lấy quote đầy đủ
         var quote = await _marketData.GetQuoteAsync("BTCUSDT");
+        if (quote == null)
+        {
+            Console.WriteLine("Cannot get quote for BTCUSDT");
+            return;
+        }
 
         Console.WriteLine($"BTC Quote:");
         Console.WriteLine($"  Bid: ${quote.Bid}");
@@ -51,6 +56,8 @@ public class MyTradingStrategy
 ```csharp
 // BUY market order
 var quote = await _marketData.GetQuoteAsync(symbol);
+if (quote == null) throw new InvalidOperationException("Cannot get market quote");
+
 decimal buyPrice = quote.Ask;  // Mua tại ASK
 
 // SELL market order
@@ -60,15 +67,16 @@ decimal sellPrice = quote.Bid;  // Bán tại BID
 #### **Limit Order Check**:
 ```csharp
 var quote = await _marketData.GetQuoteAsync(symbol);
+if (quote == null) return; // Không có quote, skip
 
 // BUY limit: fill khi Ask <= Limit
-if (orderSide == Buy && quote.Ask <= limitPrice)
+if (orderSide == "BUY" && quote.Ask <= limitPrice)
 {
     // Fill order at Ask
 }
 
 // SELL limit: fill khi Bid >= Limit
-if (orderSide == Sell && quote.Bid >= limitPrice)
+if (orderSide == "SELL" && quote.Bid >= limitPrice)
 {
     // Fill order at Bid
 }
@@ -78,7 +86,9 @@ if (orderSide == Sell && quote.Bid >= limitPrice)
 ```csharp
 // Dùng MID PRICE cho PnL
 var midPrice = await _marketData.GetMidPriceAsync(symbol);
-decimal pnl = (midPrice - entryPrice) * quantity;
+if (midPrice == null) return 0m; // Không có giá, PnL = 0
+
+decimal pnl = (midPrice.Value - entryPrice) * quantity;
 ```
 
 ---
