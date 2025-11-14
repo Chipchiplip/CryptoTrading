@@ -48,6 +48,11 @@ namespace CryptoTrading.Data
         public DbSet<ReconciliationResult> ReconciliationResults { get; set; }
         public DbSet<ClientOrderIdempotency> ClientOrderIdempotency { get; set; }
 
+        // ========== RISK MANAGEMENT ==========
+        public DbSet<KillSwitchEvent> KillSwitchEvents { get; set; }
+        public DbSet<BotRiskState> BotRiskStates { get; set; }
+        public DbSet<UserCapitalLimits> UserCapitalLimits { get; set; }
+
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);

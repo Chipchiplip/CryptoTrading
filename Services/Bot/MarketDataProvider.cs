@@ -1,61 +1,145 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using CryptoTrading.Interfaces.Bot;
 using CryptoTrading.Services;
+using CryptoTradingApp.Services.Market;
 using Microsoft.Extensions.Logging;
 using System.Linq;
 
 namespace CryptoTrading.Services.Bot
 {
     /// <summary>
-    /// Market data provider using cache service
+    /// Enhanced market data provider with exchange integration and price validation
     /// </summary>
     public class MarketDataProvider : IMarketDataProvider
     {
+        private readonly IExchangeDataProvider _exchangeDataProvider;
+        private readonly IPriceValidator _priceValidator;
         private readonly ICryptoCacheService _cacheService;
-        private readonly ICoinGeckoService _coinGeckoService;
         private readonly ILogger<MarketDataProvider> _logger;
+        private readonly IConfiguration _configuration;
+
+        private const int MAX_RETRIES = 3;
+        private const int BASE_DELAY_MS = 100;
 
         public MarketDataProvider(
+            IExchangeDataProvider exchangeDataProvider,
+            IPriceValidator priceValidator,
             ICryptoCacheService cacheService,
-            ICoinGeckoService coinGeckoService,
-            ILogger<MarketDataProvider> logger)
+            ILogger<MarketDataProvider> logger,
+            IConfiguration configuration)
         {
+            _exchangeDataProvider = exchangeDataProvider;
+            _priceValidator = priceValidator;
             _cacheService = cacheService;
-            _coinGeckoService = coinGeckoService;
             _logger = logger;
+            _configuration = configuration;
         }
 
         public async Task<decimal> GetMidPriceAsync(
-            string baseAsset, 
-            string quoteAsset, 
+            string baseAsset,
+            string quoteAsset,
             CancellationToken cancellationToken = default)
         {
-            // Try cache first
-            if (_cacheService.TryGetCryptoData(out var cachedData) && cachedData != null)
-            {
-                var coin = cachedData.FirstOrDefault(c => 
-                    c.Symbol.Equals(baseAsset, StringComparison.OrdinalIgnoreCase));
-                
-                if (coin?.CurrentPrice > 0)
-                {
-                    return coin.CurrentPrice ?? 0m;
-                }
-            }
+            var symbol = $"{baseAsset}{quoteAsset}";
+            var stopwatch = Stopwatch.StartNew();
 
-            // Fallback to API
             try
             {
-                var marketData = await _coinGeckoService.GetMarketDataAsync();
-                var coin = marketData.FirstOrDefault(c => 
-                    c.Symbol.Equals(baseAsset, StringComparison.OrdinalIgnoreCase));
-                
-                return coin?.CurrentPrice ?? 0m;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Failed to fetch price for {BaseAsset}", baseAsset);
+                // Use exponential backoff retry logic
+                decimal? price = null;
+                Exception? lastException = null;
+
+                for (int attempt = 0; attempt < MAX_RETRIES; attempt++)
+                {
+                    try
+                    {
+                        // Get order book mid price (best bid + best ask) / 2
+                        price = await _exchangeDataProvider.GetOrderBookMidPriceAsync(symbol, cancellationToken);
+
+                        if (price.HasValue && price.Value > 0)
+                        {
+                            // Validate price quality
+                            var validation = await _priceValidator.ValidatePriceAsync(
+                                symbol,
+                                price.Value,
+                                DateTime.UtcNow);
+
+                            if (validation.IsValid)
+                            {
+                                stopwatch.Stop();
+                                _logger.LogDebug(
+                                    "Fetched mid price for {Symbol}: {Price} (latency: {Latency}ms, exchange: {Exchange})",
+                                    symbol, price.Value, stopwatch.ElapsedMilliseconds, _exchangeDataProvider.ExchangeName);
+
+                                // Cache the price
+                                await CachePriceAsync(symbol, price.Value);
+
+                                return price.Value;
+                            }
+                            else
+                            {
+                                _logger.LogWarning(
+                                    "Price validation failed for {Symbol}: {Errors}",
+                                    symbol, string.Join(", ", validation.Errors));
+
+                                // If validation fails but it's not critical, still return the price
+                                if (validation.Errors.Count == 0 && validation.Warnings.Count > 0)
+                                {
+                                    return price.Value;
+                                }
+                            }
+                        }
+
+                        break; // If we got here, no need to retry
+                    }
+                    catch (Exception ex)
+                    {
+                        lastException = ex;
+                        _logger.LogWarning(
+                            ex,
+                            "Attempt {Attempt}/{MaxRetries} failed to fetch price for {Symbol}",
+                            attempt + 1, MAX_RETRIES, symbol);
+
+                        if (attempt < MAX_RETRIES - 1)
+                        {
+                            // Exponential backoff: 100ms, 200ms, 400ms
+                            var delay = BASE_DELAY_MS * (int)Math.Pow(2, attempt);
+                            await Task.Delay(delay, cancellationToken);
+                        }
+                    }
+                }
+
+                // If all retries failed, try to get cached price
+                var cachedPrice = await GetCachedPriceAsync(symbol);
+                if (cachedPrice.HasValue)
+                {
+                    _logger.LogWarning(
+                        "Using cached price for {Symbol} after {Attempts} failed attempts: {Price}",
+                        symbol, MAX_RETRIES, cachedPrice.Value);
+                    return cachedPrice.Value;
+                }
+
+                // Last resort: return 0 and log error
+                _logger.LogError(
+                    lastException,
+                    "Failed to fetch price for {Symbol} after {Attempts} attempts and no cache available",
+                    symbol, MAX_RETRIES);
+
                 return 0m;
+            }
+            finally
+            {
+                stopwatch.Stop();
+
+                // Monitor for excessive latency
+                if (stopwatch.ElapsedMilliseconds > 1000)
+                {
+                    _logger.LogWarning(
+                        "High latency detected for {Symbol}: {Latency}ms",
+                        symbol, stopwatch.ElapsedMilliseconds);
+                }
             }
         }
 
@@ -72,85 +156,118 @@ namespace CryptoTrading.Services.Bot
                 return new List<OhlcvData>();
             }
 
+            var symbol = $"{baseAsset}{quoteAsset}";
+            var stopwatch = Stopwatch.StartNew();
+
             try
             {
-                var marketData = await _coinGeckoService.GetMarketDataAsync();
-                var coin = marketData.FirstOrDefault(c =>
-                    c.Symbol.Equals(baseAsset, StringComparison.OrdinalIgnoreCase) ||
-                    c.Id.Equals(baseAsset, StringComparison.OrdinalIgnoreCase));
+                // Calculate number of candles needed
+                var timeSpan = endDate - startDate;
+                var intervalMinutes = ParseIntervalToMinutes(interval);
+                var limit = (int)Math.Ceiling(timeSpan.TotalMinutes / intervalMinutes);
+                limit = Math.Min(limit, 1000); // Cap at 1000 candles
 
-                if (coin == null)
+                // Fetch candles from exchange
+                var exchangeCandles = await _exchangeDataProvider.GetCandlesAsync(
+                    symbol,
+                    interval,
+                    limit,
+                    cancellationToken);
+
+                if (exchangeCandles == null || exchangeCandles.Count == 0)
                 {
-                    _logger.LogWarning("Unable to find coin data for asset {Asset}", baseAsset);
+                    _logger.LogWarning("No candles returned for {Symbol}", symbol);
                     return new List<OhlcvData>();
                 }
 
-                var totalDays = Math.Max(1, (int)Math.Ceiling((endDate - startDate).TotalDays));
-                var priceHistory = await _coinGeckoService.GetPriceHistoryAsync(coin.Id ?? coin.Symbol, totalDays);
+                // Filter outliers
+                var filtered = await _priceValidator.FilterOutliersAsync(symbol, exchangeCandles);
 
-                if (priceHistory == null || priceHistory.Count == 0)
+                // Validate each candle
+                var validatedCandles = new List<OhlcvData>();
+                foreach (var candle in filtered)
                 {
-                    _logger.LogWarning("No price history returned for {Asset}", baseAsset);
-                    return new List<OhlcvData>();
+                    var validation = await _priceValidator.ValidateCandleAsync(symbol, candle);
+
+                    if (validation.IsValid || validation.Errors.Count == 0)
+                    {
+                        validatedCandles.Add(new OhlcvData
+                        {
+                            Timestamp = candle.Timestamp,
+                            Open = candle.Open,
+                            High = candle.High,
+                            Low = candle.Low,
+                            Close = candle.Close,
+                            Volume = candle.Volume
+                        });
+                    }
+                    else
+                    {
+                        _logger.LogWarning(
+                            "Skipping invalid candle for {Symbol} at {Timestamp}: {Errors}",
+                            symbol, candle.Timestamp, string.Join(", ", validation.Errors));
+                    }
                 }
 
-                var filtered = priceHistory
-                    .Where(p => p.Timestamp >= startDate && p.Timestamp <= endDate)
-                    .OrderBy(p => p.Timestamp)
+                // Filter by date range
+                var result = validatedCandles
+                    .Where(c => c.Timestamp >= startDate && c.Timestamp <= endDate)
+                    .OrderBy(c => c.Timestamp)
                     .ToList();
 
-                if (filtered.Count == 0)
-                {
-                    filtered = priceHistory.OrderBy(p => p.Timestamp).ToList();
-                }
+                stopwatch.Stop();
+                _logger.LogDebug(
+                    "Fetched {Count} OHLCV candles for {Symbol} (latency: {Latency}ms)",
+                    result.Count, symbol, stopwatch.ElapsedMilliseconds);
 
-                var intervalSpan = interval.ToLower() switch
-                {
-                    "1m" => TimeSpan.FromMinutes(1),
-                    "5m" => TimeSpan.FromMinutes(5),
-                    "15m" => TimeSpan.FromMinutes(15),
-                    "30m" => TimeSpan.FromMinutes(30),
-                    "1h" => TimeSpan.FromHours(1),
-                    "4h" => TimeSpan.FromHours(4),
-                    "1d" => TimeSpan.FromDays(1),
-                    _ => TimeSpan.FromHours(1)
-                };
-
-                var grouped = filtered
-                    .GroupBy(p =>
-                    {
-                        var ts = DateTime.SpecifyKind(p.Timestamp, DateTimeKind.Utc);
-                        var ticks = ts.Ticks - (ts.Ticks % intervalSpan.Ticks);
-                        return new DateTime(ticks, DateTimeKind.Utc);
-                    })
-                    .OrderBy(g => g.Key);
-
-                var candles = new List<OhlcvData>();
-                foreach (var group in grouped)
-                {
-                    var ordered = group.OrderBy(p => p.Timestamp).ToList();
-                    var open = ordered.First().Price;
-                    var close = ordered.Last().Price;
-                    var high = ordered.Max(p => p.Price);
-                    var low = ordered.Min(p => p.Price);
-
-                    candles.Add(new OhlcvData
-                    {
-                        Timestamp = group.Key,
-                        Open = open,
-                        High = high,
-                        Low = low,
-                        Close = close,
-                        Volume = 0
-                    });
-                }
-
-                return candles;
+                return result;
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to retrieve OHLCV data for {Asset}/{Quote}", baseAsset, quoteAsset);
                 return new List<OhlcvData>();
+            }
+        }
+
+        private static int ParseIntervalToMinutes(string interval)
+        {
+            return interval.ToLowerInvariant() switch
+            {
+                "1m" or "1min" => 1,
+                "5m" or "5min" => 5,
+                "15m" or "15min" => 15,
+                "30m" or "30min" => 30,
+                "1h" or "1hour" => 60,
+                "4h" or "4hour" => 240,
+                "1d" or "1day" => 1440,
+                _ => 60
+            };
+        }
+
+        private async Task CachePriceAsync(string symbol, decimal price)
+        {
+            try
+            {
+                var cacheKey = $"price:{symbol}";
+                await _cacheService.SetAsync(cacheKey, price, TimeSpan.FromMinutes(1));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to cache price for {Symbol}", symbol);
+            }
+        }
+
+        private async Task<decimal?> GetCachedPriceAsync(string symbol)
+        {
+            try
+            {
+                var cacheKey = $"price:{symbol}";
+                return await _cacheService.GetAsync<decimal?>(cacheKey);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to retrieve cached price for {Symbol}", symbol);
+                return null;
             }
         }
     }
