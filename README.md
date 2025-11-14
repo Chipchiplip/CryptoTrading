@@ -1,6 +1,17 @@
-# 🚀 CryptoTrading API
+# 🚀 CryptoTrading API - DEMO PROJECT
 
-Crypto Trading Platform API được xây dựng với ASP.NET Core 9.0, theo cấu trúc đơn giản và dễ phát triển.
+> ⚠️ **DEMO PROJECT DISCLAIMER**  
+> This is a **simplified educational demo project** for learning purposes.  
+> **NOT suitable for real trading or production use.**
+> 
+> - Market data, order fills, and PnL are **simulated**
+> - No real exchange integration
+> - No real money transactions
+> - Risk management is simplified for demo purposes
+> - Use this project to understand trading bot architecture, not for actual trading
+
+Crypto Trading Platform API được xây dựng với ASP.NET Core 9.0, theo cấu trúc đơn giản và dễ phát triển.  
+**Đây là dự án DEMO để học tập, không phải hệ thống giao dịch thực tế.**
 
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)](https://github.com/Chipchiplip/CryptoTrading)
 [![.NET](https://img.shields.io/badge/.NET-9.0-blue.svg)](https://dotnet.microsoft.com/download/dotnet/9.0)
@@ -201,15 +212,16 @@ docker run -p 8080:80 cryptotrading-api
 
 ## 📚 Documentation
 
+- **⚠️ DEMO Project Disclaimer**: [docs/DEMO_PROJECT_DISCLAIMER.md](docs/DEMO_PROJECT_DISCLAIMER.md) - **READ THIS FIRST**
 - **API Documentation**: Available at `/swagger` when running
 - **Getting Started**: [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md)
 - **Task Assignments**: [docs/TASK_ASSIGNMENTS.md](docs/TASK_ASSIGNMENTS.md)
 - **Documentation Index**: [docs/README.md](docs/README.md)
 - **SignalR Hubs**:
-  - Market Hub: `/hubs/market` - Real-time price updates
-  - Trading Hub: `/hubs/trading` - Real-time trading updates
+  - Market Hub: `/hubs/market` - Real-time price updates (demo data)
+  - Trading Hub: `/hubs/trading` - Real-time trading updates (demo data)
 
-## 🎯 Current Status
+## 🎯 Current Status (DEMO MODE)
 
 - ✅ **Project Structure**: Complete
 - ✅ **API Controllers**: 5 controllers with endpoints ready
@@ -217,9 +229,22 @@ docker run -p 8080:80 cryptotrading-api
 - ✅ **Service Interfaces**: 5 interfaces with 50+ methods defined
 - ✅ **Infrastructure**: Repository pattern, SignalR, JWT auth ready
 - ✅ **Configuration**: Database, JWT, CORS, Swagger configured
-- ⏳ **Service Implementation**: Ready for team development
-- ⏳ **Database Integration**: Ready to be enabled
+- ✅ **Demo Mode**: Simplified market data, simulated order fills, demo risk management
+- ⚠️ **Production Features**: Disabled/Stubbed (real exchange integration, advanced risk management, kill switch)
 - ⏳ **Testing**: Ready for implementation
+
+## 📌 Demo Mode Features
+
+This project runs in **DEMO MODE** with the following simplifications:
+
+- **Market Data**: Simulated price feeds (random walk/trending prices)
+- **Order Execution**: Fake fills with simulated slippage and fees
+- **Risk Management**: Basic cooldown/rate limiting only (no kill switch)
+- **PnL Calculation**: Simplified demo calculations
+- **No Real Exchange**: No connection to Binance, Coinbase, or any real exchange
+- **No Real Money**: All transactions are simulated
+
+**PRODUCTION TODO**: Real exchange integration, advanced risk management, and production-grade features are marked with `// PRODUCTION TODO` comments in the code.
 
 ## 🤝 Contributing
 

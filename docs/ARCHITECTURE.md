@@ -1,8 +1,14 @@
 # Architecture Documentation
 
+> ⚠️ **DEMO PROJECT**  
+> This architecture documentation describes a **simplified demo project** for educational purposes.  
+> Production features are stubbed or simplified. See [DEMO_PROJECT_DISCLAIMER.md](DEMO_PROJECT_DISCLAIMER.md) for details.
+
 ## Overview
 
 The Crypto Trading Web platform follows **Clean Architecture** principles with clear separation of concerns across layers.
+
+**Note**: This is a DEMO project. Real exchange integration, advanced risk management, and production features are marked with `// PRODUCTION TODO` comments in the code.
 
 ## Project Structure
 

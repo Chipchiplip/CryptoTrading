@@ -1,5 +1,9 @@
 # 🚀 Getting Started Guide
 
+> ⚠️ **DEMO PROJECT**  
+> This is a simplified educational demo project. Market data, order fills, and PnL are **simulated**.  
+> See [DEMO_PROJECT_DISCLAIMER.md](DEMO_PROJECT_DISCLAIMER.md) for details.
+
 ## Prerequisites
 
 Before you begin, ensure you have the following installed:

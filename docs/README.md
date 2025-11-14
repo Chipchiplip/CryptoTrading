@@ -1,11 +1,19 @@
 # 📚 CryptoTrading Documentation
 
+> ⚠️ **DEMO PROJECT DISCLAIMER**  
+> This is a **simplified educational demo project** for learning purposes.  
+> Market data, order fills, and PnL are **simulated**.  
+> **NOT suitable for real trading or production use.**
+
 Welcome to the CryptoTrading platform documentation. This directory contains all project documentation organized by category.
+
+**This is a DEMO project** - designed to demonstrate trading bot architecture and concepts, not for real trading.
 
 ## 🚀 Quick Start
 
 | Document | Description |
 |----------|-------------|
+| **[DEMO_PROJECT_DISCLAIMER.md](DEMO_PROJECT_DISCLAIMER.md)** | **⚠️ READ FIRST - Important demo project information** |
 | [GETTING_STARTED.md](GETTING_STARTED.md) | Complete setup guide for developers |
 | [SETUP.md](SETUP.md) | Quick setup instructions |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | System architecture overview |
@@ -94,14 +102,17 @@ CryptoTrading/
 3. **Development**: Check [TEAM_WORKFLOW.md](TEAM_WORKFLOW.md) for Git workflow
 4. **Architecture**: Review [ARCHITECTURE.md](ARCHITECTURE.md) for system design
 
-## 📊 Key Features
+## 📊 Key Features (DEMO MODE)
 
 - **Authentication**: JWT with 2FA, email verification
-- **Trading**: Real-time crypto trading with order management
-- **Portfolio**: Portfolio tracking and analysis
-- **Market Data**: Real-time price feeds and market statistics
+- **Trading**: **DEMO** - Simulated order execution (no real exchange)
+- **Portfolio**: Portfolio tracking and analysis (demo data)
+- **Market Data**: **DEMO** - Simulated price feeds (not real exchange data)
 - **Payments**: VNPay integration for deposits
-- **Real-time**: WebSocket connections for live updates
+- **Real-time**: WebSocket connections for live updates (demo data)
+- **Bot Strategies**: Grid trading and momentum scalping (demo execution)
+
+**Note**: All trading features run in demo mode with simulated data. No real money or real exchange integration.
 
 ## 🔗 Quick Links
 
