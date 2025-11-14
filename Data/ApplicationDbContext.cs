@@ -39,6 +39,14 @@ namespace CryptoTrading.Data
         public DbSet<TradingBotRuntimeSnapshot> TradingBotRuntimeSnapshots { get; set; }
         public DbSet<TradingBotOrder> TradingBotOrders { get; set; }
         public DbSet<TradingBotLog> TradingBotLogs { get; set; }
+        
+        // ========== AUDIT & CONFIGURATION ==========
+        public DbSet<AuditEvent> AuditEvents { get; set; }
+        public DbSet<FeeLedger> FeeLedger { get; set; }
+        public DbSet<TradingConfiguration> TradingConfigurations { get; set; }
+        public DbSet<BotRiskConfiguration> BotRiskConfigurations { get; set; }
+        public DbSet<ReconciliationResult> ReconciliationResults { get; set; }
+        public DbSet<ClientOrderIdempotency> ClientOrderIdempotency { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -291,8 +299,93 @@ namespace CryptoTrading.Data
                 entity.HasKey(e => e.Id);
                 entity.HasIndex(e => new { e.UserId, e.Status });
                 entity.HasIndex(e => e.NextRunAt);
+            });
 
+            // ==========================
+            // AUDIT EVENT CONFIG
+            // ==========================
+            modelBuilder.Entity<AuditEvent>(entity =>
+            {
+                entity.ToTable("AuditEvents");
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.Id).ValueGeneratedOnAdd();
+                entity.HasIndex(e => new { e.UserId, e.CreatedAt });
+                entity.HasIndex(e => e.CorrelationId);
+                entity.HasIndex(e => new { e.EntityType, e.EntityId });
+            });
 
+            // ==========================
+            // FEE LEDGER CONFIG
+            // ==========================
+            modelBuilder.Entity<FeeLedger>(entity =>
+            {
+                entity.ToTable("FeeLedger");
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.Id).ValueGeneratedOnAdd();
+                entity.HasIndex(e => new { e.UserId, e.CreatedAt });
+                entity.HasIndex(e => e.TradeId);
+
+                entity.HasOne(e => e.User)
+                    .WithMany()
+                    .HasForeignKey(e => e.UserId)
+                    .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            // ==========================
+            // TRADING CONFIGURATION CONFIG
+            // ==========================
+            modelBuilder.Entity<TradingConfiguration>(entity =>
+            {
+                entity.ToTable("TradingConfigurations");
+                entity.HasKey(e => e.Id);
+                entity.HasIndex(e => new { e.ConfigKey, e.Environment }).IsUnique();
+            });
+
+            // ==========================
+            // BOT RISK CONFIGURATION CONFIG
+            // ==========================
+            modelBuilder.Entity<BotRiskConfiguration>(entity =>
+            {
+                entity.ToTable("BotRiskConfigurations");
+                entity.HasKey(e => e.Id);
+                entity.HasIndex(e => new { e.UserId, e.BotId });
+
+                entity.HasOne(e => e.User)
+                    .WithMany()
+                    .HasForeignKey(e => e.UserId)
+                    .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            // ==========================
+            // RECONCILIATION RESULT CONFIG
+            // ==========================
+            modelBuilder.Entity<ReconciliationResult>(entity =>
+            {
+                entity.ToTable("ReconciliationResults");
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.Id).ValueGeneratedOnAdd();
+                entity.HasIndex(e => new { e.EntityType, e.ReconciliationTime });
+            });
+
+            // ==========================
+            // CLIENT ORDER IDEMPOTENCY CONFIG
+            // ==========================
+            modelBuilder.Entity<ClientOrderIdempotency>(entity =>
+            {
+                entity.ToTable("ClientOrderIdempotency");
+                entity.HasKey(e => e.Id);
+                entity.HasIndex(e => e.ClientOrderId).IsUnique();
+                entity.HasIndex(e => new { e.UserId, e.CreatedAt });
+
+                entity.HasOne(e => e.User)
+                    .WithMany()
+                    .HasForeignKey(e => e.UserId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasOne(e => e.Order)
+                    .WithMany()
+                    .HasForeignKey(e => e.OrderId)
+                    .OnDelete(DeleteBehavior.Cascade);
             });
         }
     }

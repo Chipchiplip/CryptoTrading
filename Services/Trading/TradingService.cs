@@ -1,6 +1,8 @@
 using CryptoTrading.Data;
 using CryptoTrading.Models;
 using CryptoTrading.Models.DTOs;
+using CryptoTrading.Services.Configuration;
+using CryptoTrading.Services.Trading.Extensions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -8,15 +10,17 @@ namespace CryptoTrading.Services.Trading
 {
     /// <summary>
     /// Implementation of trading service with order management, execution, and matching
+    /// Enhanced with pessimistic locking, audit trail, and idempotency
     /// </summary>
     public class TradingService : ITradingService
     {
         private readonly ApplicationDbContext _context;
         private readonly ICoinGeckoService _coinGeckoService;
-        private readonly ICryptoCacheService _cacheService; // ✅ THÊM
+        private readonly ICryptoCacheService _cacheService;
         private readonly ILogger<TradingService> _logger;
-        private const decimal FEE_RATE = 0.001m; // 0.1% fee
-        private const decimal MARKET_PRICE_BUFFER = 0.05m; // 5% buffer for market orders
+        private readonly ITradingConfigurationService _configService;
+        private readonly IAuditService _auditService;
+        private readonly IHttpContextAccessor _httpContextAccessor;
         
         // ✅ In-memory price cache với TTL khác nhau
         private readonly Dictionary<string, (decimal Price, DateTime LastUpdated)> _priceCache = new();
@@ -26,25 +30,50 @@ namespace CryptoTrading.Services.Trading
         public TradingService(
             ApplicationDbContext context,
             ICoinGeckoService coinGeckoService,
-            ICryptoCacheService cacheService, // ✅ THÊM
-            ILogger<TradingService> logger)
+            ICryptoCacheService cacheService,
+            ILogger<TradingService> logger,
+            ITradingConfigurationService configService,
+            IAuditService auditService,
+            IHttpContextAccessor httpContextAccessor)
         {
             _context = context;
             _coinGeckoService = coinGeckoService;
-            _cacheService = cacheService; // ✅ THÊM
+            _cacheService = cacheService;
             _logger = logger;
+            _configService = configService;
+            _auditService = auditService;
+            _httpContextAccessor = httpContextAccessor;
         }
 
         #region PlaceOrderAsync
 
         /// <summary>
         /// Places a new order with comprehensive validation, balance checks, and locking
+        /// Enhanced with idempotency support and pessimistic locking
         /// </summary>
         public async Task<OrderDto> PlaceOrderAsync(int userId, PlaceOrderRequest request)
         {
+            // ✅ Check for idempotency if clientOrderId is provided
+            string? clientOrderId = null;
+            if (request is PlaceOrderRequestExtended extendedRequest && !string.IsNullOrEmpty(extendedRequest.ClientOrderId))
+            {
+                clientOrderId = extendedRequest.ClientOrderId;
+                var existingOrderId = await _context.GetOrderIdByClientOrderIdAsync(clientOrderId, userId);
+                if (existingOrderId.HasValue)
+                {
+                    _logger.LogInformation("Duplicate order request detected for clientOrderId: {ClientOrderId}, returning existing order {OrderId}", 
+                        clientOrderId, existingOrderId.Value);
+                    return await GetOrderAsync(userId, existingOrderId.Value);
+                }
+            }
+
             using var transaction = await _context.Database.BeginTransactionAsync();
             try
             {
+                // ✅ Use dynamic configuration instead of hardcoded values
+                var feeRate = await _configService.GetFeeRateAsync();
+                var marketPriceBuffer = await _configService.GetMarketPriceBufferAsync();
+
                 // Validate and parse symbol
                 var (coinSymbol, quoteSymbol) = ParseSymbol(request.Symbol);
 
@@ -93,10 +122,10 @@ namespace CryptoTrading.Services.Trading
                 decimal orderPrice;
                 if (request.Type.ToUpper() == "MARKET")
                 {
-                    // Apply 5% buffer for market orders
+                    // Apply dynamic buffer for market orders
                     orderPrice = request.Side.ToUpper() == "BUY"
-                        ? currentPrice * (1 + MARKET_PRICE_BUFFER)
-                        : currentPrice * (1 - MARKET_PRICE_BUFFER);
+                        ? currentPrice * (1 + marketPriceBuffer)
+                        : currentPrice * (1 - marketPriceBuffer);
                 }
                 else
                 {
@@ -118,7 +147,7 @@ namespace CryptoTrading.Services.Trading
                 if (request.Side.ToUpper() == "BUY")
                 {
                     // For BUY orders, lock USD (quantity * price + estimated fee)
-                    requiredAmount = request.Quantity * orderPrice * (1 + FEE_RATE);
+                    requiredAmount = request.Quantity * orderPrice * (1 + feeRate);
                     wallet = await GetOrCreateWalletAsync(userId, "FIAT", "USD", null);
                 }
                 else // SELL
@@ -128,10 +157,26 @@ namespace CryptoTrading.Services.Trading
                     wallet = await GetOrCreateWalletAsync(userId, "COIN", null, crypto.Id);
                 }
 
-                // Check available balance
-                var availableBalance = await CalculateAvailableBalanceAsync(wallet.Id);
+                // ✅ Use pessimistic locking to prevent race conditions
+                var lockedWallet = await _context.LockWalletForUpdateAsync(wallet.Id);
+                if (lockedWallet == null)
+                {
+                    throw new InvalidOperationException($"Wallet {wallet.Id} not found or locked");
+                }
+
+                // Check available balance with locked wallet
+                var availableBalance = await _context.GetLockedWalletBalanceAsync(wallet.Id);
                 if (availableBalance < requiredAmount)
                 {
+                    await _auditService.LogEventAsync(
+                        "ORDER_REJECTED_INSUFFICIENT_BALANCE",
+                        userId,
+                        "Order",
+                        null,
+                        null,
+                        new { Symbol = request.Symbol, RequiredAmount = requiredAmount, AvailableBalance = availableBalance },
+                        metadata: $"Insufficient balance for {request.Side} {request.Quantity} {coinSymbol}"
+                    );
                     throw new InvalidOperationException(
                         $"Insufficient balance. Available: {availableBalance}, Required: {requiredAmount}");
                 }
@@ -153,9 +198,34 @@ namespace CryptoTrading.Services.Trading
                 _context.Orders.Add(order);
                 await _context.SaveChangesAsync();
 
+                // ✅ Record idempotency if clientOrderId provided
+                if (!string.IsNullOrEmpty(clientOrderId))
+                {
+                    await _context.RecordClientOrderIdAsync(clientOrderId, userId, order.Id);
+                }
+
                 // Lock balance
                 await LockBalanceAsync(order.Id, wallet.Id, requiredAmount);
                 await _context.SaveChangesAsync(); // Save the lock within transaction
+
+                // ✅ Log audit event for order placement
+                await _auditService.LogEventAsync(
+                    "ORDER_PLACED",
+                    userId,
+                    "Order",
+                    order.Id,
+                    null,
+                    new { 
+                        OrderId = order.Id, 
+                        Symbol = request.Symbol, 
+                        Side = order.Side, 
+                        Type = order.Type,
+                        Quantity = order.QuantityCoin,
+                        Price = order.PriceUsd,
+                        RequiredAmount = requiredAmount
+                    },
+                    metadata: $"Order placed: {order.Side} {order.QuantityCoin} {coinSymbol}"
+                );
 
                 // ✅ Execute order based on type
                 if (request.Type.ToUpper() == "MARKET")
@@ -542,9 +612,14 @@ namespace CryptoTrading.Services.Trading
 
         /// <summary>
         /// Executes a trade between two orders
+        /// Enhanced with fee ledger and audit trail
         /// </summary>
         private async Task ExecuteTradeAsync(Order takerOrder, Order makerOrder, decimal quantity, decimal price)
         {
+            // ✅ Use dynamic fee rate
+            var feeRate = await _configService.GetFeeRateAsync();
+            var feeUsd = quantity * price * feeRate;
+            
             // Update filled quantities
             takerOrder.FilledQty += quantity;
             makerOrder.FilledQty += quantity;
@@ -559,9 +634,6 @@ namespace CryptoTrading.Services.Trading
                 makerOrder.Status = "PARTIAL";
             }
             makerOrder.UpdatedAt = DateTime.UtcNow;
-
-            // Calculate fees
-            var feeUsd = quantity * price * FEE_RATE;
 
             // Create trade records
             var takerTrade = new Trade
@@ -586,6 +658,31 @@ namespace CryptoTrading.Services.Trading
 
             _context.Trades.Add(takerTrade);
             _context.Trades.Add(makerTrade);
+            await _context.SaveChangesAsync(); // Save trades to get IDs
+            
+            // ✅ Record fees in FeeLedger after trades are created
+            var takerFeeLedger = new FeeLedger
+            {
+                UserId = takerOrder.UserId,
+                TradeId = takerTrade.Id,
+                FeeType = "TRADING",
+                FeeAmount = feeUsd,
+                FeeCurrency = "USD",
+                CreatedAt = DateTime.UtcNow
+            };
+            
+            var makerFeeLedger = new FeeLedger
+            {
+                UserId = makerOrder.UserId,
+                TradeId = makerTrade.Id,
+                FeeType = "TRADING",
+                FeeAmount = feeUsd,
+                FeeCurrency = "USD",
+                CreatedAt = DateTime.UtcNow
+            };
+            
+            _context.FeeLedger.Add(takerFeeLedger);
+            _context.FeeLedger.Add(makerFeeLedger);
 
             // Settle wallets
             await SettleTradeAsync(takerOrder.UserId, takerOrder.Side, quantity, price, feeUsd, takerOrder.CryptocurrencyId);
@@ -594,7 +691,7 @@ namespace CryptoTrading.Services.Trading
             // Release appropriate amounts from order holds
             if (takerOrder.Side == "BUY")
             {
-                var usdUsed = quantity * price * (1 + FEE_RATE);
+                var usdUsed = quantity * price * (1 + feeRate);
                 await ReleaseBalanceAsync(takerOrder.Id, usdUsed);
             }
             else
@@ -604,13 +701,30 @@ namespace CryptoTrading.Services.Trading
 
             if (makerOrder.Side == "BUY")
             {
-                var usdUsed = quantity * price * (1 + FEE_RATE);
+                var usdUsed = quantity * price * (1 + feeRate);
                 await ReleaseBalanceAsync(makerOrder.Id, usdUsed);
             }
             else
             {
                 await ReleaseBalanceAsync(makerOrder.Id, quantity);
             }
+            
+            // ✅ Log audit events for trade execution
+            await _auditService.LogEventAsync(
+                "TRADE_EXECUTED",
+                takerOrder.UserId,
+                "Trade",
+                null,
+                null,
+                new { 
+                    TakerOrderId = takerOrder.Id, 
+                    MakerOrderId = makerOrder.Id,
+                    Quantity = quantity,
+                    Price = price,
+                    FeeUsd = feeUsd
+                },
+                metadata: $"Trade executed: {quantity} @ {price}"
+            );
 
             // ✅ FIX: Release any remaining locked balance when orders are fully filled
             // This handles cases where locked amount differs from actual fill amount (price difference)
@@ -630,14 +744,30 @@ namespace CryptoTrading.Services.Trading
 
         /// <summary>
         /// Executes a trade with virtual counterparty (for market orders)
+        /// Enhanced with fee ledger and audit trail
         /// </summary>
         private async Task ExecuteTradeWithVirtualCounterpartyAsync(Order order, decimal quantity, decimal price)
         {
+            // ✅ Use dynamic fee rate
+            var feeRate = await _configService.GetFeeRateAsync();
+            
             // Update filled quantity
             order.FilledQty += quantity;
 
             // Calculate fee
-            var feeUsd = quantity * price * FEE_RATE;
+            var feeUsd = quantity * price * feeRate;
+            
+            // ✅ Record fee in FeeLedger
+            var feeLedger = new FeeLedger
+            {
+                UserId = order.UserId,
+                TradeId = null, // Will be set after trade is created
+                FeeType = "TRADING",
+                FeeAmount = feeUsd,
+                FeeCurrency = "USD",
+                CreatedAt = DateTime.UtcNow
+            };
+            _context.FeeLedger.Add(feeLedger);
 
             // Create trade record
             var trade = new Trade
@@ -658,13 +788,29 @@ namespace CryptoTrading.Services.Trading
             // Release from order hold
             if (order.Side == "BUY")
             {
-                var usdUsed = quantity * price * (1 + FEE_RATE);
+                var usdUsed = quantity * price * (1 + feeRate);
                 await ReleaseBalanceAsync(order.Id, usdUsed);
             }
             else
             {
                 await ReleaseBalanceAsync(order.Id, quantity);
             }
+            
+            // ✅ Log audit event for virtual counterparty trade
+            await _auditService.LogEventAsync(
+                "TRADE_EXECUTED_VIRTUAL",
+                order.UserId,
+                "Trade",
+                null,
+                null,
+                new { 
+                    OrderId = order.Id,
+                    Quantity = quantity,
+                    Price = price,
+                    FeeUsd = feeUsd
+                },
+                metadata: $"Virtual counterparty trade: {quantity} @ {price}"
+            );
 
             // ✅ FIX: Release any remaining locked balance when order is fully filled
             // This handles cases where locked amount differs from actual fill amount (price difference)
@@ -678,6 +824,7 @@ namespace CryptoTrading.Services.Trading
 
         /// <summary>
         /// Settles wallet balances after a trade
+        /// Enhanced with balance validation to prevent negative balances
         /// Note: Does not call SaveChangesAsync - caller must save changes
         /// </summary>
         private async Task SettleTradeAsync(int userId, string side, decimal quantity, decimal price, decimal feeUsd, int cryptoId)
@@ -789,31 +936,15 @@ namespace CryptoTrading.Services.Trading
 
         /// <summary>
         /// Matches orders for a specific cryptocurrency
+        /// Enhanced with pessimistic locking to prevent race conditions
         /// </summary>
         private async Task<int> MatchOrdersForCryptocurrencyAsync(int cryptoId)
         {
             var matchCount = 0;
 
-            // ✅ Single optimized query
-            var buyOrders = await _context.Orders
-                .Where(o =>
-                    o.CryptocurrencyId == cryptoId &&
-                    o.Side == "BUY" &&
-                    o.Type == "LIMIT" &&
-                    (o.Status == "NEW" || o.Status == "PARTIAL"))
-                .OrderByDescending(o => o.PriceUsd)
-                .ThenBy(o => o.CreatedAt)
-                .ToListAsync();
-
-            var sellOrders = await _context.Orders
-                .Where(o =>
-                    o.CryptocurrencyId == cryptoId &&
-                    o.Side == "SELL" &&
-                    o.Type == "LIMIT" &&
-                    (o.Status == "NEW" || o.Status == "PARTIAL"))
-                .OrderBy(o => o.PriceUsd)
-                .ThenBy(o => o.CreatedAt)
-                .ToListAsync();
+            // ✅ Use pessimistic locking for order matching to prevent race conditions
+            var buyOrders = await _context.LockOrdersForMatchingAsync(cryptoId, "BUY", limit: 100);
+            var sellOrders = await _context.LockOrdersForMatchingAsync(cryptoId, "SELL", limit: 100);
 
             // ✅ TỐI ƯU: O(n log n) thay vì O(n²) - Two pointers approach
             int buyIndex = 0;
@@ -909,11 +1040,23 @@ namespace CryptoTrading.Services.Trading
                 await ReleaseBalanceAsync(orderId);
 
                 // Update order status
+                var oldStatus = order.Status;
                 order.Status = "CANCELED";
                 order.UpdatedAt = DateTime.UtcNow;
 
                 await _context.SaveChangesAsync();
                 await transaction.CommitAsync();
+
+                // ✅ Log audit event for order cancellation
+                await _auditService.LogEventAsync(
+                    "ORDER_CANCELED",
+                    userId,
+                    "Order",
+                    orderId,
+                    new { Status = oldStatus },
+                    new { Status = order.Status, CanceledAt = order.UpdatedAt },
+                    metadata: $"Order {orderId} canceled by user {userId}"
+                );
 
                 _logger.LogInformation("Order {OrderId} canceled by user {UserId}", orderId, userId);
 

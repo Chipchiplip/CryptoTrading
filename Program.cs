@@ -140,6 +140,16 @@ builder.Services.AddScoped<IDateTimeProvider, DateTimeProvider>();
 builder.Services.AddScoped<ICurrentUser, CurrentUserService>();
 builder.Services.AddScoped<ILoggingService, LoggingService>();
 
+// ========== NEW: AUDIT & CONFIGURATION SERVICES ==========
+builder.Services.AddScoped<CryptoTrading.Services.IAuditService, CryptoTrading.Services.AuditService>();
+builder.Services.AddScoped<CryptoTrading.Services.Configuration.ITradingConfigurationService, 
+    CryptoTrading.Services.Configuration.TradingConfigurationService>();
+builder.Services.AddScoped<CryptoTrading.Services.IReconciliationService, CryptoTrading.Services.ReconciliationService>();
+
+// Rate limiter and resilient HTTP client
+builder.Services.AddSingleton<CryptoTrading.Services.Infrastructure.IRateLimiter, 
+    CryptoTrading.Services.Infrastructure.TokenBucketRateLimiter>();
+
 // Crypto Services
 builder.Services.AddHttpClient<ICoinGeckoService, 
     CoinGeckoService>(client =>
@@ -171,7 +181,8 @@ builder.Services.AddSingleton<CryptoTrading.Interfaces.Bot.IStrategyRegistry, Cr
 builder.Services.AddScoped<CryptoTrading.Interfaces.Bot.IBotApplicationService, CryptoTrading.Services.Bot.BotApplicationService>();
 builder.Services.AddScoped<CryptoTrading.Interfaces.Bot.IMarketDataProvider, CryptoTrading.Services.Bot.MarketDataProvider>();
 builder.Services.AddScoped<CryptoTrading.Interfaces.Bot.IPortfolioService, CryptoTrading.Services.Bot.PortfolioService>();
-builder.Services.AddScoped<CryptoTrading.Interfaces.Bot.IRiskManager, CryptoTrading.Services.Bot.RiskManager>();
+// Use enhanced risk manager instead of basic one
+builder.Services.AddScoped<CryptoTrading.Interfaces.Bot.IRiskManager, CryptoTrading.Services.Bot.EnhancedRiskManager>();
 builder.Services.AddSingleton<CryptoTrading.Services.Bot.BotSignalRDispatcher>();
 
 // Bot Strategies
@@ -188,6 +199,8 @@ builder.Services.AddHostedService<CryptoTrading.Services.RealtimeBroadcastServic
 builder.Services.AddHostedService<CryptoTrading.Services.OrderMatchingBackgroundService>();
 builder.Services.AddHostedService<CryptoTrading.Services.Bot.BotExecutionHostedService>();
 builder.Services.AddHostedService<CryptoTrading.Services.Bot.BotMonitorHostedService>();
+// Add reconciliation background service
+builder.Services.AddHostedService<CryptoTrading.Services.ReconciliationBackgroundService>();
 
 var app = builder.Build();
 
@@ -204,6 +217,9 @@ if (app.Environment.IsDevelopment())
 
 // Use Error Handling Middleware
 app.UseMiddleware<CryptoTrading.Middleware.ErrorHandlingMiddleware>();
+
+// ========== NEW: USE CORRELATION ID MIDDLEWARE ==========
+app.UseMiddleware<CryptoTrading.Middleware.CorrelationIdMiddleware>();
 
 app.UseCors("AllowFrontend");
 // Skip HTTPS redirection in development when running HTTP only
