@@ -134,6 +134,14 @@ API sẽ chạy tại:
 }
 ```
 
+### Cloudflare avatar uploads (R2/Images)
+
+If you enable the optional avatar upload flow, fill in the `Cloudflare`
+configuration section so the backend can mint direct-upload URLs and validate
+avatars served from Cloudflare Images or an **R2-backed** hostname. See
+[`docs/CLOUDFLARE_IMAGES_SETUP.md`](docs/CLOUDFLARE_IMAGES_SETUP.md) for the
+required keys and how to map your R2/custom domain into `AllowedAvatarDomains`.
+
 ## 👥 Team Development
 
 ### Team Member Assignments
