@@ -46,7 +46,7 @@ namespace CryptoTrading.Services.Bot
         }
 
         public async Task<List<PositionInfo>> GetOpenPositionsAsync(
-            Guid botId, 
+            int botId,
             CancellationToken cancellationToken = default)
         {
             // Get bot orders that are filled or partially filled

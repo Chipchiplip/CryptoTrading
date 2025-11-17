@@ -9,35 +9,35 @@ public interface IKillSwitchService
     /// Checks if the kill switch should be triggered for a bot
     /// </summary>
 
-    /// <param name="botId">Bot ID (Guid)</param>
+    /// <param name="botId">Bot ID</param>
     /// <param name="userId">User ID</param>
     /// <returns>True if bot should be stopped, false otherwise</returns>
-    Task<KillSwitchResult> CheckKillSwitchAsync(Guid botId, int userId);
+    Task<KillSwitchResult> CheckKillSwitchAsync(int botId, int userId);
 
     /// <summary>
     /// Records a trade result for kill switch monitoring
     /// </summary>
-    Task RecordTradeResultAsync(Guid botId, decimal pnl, bool isProfit);
+    Task RecordTradeResultAsync(int botId, decimal pnl, bool isProfit);
 
     /// <summary>
     /// Gets the current risk state for a bot
     /// </summary>
-    Task<BotRiskStateDto> GetRiskStateAsync(Guid botId);
+    Task<BotRiskStateDto> GetRiskStateAsync(int botId);
 
     /// <summary>
     /// Resets daily loss counters (called at start of new trading day)
     /// </summary>
-    Task ResetDailyLossAsync(Guid botId);
+    Task ResetDailyLossAsync(int botId);
 
     /// <summary>
     /// Triggers the kill switch for a bot
     /// </summary>
-    Task TriggerKillSwitchAsync(Guid botId, string reason, decimal? totalLoss = null);
+    Task TriggerKillSwitchAsync(int botId, string reason, decimal? totalLoss = null);
 
     /// <summary>
     /// Clears kill switch state (manual reset)
     /// </summary>
-    Task ClearKillSwitchAsync(Guid botId);
+    Task ClearKillSwitchAsync(int botId);
 }
 
 /// <summary>
@@ -79,7 +79,7 @@ public enum KillSwitchTrigger
 /// </summary>
 public class BotRiskStateDto
 {
-    public Guid BotId { get; set; }
+    public int BotId { get; set; }
     public int ConsecutiveLosses { get; set; }
     public decimal DailyLoss { get; set; }
     public decimal TotalDrawdown { get; set; }

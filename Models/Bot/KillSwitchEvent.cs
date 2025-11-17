@@ -14,7 +14,7 @@ public class KillSwitchEvent
     public int Id { get; set; }
 
     [Required]
-    public Guid BotId { get; set; }
+    public int BotId { get; set; }
 
     [Required]
     [MaxLength(500)]

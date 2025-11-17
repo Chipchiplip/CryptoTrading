@@ -11,12 +11,12 @@ namespace CryptoTrading.Services.Bot
     {
         private readonly ITradingService _tradingService;
         private readonly int _userId;
-        private readonly Guid _botId;
+        private readonly int _botId;
 
         public BotTradingServiceWrapper(
             ITradingService tradingService,
             int userId,
-            Guid botId)
+            int botId)
         {
             _tradingService = tradingService;
             _userId = userId;

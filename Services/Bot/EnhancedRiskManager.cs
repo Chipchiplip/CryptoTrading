@@ -108,13 +108,13 @@ namespace CryptoTrading.Services.Bot
             return Math.Max(0, config.MaxAllowedCapital - currentExposure);
         }
 
-        public async Task<decimal> GetBotCapitalLimitAsync(int userId, Guid botId, CancellationToken cancellationToken = default)
+        public async Task<decimal> GetBotCapitalLimitAsync(int userId, int botId, CancellationToken cancellationToken = default)
         {
             var config = await GetRiskConfigAsync(userId, botId, cancellationToken);
             return config.MaxAllowedCapital;
         }
 
-        public async Task<bool> CheckKillSwitchAsync(Guid botId, int userId, CancellationToken cancellationToken = default)
+        public async Task<bool> CheckKillSwitchAsync(int botId, int userId, CancellationToken cancellationToken = default)
         {
             var config = await GetRiskConfigAsync(userId, botId, cancellationToken);
 
@@ -169,7 +169,7 @@ namespace CryptoTrading.Services.Bot
             return false;
         }
 
-        public async Task<bool> CheckCooldownAsync(Guid botId, TimeSpan minCooldown, CancellationToken cancellationToken = default)
+        public async Task<bool> CheckCooldownAsync(int botId, TimeSpan minCooldown, CancellationToken cancellationToken = default)
         {
             var bot = await _context.TradingBots.FindAsync(new object[] { botId }, cancellationToken);
             if (bot == null) return false;
@@ -194,7 +194,7 @@ namespace CryptoTrading.Services.Bot
 
         private async Task<BotRiskConfiguration> GetRiskConfigAsync(
             int userId, 
-            Guid? botId, 
+            int? botId,
             CancellationToken cancellationToken = default)
         {
             var cacheKey = $"RiskConfig_{userId}_{botId}";
@@ -307,7 +307,7 @@ namespace CryptoTrading.Services.Bot
             return totalLoss;
         }
 
-        public async Task<bool> CheckRateLimitAsync(Guid botId, int maxOrdersPerCycle, CancellationToken cancellationToken = default)
+        public async Task<bool> CheckRateLimitAsync(int botId, int maxOrdersPerCycle, CancellationToken cancellationToken = default)
         {
             try
             {
@@ -330,14 +330,14 @@ namespace CryptoTrading.Services.Bot
             }
         }
 
-        public async Task ResetOrderCountForNewCycleAsync(Guid botId, CancellationToken cancellationToken = default)
+        public async Task ResetOrderCountForNewCycleAsync(int botId, CancellationToken cancellationToken = default)
         {
             var cacheKey = $"OrderCount_{botId}";
             _cache.Set(cacheKey, 0, TimeSpan.FromMinutes(10));
             await Task.CompletedTask;
         }
 
-        public async Task RecordOrderPlacedAsync(Guid botId, CancellationToken cancellationToken = default)
+        public async Task RecordOrderPlacedAsync(int botId, CancellationToken cancellationToken = default)
         {
             var cacheKey = $"OrderCount_{botId}";
             var currentCount = _cache.TryGetValue(cacheKey, out int count) ? count : 0;
@@ -345,7 +345,7 @@ namespace CryptoTrading.Services.Bot
             await Task.CompletedTask;
         }
 
-        public async Task RecordTradeResultAsync(Guid botId, decimal pnl, CancellationToken cancellationToken = default)
+        public async Task RecordTradeResultAsync(int botId, decimal pnl, CancellationToken cancellationToken = default)
         {
             try
             {

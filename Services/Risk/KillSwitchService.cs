@@ -40,7 +40,7 @@ public class KillSwitchService : IKillSwitchService
             configuration["Trading:KillSwitch:DefaultMaxDrawdownPercent"] ?? "20.0");
     }
 
-    public async Task<KillSwitchResult> CheckKillSwitchAsync(Guid botId, int userId)
+    public async Task<KillSwitchResult> CheckKillSwitchAsync(int botId, int userId)
     {
         if (!_killSwitchEnabled)
         {
@@ -134,7 +134,7 @@ public class KillSwitchService : IKillSwitchService
         }
     }
 
-    public async Task RecordTradeResultAsync(Guid botId, decimal pnl, bool isProfit)
+    public async Task RecordTradeResultAsync(int botId, decimal pnl, bool isProfit)
     {
         try
         {
@@ -180,7 +180,7 @@ public class KillSwitchService : IKillSwitchService
         }
     }
 
-    public async Task<BotRiskStateDto> GetRiskStateAsync(Guid botId)
+    public async Task<BotRiskStateDto> GetRiskStateAsync(int botId)
     {
         var riskState = await GetOrCreateRiskStateAsync(botId);
 
@@ -196,7 +196,7 @@ public class KillSwitchService : IKillSwitchService
         };
     }
 
-    public async Task ResetDailyLossAsync(Guid botId)
+    public async Task ResetDailyLossAsync(int botId)
     {
         try
         {
@@ -218,7 +218,7 @@ public class KillSwitchService : IKillSwitchService
         }
     }
 
-    public async Task TriggerKillSwitchAsync(Guid botId, string reason, decimal? totalLoss = null)
+    public async Task TriggerKillSwitchAsync(int botId, string reason, decimal? totalLoss = null)
     {
         try
         {
@@ -257,7 +257,7 @@ public class KillSwitchService : IKillSwitchService
         }
     }
 
-    public async Task ClearKillSwitchAsync(Guid botId)
+    public async Task ClearKillSwitchAsync(int botId)
     {
         try
         {
@@ -278,7 +278,7 @@ public class KillSwitchService : IKillSwitchService
         }
     }
 
-    private async Task<BotRiskState> GetOrCreateRiskStateAsync(Guid botId)
+    private async Task<BotRiskState> GetOrCreateRiskStateAsync(int botId)
     {
         var riskState = await _context.BotRiskStates.FirstOrDefaultAsync(r => r.BotId == botId);
 
