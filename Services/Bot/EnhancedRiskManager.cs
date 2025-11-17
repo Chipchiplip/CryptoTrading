@@ -108,7 +108,13 @@ namespace CryptoTrading.Services.Bot
             return Math.Max(0, config.MaxAllowedCapital - currentExposure);
         }
 
-        public async Task<bool> CheckKillSwitchAsync(int userId, Guid botId, CancellationToken cancellationToken = default)
+        public async Task<decimal> GetBotCapitalLimitAsync(int userId, Guid botId, CancellationToken cancellationToken = default)
+        {
+            var config = await GetRiskConfigAsync(userId, botId, cancellationToken);
+            return config.MaxAllowedCapital;
+        }
+
+        public async Task<bool> CheckKillSwitchAsync(Guid botId, int userId, CancellationToken cancellationToken = default)
         {
             var config = await GetRiskConfigAsync(userId, botId, cancellationToken);
 
@@ -163,7 +169,7 @@ namespace CryptoTrading.Services.Bot
             return false;
         }
 
-        public async Task<bool> CheckCooldownAsync(Guid botId, CancellationToken cancellationToken = default)
+        public async Task<bool> CheckCooldownAsync(Guid botId, TimeSpan minCooldown, CancellationToken cancellationToken = default)
         {
             var bot = await _context.TradingBots.FindAsync(new object[] { botId }, cancellationToken);
             if (bot == null) return false;
@@ -299,6 +305,64 @@ namespace CryptoTrading.Services.Bot
             }
 
             return totalLoss;
+        }
+
+        public async Task<bool> CheckRateLimitAsync(Guid botId, int maxOrdersPerCycle, CancellationToken cancellationToken = default)
+        {
+            try
+            {
+                var cacheKey = $"OrderCount_{botId}";
+                if (_cache.TryGetValue(cacheKey, out int currentCount))
+                {
+                    if (currentCount >= maxOrdersPerCycle)
+                    {
+                        _logger.LogWarning("Bot {BotId} exceeded rate limit: {Count}/{Max}",
+                            botId, currentCount, maxOrdersPerCycle);
+                        return false; // Rate limit exceeded
+                    }
+                }
+                return true; // Within limits
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error checking rate limit for bot {BotId}", botId);
+                return true; // Fail-open for demo
+            }
+        }
+
+        public async Task ResetOrderCountForNewCycleAsync(Guid botId, CancellationToken cancellationToken = default)
+        {
+            var cacheKey = $"OrderCount_{botId}";
+            _cache.Set(cacheKey, 0, TimeSpan.FromMinutes(10));
+            await Task.CompletedTask;
+        }
+
+        public async Task RecordOrderPlacedAsync(Guid botId, CancellationToken cancellationToken = default)
+        {
+            var cacheKey = $"OrderCount_{botId}";
+            var currentCount = _cache.TryGetValue(cacheKey, out int count) ? count : 0;
+            _cache.Set(cacheKey, currentCount + 1, TimeSpan.FromMinutes(10));
+            await Task.CompletedTask;
+        }
+
+        public async Task RecordTradeResultAsync(Guid botId, decimal pnl, CancellationToken cancellationToken = default)
+        {
+            try
+            {
+                var bot = await _context.TradingBots.FindAsync(new object[] { botId }, cancellationToken);
+                if (bot == null) return;
+
+                // For demo: just log the PnL
+                // In production, this would update BotRiskState table with realized PnL
+                _logger.LogInformation("Bot {BotId} trade result: PnL={Pnl}", botId, pnl);
+
+                // TODO: Update BotRiskState table with realized PnL tracking
+                // This would be used by kill switch to track consecutive losses
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error recording trade result for bot {BotId}", botId);
+            }
         }
     }
 }

@@ -231,12 +231,31 @@ namespace CryptoTrading.Services.Bot
             // STEP 1: Validate strategy configuration
             try
             {
-                var parameters = string.IsNullOrEmpty(bot.Parameters)
+                var parametersDict = string.IsNullOrEmpty(bot.Parameters)
                     ? new Dictionary<string, object>()
                     : JsonSerializer.Deserialize<Dictionary<string, object>>(bot.Parameters)
                         ?? new Dictionary<string, object>();
 
-                var validationResult = await strategy.ValidateAsync(parameters);
+                // Create BotParameters and BotContext for validation
+                var botParameters = new BotParameters { Values = parametersDict };
+                var botContext = new BotContext
+                {
+                    BotId = bot.Id,
+                    UserId = bot.UserId,
+                    BaseAsset = bot.BaseAsset,
+                    QuoteAsset = bot.QuoteAsset,
+                    AllowedCapital = 0, // Not needed for validation
+                    TradingService = null!, // Not needed for validation
+                    MarketData = null!, // Not needed for validation
+                    PortfolioService = null!, // Not needed for validation
+                    RiskManager = null!, // Not needed for validation
+                    Logger = null!, // Not needed for validation
+                    EventCollector = null!, // Not needed for validation
+                    LoadStateAsyncFunc = (_, _) => Task.FromResult<object?>(null),
+                    SaveStateAsyncFunc = (_, _) => Task.CompletedTask
+                };
+
+                var validationResult = await strategy.ValidateAsync(botContext, botParameters, CancellationToken.None);
                 if (!validationResult.IsValid)
                 {
                     var errors = string.Join(", ", validationResult.Errors);

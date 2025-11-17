@@ -1,6 +1,6 @@
 using System;
 
-namespace CryptoTradingApp.Models.Market;
+namespace CryptoTrading.Models.Market;
 
 /// <summary>
 /// Represents a market quote with Bid, Ask, and Mid prices

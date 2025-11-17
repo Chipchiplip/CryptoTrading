@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using CryptoTrading.Interfaces.Bot;
 using CryptoTrading.Services;
-using CryptoTradingApp.Services.Market;
+using CryptoTrading.Services.Market;
 using Microsoft.Extensions.Logging;
 using System.Linq;
 
@@ -121,12 +121,13 @@ namespace CryptoTrading.Services.Bot
                     return cachedPrice.Value;
                 }
 
-                // Last resort: return 0 and log error
+                // DEMO FIX: Return 0 and log error - strategies should validate price > 0 before using
                 _logger.LogError(
                     lastException,
                     "Failed to fetch price for {Symbol} after {Attempts} attempts and no cache available",
                     symbol, MAX_RETRIES);
 
+                // Return 0 to indicate failure - calling code must validate price > 0
                 return 0m;
             }
             finally
@@ -246,6 +247,11 @@ namespace CryptoTrading.Services.Bot
 
         private async Task CachePriceAsync(string symbol, decimal price)
         {
+            // NOTE: ICryptoCacheService doesn't have generic SetAsync method
+            // TODO: Use IMemoryCache directly or extend ICryptoCacheService
+            // For now, caching is disabled
+            await Task.CompletedTask;
+            /*
             try
             {
                 var cacheKey = $"price:{symbol}";
@@ -255,10 +261,17 @@ namespace CryptoTrading.Services.Bot
             {
                 _logger.LogWarning(ex, "Failed to cache price for {Symbol}", symbol);
             }
+            */
         }
 
         private async Task<decimal?> GetCachedPriceAsync(string symbol)
         {
+            // NOTE: ICryptoCacheService doesn't have generic GetAsync method
+            // TODO: Use IMemoryCache directly or extend ICryptoCacheService
+            // For now, caching is disabled
+            await Task.CompletedTask;
+            return null;
+            /*
             try
             {
                 var cacheKey = $"price:{symbol}";
@@ -269,6 +282,7 @@ namespace CryptoTrading.Services.Bot
                 _logger.LogWarning(ex, "Failed to retrieve cached price for {Symbol}", symbol);
                 return null;
             }
+            */
         }
     }
 }

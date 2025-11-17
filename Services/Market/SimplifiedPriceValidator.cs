@@ -1,8 +1,8 @@
 using System;
-using CryptoTradingApp.Models.Market;
+using CryptoTrading.Models.Market;
 using Microsoft.Extensions.Logging;
 
-namespace CryptoTradingApp.Services.Market;
+namespace CryptoTrading.Services.Market;
 
 /// <summary>
 /// Simplified price validator for market quotes

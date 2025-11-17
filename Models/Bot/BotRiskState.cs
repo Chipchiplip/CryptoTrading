@@ -2,7 +2,7 @@ using System;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
-namespace CryptoTradingApp.Models.Bot;
+namespace CryptoTrading.Models;
 
 /// <summary>
 /// Tracks realtime risk metrics for each bot
@@ -14,7 +14,7 @@ public class BotRiskState
     public int Id { get; set; }
 
     [Required]
-    public int BotId { get; set; }
+    public Guid BotId { get; set; }
 
     /// <summary>
     /// Number of consecutive losing trades

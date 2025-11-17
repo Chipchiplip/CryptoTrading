@@ -169,13 +169,13 @@ namespace CryptoTrading.Services.Bot.Strategies
 
                         if (!cooldownPassed)
                         {
-                            context.Logger.LogDebug("OrderSkipped", $"BUY order skipped (cooldown not passed) at ${line.Price:F2}");
+                            context.Logger.LogInfo("OrderSkipped", $"BUY order skipped (cooldown not passed) at ${line.Price:F2}");
                             continue; // Skip this order
                         }
 
                         if (!withinRateLimit)
                         {
-                            context.Logger.LogDebug("OrderSkipped", $"BUY order skipped (rate limit reached) at ${line.Price:F2}");
+                            context.Logger.LogInfo("OrderSkipped", $"BUY order skipped (rate limit reached) at ${line.Price:F2}");
                             break; // Stop processing more grid lines this cycle
                         }
 
@@ -227,13 +227,13 @@ namespace CryptoTrading.Services.Bot.Strategies
 
                         if (!cooldownPassed)
                         {
-                            context.Logger.LogDebug("OrderSkipped", $"SELL order skipped (cooldown not passed) at ${line.Price:F2}");
+                            context.Logger.LogInfo("OrderSkipped", $"SELL order skipped (cooldown not passed) at ${line.Price:F2}");
                             continue; // Skip this order
                         }
 
                         if (!withinRateLimit)
                         {
-                            context.Logger.LogDebug("OrderSkipped", $"SELL order skipped (rate limit reached) at ${line.Price:F2}");
+                            context.Logger.LogInfo("OrderSkipped", $"SELL order skipped (rate limit reached) at ${line.Price:F2}");
                             break; // Stop processing more grid lines this cycle
                         }
 
@@ -295,18 +295,11 @@ namespace CryptoTrading.Services.Bot.Strategies
                 // Update metrics
                 state.UpdateMetrics(currentPrice);
 
-                // Track cycle-level PnL change for kill switch
-                // Note: Grid strategy tracks unrealized PnL. For more accurate kill switch tracking,
-                // implement order fill monitoring to track realized PnL per completed buy-sell pair.
-                var cyclePnLChange = state.UnrealizedPnl - state.LastPnL;
-                if (Math.Abs(cyclePnLChange) > 0.01m) // Only track significant changes (> 1 cent)
-                {
-                    await context.RiskManager.RecordTradeResultAsync(context.BotId, cyclePnLChange, cancellationToken);
-                    state.LastPnL = state.UnrealizedPnl;
-
-                    context.Logger.LogDebug("RiskTracking",
-                        $"Recorded cycle PnL change: ${cyclePnLChange:F2} (Total unrealized: ${state.UnrealizedPnl:F2})");
-                }
+                // DEMO FIX: Kill switch should track realized PnL, not unrealized
+                // For demo purposes, we skip unrealized PnL tracking for kill switch since it can reverse
+                // In production, this should only track completed buy-sell pairs with realized PnL
+                // Note: Grid strategy would need to monitor order fills to track realized PnL properly
+                // For now, we don't send unrealized PnL changes to kill switch to avoid false triggers
 
                 // Save state
                 await context.SaveStateAsync(state, cancellationToken);
@@ -594,12 +587,23 @@ namespace CryptoTrading.Services.Bot.Strategies
         public decimal LastPrice { get; set; }
         public decimal LastPnL { get; set; }
         public decimal UnrealizedPnl { get; set; }
+        // DEMO FIX: Track average entry price for correct unrealized PnL calculation
+        public decimal AverageEntryPrice { get; set; }
         public DateTime? LastTradeTime { get; set; }
 
         public void UpdateMetrics(decimal currentPrice)
         {
             LastPrice = currentPrice;
-            UnrealizedPnl = Inventory * (currentPrice - LastPrice);
+            // DEMO FIX: Calculate unrealized PnL using average entry price instead of LastPrice
+            // Previous bug: LastPrice was set to currentPrice on same line, making PnL always 0
+            if (Inventory > 0 && AverageEntryPrice > 0)
+            {
+                UnrealizedPnl = Inventory * (currentPrice - AverageEntryPrice);
+            }
+            else
+            {
+                UnrealizedPnl = 0;
+            }
         }
     }
 

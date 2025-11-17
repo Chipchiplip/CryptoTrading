@@ -98,11 +98,11 @@ namespace CryptoTrading.Services.Bot.Strategies
                     context.Logger.LogInfo("Scanner", $"Found {opportunities.Count} momentum opportunities");
                     
                     // Execute trades on best opportunities
-                    await ExecuteMomentumTradesAsync(context, state, opportunities, parameters);
+                    await ExecuteMomentumTradesAsync(context, state, opportunities, parameters, cancellationToken);
                 }
 
                 // Manage existing positions
-                await ManageExistingPositionsAsync(context, state, parameters);
+                await ManageExistingPositionsAsync(context, state, parameters, cancellationToken);
                 
                 // Clean up old data
                 CleanupOldData(state);
@@ -436,7 +436,7 @@ namespace CryptoTrading.Services.Bot.Strategies
             return opportunities;
         }
 
-        private async Task ExecuteMomentumTradesAsync(BotContext context, MomentumScalpingRuntimeState state, List<MomentumOpportunity> opportunities, BotParameters parameters)
+        private async Task ExecuteMomentumTradesAsync(BotContext context, MomentumScalpingRuntimeState state, List<MomentumOpportunity> opportunities, BotParameters parameters, CancellationToken cancellationToken = default)
         {
             var positionSize = parameters.GetValue("positionSizeUSDT", 100m);
             var maxPositions = parameters.GetValue("maxConcurrentPositions", 10);
@@ -487,34 +487,39 @@ namespace CryptoTrading.Services.Bot.Strategies
                 // Execute real BUY order through trading service
                 try
                 {
+                    // DEMO FIX: Ensure symbol includes quote asset (e.g., "BTC/USDT" not just "BTC")
                     var orderRequest = new PlaceOrderRequest
                     {
-                        Symbol = opportunity.Symbol,
+                        Symbol = $"{opportunity.Symbol}/{context.QuoteAsset}",
                         Side = "BUY",
                         Type = "MARKET",
-                        Quantity = quantity,
-                        IdempotencyKey = $"momentum-entry-{context.BotId}-{opportunity.Symbol}-{DateTime.UtcNow.Ticks}"
+                        Quantity = quantity
+                        // Note: IdempotencyKey is in PlaceOrderRequestExtended, not base class
                     };
 
-                    var order = await context.TradingService.PlaceOrderAsync(orderRequest);
+                    var orderId = await context.TradingService.PlaceOrderAsync(orderRequest, cancellationToken);
 
-                    if (order != null && order.Status == "FILLED")
+                    // DEMO FIX: Get order details to retrieve actual fill price (OrderDto doesn't have FilledPrice property)
+                    var orderDetail = await context.TradingService.GetOrderAsync(orderId, cancellationToken);
+
+                    if (orderDetail != null && orderDetail.Status == "FILLED")
                     {
-                        // Update position with actual fill price
-                        position.EntryPrice = order.FilledPrice;
-                        position.TakeProfitPrice = order.FilledPrice * (1 + takeProfitPercent);
-                        position.StopLossPrice = order.FilledPrice * (1 - stopLossPercent);
+                        // Update position with actual fill price from AvgPrice or fallback to opportunity price
+                        var fillPrice = orderDetail.AvgPrice ?? orderDetail.Price ?? opportunity.CurrentPrice;
+                        position.EntryPrice = fillPrice;
+                        position.TakeProfitPrice = fillPrice * (1 + takeProfitPercent);
+                        position.StopLossPrice = fillPrice * (1 - stopLossPercent);
 
                         state.ActivePositions.Add(position);
 
                         context.Logger.LogInfo("Trading",
-                            $"Opened momentum position: {opportunity.Symbol} {quantity:F6} @ ${order.FilledPrice:F2} " +
+                            $"Opened momentum position: {opportunity.Symbol} {quantity:F6} @ ${fillPrice:F2} " +
                             $"(Momentum: +{opportunity.PriceChangePercent:F2}%, TP: ${position.TakeProfitPrice:F2}, SL: ${position.StopLossPrice:F2})");
                     }
                     else
                     {
                         context.Logger.LogWarning("Trading",
-                            $"Failed to open position for {opportunity.Symbol}: Order status {order?.Status}");
+                            $"Failed to open position for {opportunity.Symbol}: Order status {orderDetail?.Status}");
                     }
                 }
                 catch (Exception ex)
@@ -525,7 +530,7 @@ namespace CryptoTrading.Services.Bot.Strategies
             }
         }
 
-        private async Task ManageExistingPositionsAsync(BotContext context, MomentumScalpingRuntimeState state, BotParameters parameters)
+        private async Task ManageExistingPositionsAsync(BotContext context, MomentumScalpingRuntimeState state, BotParameters parameters, CancellationToken cancellationToken = default)
         {
             var positionsToClose = new List<MomentumPosition>();
 
@@ -568,22 +573,26 @@ namespace CryptoTrading.Services.Bot.Strategies
                         // Execute real SELL order through trading service
                         try
                         {
+                            // DEMO FIX: Ensure symbol includes quote asset
                             var orderRequest = new PlaceOrderRequest
                             {
-                                Symbol = position.Symbol,
+                                Symbol = $"{position.Symbol}/{context.QuoteAsset}",
                                 Side = "SELL",
                                 Type = "MARKET",
-                                Quantity = position.Quantity,
-                                IdempotencyKey = $"momentum-exit-{context.BotId}-{position.Symbol}-{DateTime.UtcNow.Ticks}"
+                                Quantity = position.Quantity
+                                // Note: IdempotencyKey is in PlaceOrderRequestExtended, not base class
                             };
 
-                            var order = await context.TradingService.PlaceOrderAsync(orderRequest);
+                            var exitOrderId = await context.TradingService.PlaceOrderAsync(orderRequest, cancellationToken);
 
-                            if (order != null && order.Status == "FILLED")
+                            // DEMO FIX: Get order details to retrieve actual fill price (OrderDto doesn't have FilledPrice property)
+                            var exitOrderDetail = await context.TradingService.GetOrderAsync(exitOrderId, cancellationToken);
+
+                            if (exitOrderDetail != null && exitOrderDetail.Status == "FILLED")
                             {
-                                // Use actual fill price for PnL calculation
-                                var actualExitPrice = order.FilledPrice;
-                                var pnl = (actualExitPrice - position.EntryPrice) * position.Quantity - order.Fee;
+                                // Use actual fill price from AvgPrice or fallback to exit price
+                                var actualExitPrice = exitOrderDetail.AvgPrice ?? exitOrderDetail.Price ?? exitPrice;
+                                var pnl = (actualExitPrice - position.EntryPrice) * position.Quantity - exitOrderDetail.TotalFees;
                                 var pnlPercent = (actualExitPrice - position.EntryPrice) / position.EntryPrice * 100;
 
                                 // Record trade with actual results
@@ -604,7 +613,7 @@ namespace CryptoTrading.Services.Bot.Strategies
 
                                 context.Logger.LogInfo("Trading",
                                     $"Closed position: {position.Symbol} {position.Quantity:F6} @ ${actualExitPrice:F2} " +
-                                    $"({exitReason}, PnL: ${pnl:F2} / {pnlPercent:F2}%, Fee: ${order.Fee:F2})");
+                                    $"({exitReason}, PnL: ${pnl:F2} / {pnlPercent:F2}%, Fee: ${exitOrderDetail.TotalFees:F2})");
 
                                 // Record trade result with kill switch service
                                 // This will update consecutive loss tracking and trigger kill switch if threshold reached
@@ -613,7 +622,7 @@ namespace CryptoTrading.Services.Bot.Strategies
                             else
                             {
                                 context.Logger.LogWarning("Trading",
-                                    $"Failed to close position for {position.Symbol}: Order status {order?.Status}");
+                                    $"Failed to close position for {position.Symbol}: Order status {exitOrderDetail?.Status}");
                             }
                         }
                         catch (Exception ex)

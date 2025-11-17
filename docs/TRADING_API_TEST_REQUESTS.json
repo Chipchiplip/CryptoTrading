@@ -1,0 +1,148 @@
+{
+  "testRequests": {
+    "placeOrder": {
+      "buyLimitBTC": {
+        "symbol": "BTC/USDT",
+        "side": "BUY",
+        "type": "LIMIT",
+        "quantity": 0.001,
+        "price": 50000.00
+      },
+      "sellLimitBTC": {
+        "symbol": "BTC/USDT",
+        "side": "SELL",
+        "type": "LIMIT",
+        "quantity": 0.0005,
+        "price": 52000.00
+      },
+      "buyMarketETH": {
+        "symbol": "ETH/USDT",
+        "side": "BUY",
+        "type": "MARKET",
+        "quantity": 0.01
+      },
+      "sellMarketETH": {
+        "symbol": "ETH/USDT",
+        "side": "SELL",
+        "type": "MARKET",
+        "quantity": 0.005
+      },
+      "smallQuantity": {
+        "symbol": "BTC/USDT",
+        "side": "BUY",
+        "type": "LIMIT",
+        "quantity": 0.00000001,
+        "price": 0.01
+      },
+      "highPrice": {
+        "symbol": "BTC/USDT",
+        "side": "BUY",
+        "type": "LIMIT",
+        "quantity": 1.0,
+        "price": 100000.00
+      },
+      "buyBNB": {
+        "symbol": "BNB/USDT",
+        "side": "BUY",
+        "type": "LIMIT",
+        "quantity": 0.1,
+        "price": 300.00
+      },
+      "sellSOL": {
+        "symbol": "SOL/USDT",
+        "side": "SELL",
+        "type": "LIMIT",
+        "quantity": 0.5,
+        "price": 150.00
+      },
+      "buyMarketADA": {
+        "symbol": "ADA/USDT",
+        "side": "BUY",
+        "type": "MARKET",
+        "quantity": 100.0
+      }
+    },
+    "getOrders": {
+      "all": "GET /api/trading/orders",
+      "bySymbol": "GET /api/trading/orders?symbol=BTC/USDT",
+      "bySide": "GET /api/trading/orders?side=BUY",
+      "byType": "GET /api/trading/orders?type=LIMIT",
+      "byStatus": "GET /api/trading/orders?status=NEW",
+      "byDateRange": "GET /api/trading/orders?fromDate=2025-01-01&toDate=2025-01-31",
+      "paginated": "GET /api/trading/orders?page=1&pageSize=10",
+      "combined": "GET /api/trading/orders?symbol=BTC/USDT&side=BUY&status=NEW&page=1&pageSize=10"
+    },
+    "getTrades": {
+      "all": "GET /api/trading/trades",
+      "bySymbol": "GET /api/trading/trades?symbol=BTC/USDT",
+      "byOrderId": "GET /api/trading/trades?orderId=1234567890",
+      "byDateRange": "GET /api/trading/trades?fromDate=2025-01-01&toDate=2025-01-31",
+      "paginated": "GET /api/trading/trades?page=1&pageSize=20"
+    },
+    "getBalances": {
+      "all": "GET /api/trading/balances"
+    },
+    "getHoldings": {
+      "all": "GET /api/trading/holdings"
+    },
+    "getOrderBook": {
+      "btcUsdt": "GET /api/trading/orderbook?symbolQuery=BTC/USDT",
+      "ethUsdt": "GET /api/trading/orderbook?symbolQuery=ETH/USDT",
+      "withDepth": "GET /api/trading/orderbook?symbolQuery=BTC/USDT&depth=50"
+    },
+    "getDashboard": {
+      "full": "GET /api/trading/dashboard",
+      "summary": "GET /api/trading/dashboard/summary",
+      "nav": "GET /api/trading/dashboard/nav",
+      "navCustom": "GET /api/trading/dashboard/nav?from=2025-01-01",
+      "pnlHourly": "GET /api/trading/dashboard/pnl?granularity=hourly",
+      "pnlDaily": "GET /api/trading/dashboard/pnl?granularity=daily",
+      "pnlWeekly": "GET /api/trading/dashboard/pnl?granularity=weekly",
+      "pnlCustom": "GET /api/trading/dashboard/pnl?granularity=hourly&date=2025-01-15"
+    }
+  },
+  "errorTestCases": {
+    "invalidSymbol": {
+      "symbol": "INVALID/PAIR",
+      "side": "BUY",
+      "type": "LIMIT",
+      "quantity": 0.001,
+      "price": 50000.00
+    },
+    "invalidSide": {
+      "symbol": "BTC/USDT",
+      "side": "INVALID",
+      "type": "LIMIT",
+      "quantity": 0.001,
+      "price": 50000.00
+    },
+    "invalidType": {
+      "symbol": "BTC/USDT",
+      "side": "BUY",
+      "type": "INVALID",
+      "quantity": 0.001,
+      "price": 50000.00
+    },
+    "missingPrice": {
+      "symbol": "BTC/USDT",
+      "side": "BUY",
+      "type": "LIMIT",
+      "quantity": 0.001
+    },
+    "zeroQuantity": {
+      "symbol": "BTC/USDT",
+      "side": "BUY",
+      "type": "LIMIT",
+      "quantity": 0,
+      "price": 50000.00
+    },
+    "negativePrice": {
+      "symbol": "BTC/USDT",
+      "side": "BUY",
+      "type": "LIMIT",
+      "quantity": 0.001,
+      "price": -100.00
+    }
+  }
+}
+

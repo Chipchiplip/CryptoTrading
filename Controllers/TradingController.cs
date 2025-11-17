@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc;
 using System.Security.Claims;
 using CryptoTrading.Services;
@@ -22,17 +23,20 @@ public class TradingController : ControllerBase
     private readonly ITradingService _tradingService;
     private readonly ApplicationDbContext _db;
     private readonly ILogger<TradingController> _logger;
+    private readonly IWebHostEnvironment _env;
     
     public TradingController(
         ICoinGeckoService coinGeckoService,
         ITradingService tradingService,
         ApplicationDbContext db,
-        ILogger<TradingController> logger)
+        ILogger<TradingController> logger,
+        IWebHostEnvironment env)
     {
         _coinGeckoService = coinGeckoService;
         _tradingService = tradingService;
         _db = db;
         _logger = logger;
+        _env = env;
     }
     
     private int GetUserId() 
@@ -909,11 +913,61 @@ public class TradingController : ControllerBase
             return BadRequest(ModelState);
         }
         
-        var userId = GetUserId();
-        _logger.LogInformation("User {UserId} placing order: {Side} {Quantity} {Symbol}", userId, request.Side, request.Quantity, request.Symbol);
-        
-        var order = await _tradingService.PlaceOrderAsync(userId, request);
-        return Ok(order);
+        try
+        {
+            var userId = GetUserId();
+            _logger.LogInformation("User {UserId} placing order: {Side} {Quantity} {Symbol}", userId, request.Side, request.Quantity, request.Symbol);
+            
+            var order = await _tradingService.PlaceOrderAsync(userId, request);
+            return Ok(order);
+        }
+        catch (InvalidOperationException ex)
+        {
+            _logger.LogWarning(ex, "Invalid operation while placing order: {Message}", ex.Message);
+            return BadRequest(new { message = ex.Message, error = "InvalidOperation" });
+        }
+        catch (ArgumentException ex)
+        {
+            _logger.LogWarning(ex, "Invalid argument while placing order: {Message}", ex.Message);
+            return BadRequest(new { message = ex.Message, error = "InvalidArgument" });
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            _logger.LogWarning(ex, "Unauthorized order placement attempt: {Message}", ex.Message);
+            return Forbid(ex.Message);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Unexpected error placing order: {ExceptionType} - {Message}", ex.GetType().Name, ex.Message);
+            
+            // Include more details in development mode
+            var isDevelopment = _env.IsDevelopment();
+            var errorResponse = new
+            {
+                message = "An error occurred while placing the order. Please try again.",
+                error = ex.Message,
+                type = ex.GetType().Name
+            };
+            
+            if (isDevelopment)
+            {
+                var responseWithDetails = new
+                {
+                    message = "An error occurred while placing the order. Please try again.",
+                    error = ex.Message,
+                    type = ex.GetType().Name,
+                    stackTrace = ex.StackTrace,
+                    innerException = ex.InnerException != null ? new
+                    {
+                        message = ex.InnerException.Message,
+                        type = ex.InnerException.GetType().Name
+                    } : null
+                };
+                return StatusCode(500, responseWithDetails);
+            }
+            
+            return StatusCode(500, errorResponse);
+        }
     }
 
     /// <summary>

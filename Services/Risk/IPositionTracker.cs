@@ -1,4 +1,4 @@
-namespace CryptoTradingApp.Services.Risk;
+namespace CryptoTrading.Services.Risk;
 
 /// <summary>
 /// Service for tracking open positions and calculating realtime PnL

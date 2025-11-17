@@ -1,7 +1,7 @@
 using CryptoTrading.Data;
 using CryptoTrading.Interfaces.Bot;
-using CryptoTradingApp.Models.Bot;
-using CryptoTradingApp.Services.Risk;
+using CryptoTrading.Models;
+using CryptoTrading.Services.Risk;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using System;
@@ -98,8 +98,7 @@ namespace CryptoTrading.Services.Bot
             {
                 try
                 {
-                    var balance = await _portfolioService.GetBalanceAsync(userId, "USDT");
-                    var availableBalance = balance.Available;
+                    var availableBalance = await _portfolioService.GetBalanceAsync(userId, "USDT");
 
                     if (requiredCapital > availableBalance)
                     {
@@ -168,7 +167,7 @@ namespace CryptoTrading.Services.Bot
 
             try
             {
-                var result = await _killSwitchService.CheckKillSwitchAsync((int)(long)botId, userId);
+                var result = await _killSwitchService.CheckKillSwitchAsync(botId, userId);
 
                 if (result.ShouldStop)
                 {
@@ -195,7 +194,7 @@ namespace CryptoTrading.Services.Bot
             {
                 // Get bot risk state
                 var riskState = await _context.Set<BotRiskState>()
-                    .FirstOrDefaultAsync(r => r.BotId == (int)(long)botId, cancellationToken);
+                    .FirstOrDefaultAsync(r => r.BotId == botId, cancellationToken);
 
                 if (riskState?.LastOrderAt == null)
                 {
@@ -230,7 +229,7 @@ namespace CryptoTrading.Services.Bot
             {
                 // Get bot risk state
                 var riskState = await _context.Set<BotRiskState>()
-                    .FirstOrDefaultAsync(r => r.BotId == (int)(long)botId, cancellationToken);
+                    .FirstOrDefaultAsync(r => r.BotId == botId, cancellationToken);
 
                 if (riskState == null)
                 {
@@ -263,14 +262,14 @@ namespace CryptoTrading.Services.Bot
             try
             {
                 var riskState = await _context.Set<BotRiskState>()
-                    .FirstOrDefaultAsync(r => r.BotId == (int)(long)botId, cancellationToken);
+                    .FirstOrDefaultAsync(r => r.BotId == botId, cancellationToken);
 
                 if (riskState == null)
                 {
                     // Create new risk state
                     riskState = new BotRiskState
                     {
-                        BotId = (int)(long)botId,
+                        BotId = botId,
                         OrderCountThisCycle = 0,
                         UpdatedAt = DateTime.UtcNow
                     };
@@ -302,14 +301,14 @@ namespace CryptoTrading.Services.Bot
             try
             {
                 var riskState = await _context.Set<BotRiskState>()
-                    .FirstOrDefaultAsync(r => r.BotId == (int)(long)botId, cancellationToken);
+                    .FirstOrDefaultAsync(r => r.BotId == botId, cancellationToken);
 
                 if (riskState == null)
                 {
                     // Create new risk state
                     riskState = new BotRiskState
                     {
-                        BotId = (int)(long)botId,
+                        BotId = botId,
                         LastOrderAt = DateTime.UtcNow,
                         OrderCountThisCycle = 1,
                         UpdatedAt = DateTime.UtcNow
@@ -351,7 +350,7 @@ namespace CryptoTrading.Services.Bot
             try
             {
                 var isProfit = pnl > 0;
-                await _killSwitchService.RecordTradeResultAsync((int)(long)botId, pnl, isProfit);
+                await _killSwitchService.RecordTradeResultAsync(botId, pnl, isProfit);
 
                 _logger.LogDebug(
                     "Recorded trade result for bot {BotId}: PnL=${PnL:F2}, IsProfit={IsProfit}",

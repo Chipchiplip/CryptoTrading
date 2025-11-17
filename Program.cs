@@ -11,6 +11,8 @@ using Microsoft.OpenApi.Models;
 using System.Text;
 using System;
 using System.Linq;
+using System.IO;
+using MySqlConnector;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -176,6 +178,13 @@ builder.Services.AddScoped<ILevelService, LevelService>();
 builder.Services.AddScoped<IUserService, UserService>();
 builder.Services.AddScoped<IPortfolioService, CryptoTrading.Services.Portfolio.PortfolioService>();
 
+// Market Data Services - Register IExchangeDataProvider
+// Use SimplifiedCoinGeckoExchangeDataProvider as default (works with CoinGecko API)
+builder.Services.AddScoped<CryptoTrading.Services.Market.IUpstreamPriceSource, CryptoTrading.Services.Market.CoinGeckoPriceSource>();
+builder.Services.AddScoped<CryptoTrading.Services.Market.IExchangeDataProvider, CryptoTrading.Services.Market.SimplifiedCoinGeckoExchangeDataProvider>();
+builder.Services.AddScoped<CryptoTrading.Services.Market.ISimplifiedPriceValidator, CryptoTrading.Services.Market.SimplifiedPriceValidator>();
+builder.Services.AddScoped<CryptoTrading.Services.Market.IPriceValidator, CryptoTrading.Services.Market.PriceValidator>();
+
 // Bot Trading Services
 builder.Services.AddSingleton<CryptoTrading.Interfaces.Bot.IStrategyRegistry, CryptoTrading.Services.Bot.StrategyRegistry>();
 builder.Services.AddScoped<CryptoTrading.Interfaces.Bot.IBotApplicationService, CryptoTrading.Services.Bot.BotApplicationService>();
@@ -184,6 +193,10 @@ builder.Services.AddScoped<CryptoTrading.Interfaces.Bot.IPortfolioService, Crypt
 // Use enhanced risk manager instead of basic one
 builder.Services.AddScoped<CryptoTrading.Interfaces.Bot.IRiskManager, CryptoTrading.Services.Bot.EnhancedRiskManager>();
 builder.Services.AddSingleton<CryptoTrading.Services.Bot.BotSignalRDispatcher>();
+
+// Risk Management Services
+builder.Services.AddScoped<CryptoTrading.Services.Risk.IKillSwitchService, CryptoTrading.Services.Risk.KillSwitchService>();
+builder.Services.AddScoped<CryptoTrading.Services.Risk.IPositionTracker, CryptoTrading.Services.Risk.PositionTracker>();
 
 // Bot Strategies
 builder.Services.AddTransient<CryptoTrading.Services.Bot.Strategies.GridTradingStrategy>();
@@ -277,6 +290,168 @@ app.MapGet("/weatherforecast", () =>
 })
 .WithName("GetWeatherForecast");
 
+
+async Task RunSqlMigrationScripts(ApplicationDbContext db, ILogger logger)
+{
+    try
+    {
+        // Create tracking table for SQL migrations
+        await db.Database.ExecuteSqlRawAsync(@"
+            CREATE TABLE IF NOT EXISTS `sql_migrations_history` (
+                `Id` INT NOT NULL AUTO_INCREMENT,
+                `ScriptName` VARCHAR(255) NOT NULL,
+                `AppliedAtUtc` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+                `Checksum` VARCHAR(64) NULL,
+                PRIMARY KEY (`Id`),
+                UNIQUE KEY `UX_sql_migrations_script` (`ScriptName`)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+        ");
+
+        // Get connection string
+        var connectionString = db.Database.GetConnectionString();
+        if (string.IsNullOrEmpty(connectionString))
+        {
+            logger.LogWarning("Cannot get connection string. Skipping SQL migration scripts.");
+            return;
+        }
+
+        // Define migration scripts in order
+        // ============================================
+        // OLD SCHEMA (INT UserId) - Compatible with existing code ✅ ACTIVE
+        // ============================================
+        var migrationScripts = new[]
+        {
+            "001_InitialSchema_MySQL_OLD_SCHEMA.sql",  // OLD SCHEMA - INT UserId (compatible with code)
+            "002_WalletsAndPairs_MySQL.sql",
+            "003_AuditAndConfiguration_MySQL.sql",
+            "004_SeedDefaultConfigurations.sql",
+            "004_FixBotRiskStateBotIdToGuid_Simple.sql",
+            "005_CreateFeeLedgerTable.sql",
+            "006_PriceConstraintsAndBilling_MySQL.sql"
+        };
+        
+        logger.LogInformation("📌 Using OLD SCHEMA (INT UserId) - Compatible with existing code");
+        
+        // ============================================
+        // NEW SCHEMA (CHAR(36) UserId) - Commented out (requires code update)
+        // Uncomment below and comment above to use NEW SCHEMA
+        // ============================================
+        // var useOldSchema = Environment.GetEnvironmentVariable("USE_OLD_SCHEMA") == "true";
+        // 
+        // var migrationScripts = useOldSchema
+        //     ? new[]
+        //     {
+        //         "001_InitialSchema_MySQL_OLD_SCHEMA.sql",  // OLD SCHEMA - INT UserId (compatible with code)
+        //         "002_WalletsAndPairs_MySQL.sql",
+        //         "003_AuditAndConfiguration_MySQL.sql",
+        //         "004_SeedDefaultConfigurations.sql",
+        //         "004_FixBotRiskStateBotIdToGuid_Simple.sql",
+        //         "005_CreateFeeLedgerTable.sql",
+        //         "006_PriceConstraintsAndBilling_MySQL.sql"
+        //     }
+        //     : new[]
+        //     {
+        //         "001_InitialSchema_MySQL.sql",  // NEW SCHEMA - CHAR(36) UserId (requires code update)
+        //         "002_WalletsAndPairs_MySQL.sql",
+        //         "003_AuditAndConfiguration_MySQL.sql",
+        //         "004_SeedDefaultConfigurations.sql",
+        //         "004_FixBotRiskStateBotIdToGuid_Simple.sql",
+        //         "005_CreateFeeLedgerTable.sql",
+        //         "006_PriceConstraintsAndBilling_MySQL.sql"
+        //     };
+        // 
+        // if (useOldSchema)
+        // {
+        //     logger.LogInformation("📌 Using OLD SCHEMA (INT UserId) - Compatible with existing code");
+        // }
+        // else
+        // {
+        //     logger.LogWarning("⚠️ Using NEW SCHEMA (CHAR(36) UserId) - Requires code update!");
+        //     logger.LogWarning("💡 Set USE_OLD_SCHEMA=true to use OLD schema");
+        // }
+
+        var mysqlScriptsPath = Path.Combine(Directory.GetCurrentDirectory(), "database", "mysql");
+        
+        if (!Directory.Exists(mysqlScriptsPath))
+        {
+            logger.LogWarning("SQL migration scripts directory not found: {Path}", mysqlScriptsPath);
+            return;
+        }
+
+        logger.LogInformation("Checking SQL migration scripts...");
+
+        foreach (var scriptName in migrationScripts)
+        {
+            var scriptPath = Path.Combine(mysqlScriptsPath, scriptName);
+            
+            if (!File.Exists(scriptPath))
+            {
+                logger.LogDebug("SQL script not found (skipping): {Script}", scriptName);
+                continue;
+            }
+
+            // Check if already applied using direct connection
+            bool alreadyApplied = false;
+            using (var checkConnection = new MySqlConnection(connectionString))
+            {
+                await checkConnection.OpenAsync();
+                using var checkCommand = new MySqlCommand(
+                    "SELECT COUNT(*) FROM `sql_migrations_history` WHERE `ScriptName` = @scriptName",
+                    checkConnection);
+                checkCommand.Parameters.AddWithValue("@scriptName", scriptName);
+                var count = Convert.ToInt32(await checkCommand.ExecuteScalarAsync());
+                alreadyApplied = count > 0;
+            }
+
+            if (alreadyApplied)
+            {
+                logger.LogDebug("SQL script already applied (skipping): {Script}", scriptName);
+                continue;
+            }
+
+            try
+            {
+                logger.LogInformation("Running SQL migration script: {Script}", scriptName);
+                
+                var scriptContent = await File.ReadAllTextAsync(scriptPath);
+                
+                // Remove USE database statement if present (we're already connected)
+                scriptContent = scriptContent.Replace("USE crypto_trading;", "", StringComparison.OrdinalIgnoreCase);
+                scriptContent = scriptContent.Replace("USE `crypto_trading`;", "", StringComparison.OrdinalIgnoreCase);
+                
+                using var connection = new MySqlConnection(connectionString);
+                await connection.OpenAsync();
+                
+                // Execute script (MySQL supports multi-statement execution)
+                using var command = new MySqlCommand(scriptContent, connection);
+                command.CommandTimeout = 60; // 1 minute timeout (sufficient for most migration scripts)
+                await command.ExecuteNonQueryAsync();
+
+                // Record migration
+                using var recordCommand = new MySqlCommand(
+                    "INSERT INTO `sql_migrations_history` (`ScriptName`, `AppliedAtUtc`) VALUES (@scriptName, @appliedAt) ON DUPLICATE KEY UPDATE `AppliedAtUtc` = VALUES(`AppliedAtUtc`)",
+                    connection);
+                recordCommand.Parameters.AddWithValue("@scriptName", scriptName);
+                recordCommand.Parameters.AddWithValue("@appliedAt", DateTime.UtcNow);
+                await recordCommand.ExecuteNonQueryAsync();
+
+                logger.LogInformation("✅ SQL migration script applied: {Script}", scriptName);
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Failed to run SQL migration script: {Script}", scriptName);
+                // Continue with next script
+            }
+        }
+
+        logger.LogInformation("✅ SQL migration scripts check complete.");
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "Error while running SQL migration scripts");
+        // Don't crash the app
+    }
+}
 
 async Task SeedDatabase(IServiceProvider serviceProvider, ILogger logger)
 {
@@ -378,24 +553,39 @@ using (var scope = app.Services.CreateScope())
     {
         logger.LogInformation("Checking database migrations...");
         
-        // Check if there are pending migrations without applying them
+        // Check if there are pending migrations
         var pendingMigrations = await db.Database.GetPendingMigrationsAsync();
+        
+        // Auto-apply migrations in Development mode or if explicitly enabled
+        var isDevelopment = app.Environment.IsDevelopment();
+        var autoApplyEnabled = Environment.GetEnvironmentVariable("AUTO_APPLY_MIGRATIONS") == "true";
+        var shouldAutoApply = isDevelopment || autoApplyEnabled;
+        
         if (pendingMigrations.Any())
         {
-            logger.LogWarning("There are {Count} pending migrations. Please run 'dotnet ef database update' manually.", pendingMigrations.Count());
-            logger.LogWarning("Pending migrations: {Migrations}", string.Join(", ", pendingMigrations));
+            if (shouldAutoApply)
+            {
+                logger.LogInformation("Auto-applying {Count} pending migrations...", pendingMigrations.Count());
+                logger.LogInformation("Pending migrations: {Migrations}", string.Join(", ", pendingMigrations));
+                await db.Database.MigrateAsync();
+                logger.LogInformation("✅ Migrations applied successfully.");
+            }
+            else
+            {
+                logger.LogWarning("There are {Count} pending migrations. Please run 'dotnet ef database update' manually.", pendingMigrations.Count());
+                logger.LogWarning("Pending migrations: {Migrations}", string.Join(", ", pendingMigrations));
+                logger.LogInformation("💡 Tip: Set AUTO_APPLY_MIGRATIONS=true to auto-apply, or run in Development mode.");
+            }
         }
         else
         {
-            logger.LogInformation("Database is up to date with all migrations.");
+            logger.LogInformation("✅ Database is up to date with all migrations.");
         }
         
-        // Only apply migrations if explicitly enabled via environment variable
-        if (Environment.GetEnvironmentVariable("AUTO_APPLY_MIGRATIONS") == "true")
+        // Auto-run SQL migration scripts in Development mode
+        if (isDevelopment || autoApplyEnabled)
         {
-            logger.LogInformation("Auto-applying migrations (AUTO_APPLY_MIGRATIONS=true)...");
-            await db.Database.MigrateAsync();
-            logger.LogInformation("Migrations applied successfully.");
+            await RunSqlMigrationScripts(db, logger);
         }
         
         await SeedDatabase(services, logger);

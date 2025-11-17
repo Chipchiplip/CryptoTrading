@@ -5,7 +5,7 @@ using System.Threading.Tasks;
 using CryptoTrading.Services;
 using Microsoft.Extensions.Logging;
 
-namespace CryptoTradingApp.Services.Market;
+namespace CryptoTrading.Services.Market;
 
 /// <summary>
 /// Adapter for ICoinGeckoService to provide spot prices

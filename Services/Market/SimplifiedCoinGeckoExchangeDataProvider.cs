@@ -3,10 +3,10 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using CryptoTradingApp.Models.Market;
+using CryptoTrading.Models.Market;
 using Microsoft.Extensions.Logging;
 
-namespace CryptoTradingApp.Services.Market;
+namespace CryptoTrading.Services.Market;
 
 /// <summary>
 /// Simplified exchange data provider using CoinGecko as upstream source

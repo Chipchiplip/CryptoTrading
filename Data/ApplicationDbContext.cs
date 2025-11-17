@@ -392,6 +392,61 @@ namespace CryptoTrading.Data
                     .HasForeignKey(e => e.OrderId)
                     .OnDelete(DeleteBehavior.Cascade);
             });
+
+            // ==========================
+            // BOT RISK STATE CONFIG
+            // ==========================
+            modelBuilder.Entity<BotRiskState>(entity =>
+            {
+                entity.ToTable("BotRiskStates");
+                entity.HasKey(e => e.Id);
+                entity.HasIndex(e => e.BotId);
+                entity.Property(e => e.BotId).IsRequired();
+
+                entity.HasOne(e => e.Bot)
+                    .WithMany()
+                    .HasForeignKey(e => e.BotId)
+                    .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            // ==========================
+            // KILL SWITCH EVENT CONFIG
+            // ==========================
+            modelBuilder.Entity<KillSwitchEvent>(entity =>
+            {
+                entity.ToTable("KillSwitchEvents");
+                entity.HasKey(e => e.Id);
+                entity.HasIndex(e => e.BotId);
+                entity.HasIndex(e => e.TriggerTime);
+                entity.Property(e => e.BotId).IsRequired();
+
+                entity.HasOne(e => e.Bot)
+                    .WithMany()
+                    .HasForeignKey(e => e.BotId)
+                    .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            // ==========================
+            // USER CAPITAL LIMITS CONFIG
+            // ==========================
+            modelBuilder.Entity<UserCapitalLimits>(entity =>
+            {
+                entity.ToTable("UserCapitalLimits");
+                entity.HasKey(e => e.Id);
+                entity.HasIndex(e => e.UserId).IsUnique();
+
+                entity.Property(e => e.MaxTotalExposure)
+                    .HasColumnType("decimal(18,8)");
+                entity.Property(e => e.MaxCapitalPerBot)
+                    .HasColumnType("decimal(18,8)");
+                entity.Property(e => e.MaxDailyLoss)
+                    .HasColumnType("decimal(18,8)");
+
+                entity.Property(e => e.CreatedAt)
+                    .HasDefaultValueSql("CURRENT_TIMESTAMP(6)");
+                entity.Property(e => e.UpdatedAt)
+                    .HasDefaultValueSql("CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6)");
+            });
         }
     }
 }

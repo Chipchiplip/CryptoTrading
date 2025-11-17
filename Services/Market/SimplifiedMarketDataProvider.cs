@@ -2,10 +2,10 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
-using CryptoTradingApp.Models.Market;
+using CryptoTrading.Models.Market;
 using Microsoft.Extensions.Logging;
 
-namespace CryptoTradingApp.Services.Market;
+namespace CryptoTrading.Services.Market;
 
 /// <summary>
 /// Simplified market data provider using exchange data provider and validator

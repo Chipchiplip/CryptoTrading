@@ -1,7 +1,7 @@
-using CryptoTradingApp.Models.Market;
+using CryptoTrading.Models.Market;
 using Microsoft.Extensions.Logging;
 
-namespace CryptoTradingApp.Services.Market;
+namespace CryptoTrading.Services.Market;
 
 /// <summary>
 /// Mock exchange data provider for testing and development
@@ -170,6 +170,26 @@ public class MockExchangeDataProvider : IExchangeDataProvider
         _logger.LogDebug("Generated {Count} mock candles for {Symbol}", candles.Count, symbol);
 
         return Task.FromResult(candles);
+    }
+
+    public Task<MarketQuote?> GetQuoteAsync(string symbol, CancellationToken cancellationToken = default)
+    {
+        var basePrice = GetBasePrice(symbol);
+        var spread = basePrice * 0.001m; // 0.1% spread
+        
+        var quote = new MarketQuote
+        {
+            Symbol = symbol,
+            Bid = basePrice - spread,
+            Ask = basePrice + spread,
+            Last = basePrice,
+            Timestamp = DateTime.UtcNow,
+            Source = "Mock"
+        };
+
+        _logger.LogDebug("Generated mock quote for {Symbol}: Bid={Bid}, Ask={Ask}", symbol, quote.Bid, quote.Ask);
+        
+        return Task.FromResult<MarketQuote?>(quote);
     }
 
     public Task<bool> HealthCheckAsync(CancellationToken cancellationToken = default)

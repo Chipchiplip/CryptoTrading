@@ -1,0 +1,328 @@
+### Trading API Test Scripts
+### Use with REST Client extension in VS Code or similar tools
+
+@baseUrl = http://localhost:5299
+@token = YOUR_JWT_TOKEN_HERE
+
+### ============================================
+### 1. PLACE ORDER - BUY LIMIT BTC/USDT
+### ============================================
+POST {{baseUrl}}/api/trading/orders
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "symbol": "BTC/USDT",
+  "side": "BUY",
+  "type": "LIMIT",
+  "quantity": 0.001,
+  "price": 50000.00
+}
+
+### ============================================
+### 2. PLACE ORDER - SELL LIMIT BTC/USDT
+### ============================================
+POST {{baseUrl}}/api/trading/orders
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "symbol": "BTC/USDT",
+  "side": "SELL",
+  "type": "LIMIT",
+  "quantity": 0.0005,
+  "price": 52000.00
+}
+
+### ============================================
+### 3. PLACE ORDER - BUY MARKET ETH/USDT
+### ============================================
+POST {{baseUrl}}/api/trading/orders
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "symbol": "ETH/USDT",
+  "side": "BUY",
+  "type": "MARKET",
+  "quantity": 0.01
+}
+
+### ============================================
+### 4. PLACE ORDER - SELL MARKET ETH/USDT
+### ============================================
+POST {{baseUrl}}/api/trading/orders
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "symbol": "ETH/USDT",
+  "side": "SELL",
+  "type": "MARKET",
+  "quantity": 0.005
+}
+
+### ============================================
+### 5. PLACE ORDER - Small Quantity Test
+### ============================================
+POST {{baseUrl}}/api/trading/orders
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "symbol": "BTC/USDT",
+  "side": "BUY",
+  "type": "LIMIT",
+  "quantity": 0.00000001,
+  "price": 0.01
+}
+
+### ============================================
+### 6. GET ALL ORDERS
+### ============================================
+GET {{baseUrl}}/api/trading/orders
+Authorization: Bearer {{token}}
+
+### ============================================
+### 7. GET ORDERS - Filter by Symbol
+### ============================================
+GET {{baseUrl}}/api/trading/orders?symbol=BTC/USDT
+Authorization: Bearer {{token}}
+
+### ============================================
+### 8. GET ORDERS - Filter by Side
+### ============================================
+GET {{baseUrl}}/api/trading/orders?side=BUY
+Authorization: Bearer {{token}}
+
+### ============================================
+### 9. GET ORDERS - Filter by Type
+### ============================================
+GET {{baseUrl}}/api/trading/orders?type=LIMIT
+Authorization: Bearer {{token}}
+
+### ============================================
+### 10. GET ORDERS - Filter by Status
+### ============================================
+GET {{baseUrl}}/api/trading/orders?status=NEW
+Authorization: Bearer {{token}}
+
+### ============================================
+### 11. GET ORDERS - Date Range
+### ============================================
+GET {{baseUrl}}/api/trading/orders?fromDate=2025-01-01&toDate=2025-01-31
+Authorization: Bearer {{token}}
+
+### ============================================
+### 12. GET ORDERS - Pagination
+### ============================================
+GET {{baseUrl}}/api/trading/orders?page=1&pageSize=10
+Authorization: Bearer {{token}}
+
+### ============================================
+### 13. GET ORDERS - Combined Filters
+### ============================================
+GET {{baseUrl}}/api/trading/orders?symbol=BTC/USDT&side=BUY&status=NEW&page=1&pageSize=10
+Authorization: Bearer {{token}}
+
+### ============================================
+### 14. GET ORDER BY ID (Replace {id} with actual order ID)
+### ============================================
+GET {{baseUrl}}/api/trading/orders/1234567890
+Authorization: Bearer {{token}}
+
+### ============================================
+### 15. CANCEL ORDER (Replace {id} with actual order ID)
+### ============================================
+DELETE {{baseUrl}}/api/trading/orders/1234567890
+Authorization: Bearer {{token}}
+
+### ============================================
+### 16. GET ALL TRADES
+### ============================================
+GET {{baseUrl}}/api/trading/trades
+Authorization: Bearer {{token}}
+
+### ============================================
+### 17. GET TRADES - Filter by Symbol
+### ============================================
+GET {{baseUrl}}/api/trading/trades?symbol=BTC/USDT
+Authorization: Bearer {{token}}
+
+### ============================================
+### 18. GET TRADES - Filter by Order ID
+### ============================================
+GET {{baseUrl}}/api/trading/trades?orderId=1234567890
+Authorization: Bearer {{token}}
+
+### ============================================
+### 19. GET TRADES - Date Range
+### ============================================
+GET {{baseUrl}}/api/trading/trades?fromDate=2025-01-01&toDate=2025-01-31
+Authorization: Bearer {{token}}
+
+### ============================================
+### 20. GET TRADES - Pagination
+### ============================================
+GET {{baseUrl}}/api/trading/trades?page=1&pageSize=20
+Authorization: Bearer {{token}}
+
+### ============================================
+### 21. GET BALANCES
+### ============================================
+GET {{baseUrl}}/api/trading/balances
+Authorization: Bearer {{token}}
+
+### ============================================
+### 22. GET HOLDINGS
+### ============================================
+GET {{baseUrl}}/api/trading/holdings
+Authorization: Bearer {{token}}
+
+### ============================================
+### 23. GET ORDER BOOK - BTC/USDT
+### ============================================
+GET {{baseUrl}}/api/trading/orderbook?symbolQuery=BTC/USDT
+Authorization: Bearer {{token}}
+
+### ============================================
+### 24. GET ORDER BOOK - ETH/USDT
+### ============================================
+GET {{baseUrl}}/api/trading/orderbook?symbolQuery=ETH/USDT
+Authorization: Bearer {{token}}
+
+### ============================================
+### 25. GET ORDER BOOK - With Depth
+### ============================================
+GET {{baseUrl}}/api/trading/orderbook?symbolQuery=BTC/USDT&depth=50
+Authorization: Bearer {{token}}
+
+### ============================================
+### 26. GET DASHBOARD
+### ============================================
+GET {{baseUrl}}/api/trading/dashboard
+Authorization: Bearer {{token}}
+
+### ============================================
+### 27. GET DASHBOARD SUMMARY
+### ============================================
+GET {{baseUrl}}/api/trading/dashboard/summary
+Authorization: Bearer {{token}}
+
+### ============================================
+### 28. GET NAV HISTORY
+### ============================================
+GET {{baseUrl}}/api/trading/dashboard/nav
+Authorization: Bearer {{token}}
+
+### ============================================
+### 29. GET NAV HISTORY - Custom Date
+### ============================================
+GET {{baseUrl}}/api/trading/dashboard/nav?from=2025-01-01
+Authorization: Bearer {{token}}
+
+### ============================================
+### 30. GET PnL HISTORY - Hourly
+### ============================================
+GET {{baseUrl}}/api/trading/dashboard/pnl?granularity=hourly
+Authorization: Bearer {{token}}
+
+### ============================================
+### 31. GET PnL HISTORY - Daily
+### ============================================
+GET {{baseUrl}}/api/trading/dashboard/pnl?granularity=daily
+Authorization: Bearer {{token}}
+
+### ============================================
+### 32. GET PnL HISTORY - Weekly
+### ============================================
+GET {{baseUrl}}/api/trading/dashboard/pnl?granularity=weekly
+Authorization: Bearer {{token}}
+
+### ============================================
+### 33. GET PnL HISTORY - Custom Date
+### ============================================
+GET {{baseUrl}}/api/trading/dashboard/pnl?granularity=hourly&date=2025-01-15
+Authorization: Bearer {{token}}
+
+### ============================================
+### ERROR TEST CASES
+### ============================================
+
+### Invalid Symbol
+POST {{baseUrl}}/api/trading/orders
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "symbol": "INVALID/PAIR",
+  "side": "BUY",
+  "type": "LIMIT",
+  "quantity": 0.001,
+  "price": 50000.00
+}
+
+### Invalid Side
+POST {{baseUrl}}/api/trading/orders
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "symbol": "BTC/USDT",
+  "side": "INVALID",
+  "type": "LIMIT",
+  "quantity": 0.001,
+  "price": 50000.00
+}
+
+### Invalid Type
+POST {{baseUrl}}/api/trading/orders
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "symbol": "BTC/USDT",
+  "side": "BUY",
+  "type": "INVALID",
+  "quantity": 0.001,
+  "price": 50000.00
+}
+
+### Missing Price (for LIMIT order)
+POST {{baseUrl}}/api/trading/orders
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "symbol": "BTC/USDT",
+  "side": "BUY",
+  "type": "LIMIT",
+  "quantity": 0.001
+}
+
+### Zero Quantity
+POST {{baseUrl}}/api/trading/orders
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "symbol": "BTC/USDT",
+  "side": "BUY",
+  "type": "LIMIT",
+  "quantity": 0,
+  "price": 50000.00
+}
+
+### Negative Price
+POST {{baseUrl}}/api/trading/orders
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "symbol": "BTC/USDT",
+  "side": "BUY",
+  "type": "LIMIT",
+  "quantity": 0.001,
+  "price": -100.00
+}
+

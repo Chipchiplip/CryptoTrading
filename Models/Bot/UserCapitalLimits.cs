@@ -2,7 +2,7 @@ using System;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
-namespace CryptoTradingApp.Models.Bot;
+namespace CryptoTrading.Models;
 
 /// <summary>
 /// Defines capital and risk limits for each user

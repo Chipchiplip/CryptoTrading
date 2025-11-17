@@ -1,9 +1,9 @@
-using CryptoTradingApp.Models.Market;
+using CryptoTrading.Models.Market;
 using Microsoft.Extensions.Logging;
 using System.Net.Http;
 using System.Text.Json;
 
-namespace CryptoTradingApp.Services.Market;
+namespace CryptoTrading.Services.Market;
 
 /// <summary>
 /// Real-time market data provider for Binance exchange
@@ -135,6 +135,50 @@ public class BinanceDataProvider : IExchangeDataProvider
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to fetch order book from Binance for {Symbol}", symbol);
+            return null;
+        }
+    }
+
+    public async Task<MarketQuote?> GetQuoteAsync(string symbol, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            // Get order book and use best bid/ask to create quote
+            var orderBook = await GetOrderBookAsync(symbol, 1, cancellationToken);
+            if (orderBook == null || orderBook.Bids.Count == 0 || orderBook.Asks.Count == 0)
+            {
+                // Fallback to ticker
+                var ticker = await GetTickerAsync(symbol, cancellationToken);
+                if (ticker == null)
+                    return null;
+
+                return new MarketQuote
+                {
+                    Symbol = symbol,
+                    Bid = ticker.BidPrice,
+                    Ask = ticker.AskPrice,
+                    Last = ticker.LastPrice,
+                    Timestamp = ticker.Timestamp,
+                    Source = "Binance"
+                };
+            }
+
+            var bestBid = orderBook.Bids.First().Price;
+            var bestAsk = orderBook.Asks.First().Price;
+
+            return new MarketQuote
+            {
+                Symbol = symbol,
+                Bid = bestBid,
+                Ask = bestAsk,
+                Last = (bestBid + bestAsk) / 2,
+                Timestamp = orderBook.Timestamp,
+                Source = "Binance"
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get quote from Binance for {Symbol}", symbol);
             return null;
         }
     }

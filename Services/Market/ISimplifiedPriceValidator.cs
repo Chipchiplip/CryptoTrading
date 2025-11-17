@@ -1,6 +1,6 @@
-using CryptoTradingApp.Models.Market;
+using CryptoTrading.Models.Market;
 
-namespace CryptoTradingApp.Services.Market;
+namespace CryptoTrading.Services.Market;
 
 /// <summary>
 /// Simplified interface for validating market quotes

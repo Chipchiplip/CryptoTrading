@@ -26,9 +26,31 @@ async function apiPost<T>(url: string, body: unknown): Promise<ApiResult<T>> {
       body: JSON.stringify(body),
     });
     const json = await res.json().catch(() => ({}));
-    if (!res.ok) return { ok: false, error: (json as any)?.message || `HTTP ${res.status}` };
+    if (!res.ok) {
+      // Try to get detailed error information
+      const errorData = json as any;
+      const errorMsg = errorData?.error || errorData?.message || `HTTP ${res.status}`;
+      const errorType = errorData?.type;
+      
+      // Log detailed error for debugging
+      console.error(`[API Error] ${url}:`, {
+        status: res.status,
+        type: errorType,
+        message: errorData?.message,
+        error: errorData?.error,
+        fullResponse: errorData
+      });
+      
+      // Include error type in message if available (for development)
+      const fullErrorMsg = errorType 
+        ? `${errorMsg} (${errorType})` 
+        : errorMsg;
+      
+      return { ok: false, error: fullErrorMsg };
+    }
     return { ok: true, data: json as T };
   } catch (e: any) {
+    console.error(`[Network Error] ${url}:`, e);
     return { ok: false, error: e?.message || 'Network error' };
   }
 }

@@ -112,9 +112,10 @@ namespace CryptoTrading.Services.Trading
                     _logger.LogWarning("Cache miss for {Symbol}, fetching from API", coinSymbol);
                     currentPrice = await GetMarketPriceAsync(coinSymbol, TimeSpan.Zero, forceRefresh: true);
                     
+                    // DEMO FIX: Validate price > 0 to prevent orders at invalid prices
                     if (currentPrice <= 0)
                     {
-                        throw new InvalidOperationException($"Unable to retrieve market price for {coinSymbol}");
+                        throw new InvalidOperationException($"Invalid market price for {coinSymbol}: {currentPrice}. Price must be greater than 0.");
                     }
                 }
 

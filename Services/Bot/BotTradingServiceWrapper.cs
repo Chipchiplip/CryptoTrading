@@ -46,9 +46,15 @@ namespace CryptoTrading.Services.Bot
             decimal? price = null, 
             CancellationToken cancellationToken = default)
         {
-            // Estimate: quantity * (price ?? estimated_price) * 1.001 (for fees)
-            var estimatedPrice = price ?? 50000m; // Fallback price
-            return Task.FromResult(quantity * estimatedPrice * 1.001m);
+            // DEMO FIX: Remove hard-coded $50k fallback - require price to be provided
+            // Hard-coded fallback causes wildly wrong estimates (e.g., 100,000x error for $0.50 coins)
+            if (price == null || price <= 0)
+            {
+                throw new ArgumentException("Price is required for capital estimation and must be greater than 0");
+            }
+            
+            // Estimate: quantity * price * 1.001 (for fees)
+            return Task.FromResult(quantity * price.Value * 1.001m);
         }
     }
 }

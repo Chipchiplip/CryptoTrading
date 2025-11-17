@@ -1,9 +1,9 @@
-using CryptoTradingApp.Models.Market;
-using CryptoTradingApp.Services.CoinGecko;
-using CryptoTradingApp.Services.Cache;
+using CryptoTrading.Models.Market;
+using CryptoTrading.Services;
+using CryptoTrading.Services;
 using Microsoft.Extensions.Logging;
 
-namespace CryptoTradingApp.Services.Market;
+namespace CryptoTrading.Services.Market;
 
 /// <summary>
 /// Market data provider using CoinGecko API (fallback/development mode)
@@ -31,8 +31,12 @@ public class CoinGeckoDataProvider : IExchangeDataProvider
     {
         try
         {
+            // Get all market data and find the specific coin
+            var allMarketData = await _coinGeckoService.GetMarketDataAsync();
             var coinId = ConvertSymbolToCoinId(symbol);
-            var marketData = await _coinGeckoService.GetMarketDataAsync(coinId);
+            var marketData = allMarketData.FirstOrDefault(c => 
+                c.Id.Equals(coinId, StringComparison.OrdinalIgnoreCase) ||
+                c.Symbol.Equals(symbol.Replace("USDT", "").Replace("USD", ""), StringComparison.OrdinalIgnoreCase));
 
             if (marketData?.CurrentPrice != null)
             {
@@ -93,12 +97,41 @@ public class CoinGeckoDataProvider : IExchangeDataProvider
         };
     }
 
+    public async Task<MarketQuote?> GetQuoteAsync(string symbol, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var ticker = await GetTickerAsync(symbol, cancellationToken);
+            if (ticker == null)
+                return null;
+
+            return new MarketQuote
+            {
+                Symbol = symbol,
+                Bid = ticker.BidPrice,
+                Ask = ticker.AskPrice,
+                Last = ticker.LastPrice,
+                Timestamp = ticker.Timestamp,
+                Source = "CoinGecko"
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get quote from CoinGecko for {Symbol}", symbol);
+            return null;
+        }
+    }
+
     public async Task<TickerData?> GetTickerAsync(string symbol, CancellationToken cancellationToken = default)
     {
         try
         {
+            // Get all market data and find the specific coin
+            var allMarketData = await _coinGeckoService.GetMarketDataAsync();
             var coinId = ConvertSymbolToCoinId(symbol);
-            var marketData = await _coinGeckoService.GetMarketDataAsync(coinId);
+            var marketData = allMarketData.FirstOrDefault(c => 
+                c.Id.Equals(coinId, StringComparison.OrdinalIgnoreCase) ||
+                c.Symbol.Equals(symbol.Replace("USDT", "").Replace("USD", ""), StringComparison.OrdinalIgnoreCase));
 
             if (marketData == null)
                 return null;
@@ -144,8 +177,15 @@ public class CoinGeckoDataProvider : IExchangeDataProvider
             if (priceHistory == null || priceHistory.Count == 0)
                 return new List<OHLCVCandle>();
 
+            // Convert PriceHistory to PriceHistoryPoint
+            var pricePoints = priceHistory.Select(ph => new PriceHistoryPoint
+            {
+                Timestamp = ph.Timestamp,
+                Price = ph.Price
+            }).ToList();
+
             // CoinGecko only provides price points, we need to aggregate into candles
-            var candles = AggregateIntoCandles(priceHistory, interval, limit);
+            var candles = AggregateIntoCandles(pricePoints, interval, limit);
 
             _logger.LogDebug("Generated {Count} candles from CoinGecko for {Symbol}", candles.Count, symbol);
 
@@ -163,7 +203,8 @@ public class CoinGeckoDataProvider : IExchangeDataProvider
         try
         {
             // Try to fetch Bitcoin price as health check
-            var marketData = await _coinGeckoService.GetMarketDataAsync("bitcoin");
+            var allMarketData = await _coinGeckoService.GetMarketDataAsync();
+            var marketData = allMarketData.FirstOrDefault(c => c.Id.Equals("bitcoin", StringComparison.OrdinalIgnoreCase));
             var isHealthy = marketData?.CurrentPrice != null;
 
             _logger.LogDebug("CoinGecko health check: {Status}", isHealthy ? "OK" : "FAILED");

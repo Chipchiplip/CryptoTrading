@@ -1,6 +1,6 @@
-using CryptoTradingApp.Models.Market;
+using CryptoTrading.Models.Market;
 
-namespace CryptoTradingApp.Services.Market;
+namespace CryptoTrading.Services.Market;
 
 /// <summary>
 /// Interface for fetching real-time market data from exchanges
@@ -31,6 +31,11 @@ public interface IExchangeDataProvider
     /// Gets the latest ticker data
     /// </summary>
     Task<TickerData?> GetTickerAsync(string symbol, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Gets a market quote with Bid/Ask prices
+    /// </summary>
+    Task<MarketQuote?> GetQuoteAsync(string symbol, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Gets OHLCV candles for the specified interval and limit

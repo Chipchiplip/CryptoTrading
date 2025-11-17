@@ -2,7 +2,7 @@ using System;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
-namespace CryptoTradingApp.Models.Bot;
+namespace CryptoTrading.Models;
 
 /// <summary>
 /// Tracks kill switch trigger events for audit and analysis
@@ -14,7 +14,7 @@ public class KillSwitchEvent
     public int Id { get; set; }
 
     [Required]
-    public int BotId { get; set; }
+    public Guid BotId { get; set; }
 
     [Required]
     [MaxLength(500)]
