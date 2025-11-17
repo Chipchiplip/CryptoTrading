@@ -126,8 +126,14 @@ namespace CryptoTrading.Services.Bot
         /// <summary>
         /// Gets bot capital limit for allocation
         /// </summary>
-        public async Task<decimal> GetBotCapitalLimitAsync(int userId, int botId, CancellationToken cancellationToken = default)
+        public async Task<decimal> GetBotCapitalLimitAsync(int userId, Guid botId, CancellationToken cancellationToken = default)
         {
+            if (ShouldSkipBotScopedOperation(botId, nameof(GetBotCapitalLimitAsync)))
+            {
+                var fallbackLimits = await GetUserCapitalLimitsAsync(userId, cancellationToken);
+                return fallbackLimits.MaxCapitalPerBot;
+            }
+
             var userLimits = await GetUserCapitalLimitsAsync(userId, cancellationToken);
 
             // Get bot's current position sizing if configured
@@ -157,8 +163,13 @@ namespace CryptoTrading.Services.Bot
         /// <summary>
         /// Checks if kill switch is triggered for a bot
         /// </summary>
-        public async Task<bool> CheckKillSwitchAsync(int botId, int userId, CancellationToken cancellationToken = default)
+        public async Task<bool> CheckKillSwitchAsync(Guid botId, int userId, CancellationToken cancellationToken = default)
         {
+            if (ShouldSkipBotScopedOperation(botId, nameof(CheckKillSwitchAsync)))
+            {
+                return false;
+            }
+
             if (_killSwitchService == null)
             {
                 _logger.LogDebug("Kill switch service not available, check skipped");
@@ -188,8 +199,13 @@ namespace CryptoTrading.Services.Bot
         /// <summary>
         /// Checks cooldown for order placement
         /// </summary>
-        public async Task<bool> CheckCooldownAsync(int botId, TimeSpan minCooldown, CancellationToken cancellationToken = default)
+        public async Task<bool> CheckCooldownAsync(Guid botId, TimeSpan minCooldown, CancellationToken cancellationToken = default)
         {
+            if (ShouldSkipBotScopedOperation(botId, nameof(CheckCooldownAsync)))
+            {
+                return true;
+            }
+
             try
             {
                 // Get bot risk state
@@ -223,8 +239,13 @@ namespace CryptoTrading.Services.Bot
         /// <summary>
         /// Checks rate limit for order placement
         /// </summary>
-        public async Task<bool> CheckRateLimitAsync(int botId, int maxOrdersPerCycle, CancellationToken cancellationToken = default)
+        public async Task<bool> CheckRateLimitAsync(Guid botId, int maxOrdersPerCycle, CancellationToken cancellationToken = default)
         {
+            if (ShouldSkipBotScopedOperation(botId, nameof(CheckRateLimitAsync)))
+            {
+                return true;
+            }
+
             try
             {
                 // Get bot risk state
@@ -257,8 +278,13 @@ namespace CryptoTrading.Services.Bot
         /// <summary>
         /// Resets order count for a new execution cycle
         /// </summary>
-        public async Task ResetOrderCountForNewCycleAsync(int botId, CancellationToken cancellationToken = default)
+        public async Task ResetOrderCountForNewCycleAsync(Guid botId, CancellationToken cancellationToken = default)
         {
+            if (ShouldSkipBotScopedOperation(botId, nameof(ResetOrderCountForNewCycleAsync)))
+            {
+                return;
+            }
+
             try
             {
                 var riskState = await _context.Set<BotRiskState>()
@@ -296,8 +322,13 @@ namespace CryptoTrading.Services.Bot
         /// <summary>
         /// Records that an order was placed (updates timestamp and counter)
         /// </summary>
-        public async Task RecordOrderPlacedAsync(int botId, CancellationToken cancellationToken = default)
+        public async Task RecordOrderPlacedAsync(Guid botId, CancellationToken cancellationToken = default)
         {
+            if (ShouldSkipBotScopedOperation(botId, nameof(RecordOrderPlacedAsync)))
+            {
+                return;
+            }
+
             try
             {
                 var riskState = await _context.Set<BotRiskState>()
@@ -339,8 +370,13 @@ namespace CryptoTrading.Services.Bot
         /// <summary>
         /// Records a trade result for kill switch monitoring
         /// </summary>
-        public async Task RecordTradeResultAsync(int botId, decimal pnl, CancellationToken cancellationToken = default)
+        public async Task RecordTradeResultAsync(Guid botId, decimal pnl, CancellationToken cancellationToken = default)
         {
+            if (ShouldSkipBotScopedOperation(botId, nameof(RecordTradeResultAsync)))
+            {
+                return;
+            }
+
             if (_killSwitchService == null)
             {
                 _logger.LogDebug("Kill switch service not available, trade result not recorded");
@@ -361,6 +397,17 @@ namespace CryptoTrading.Services.Bot
                 _logger.LogWarning(ex, "Failed to record trade result for bot {BotId}", botId);
                 // Don't throw - fail gracefully
             }
+        }
+
+        private bool ShouldSkipBotScopedOperation(Guid botId, string operationName)
+        {
+            if (botId == Guid.Empty)
+            {
+                _logger.LogDebug("{Operation} skipped because botId is empty (demo guard).", operationName);
+                return true;
+            }
+
+            return false;
         }
 
         private async Task<UserCapitalLimitsDto> GetUserCapitalLimitsAsync(int userId, CancellationToken cancellationToken)

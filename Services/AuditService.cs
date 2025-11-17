@@ -8,7 +8,7 @@ namespace CryptoTrading.Services
     public interface IAuditService
     {
         Task LogEventAsync(string eventType, int userId, string entityType, ulong? entityId, 
-            object? beforeState, object? afterState, int? botId = null, string? metadata = null);
+            object? beforeState, object? afterState, Guid? botId = null, string? metadata = null);
         Task<List<AuditEvent>> GetUserAuditTrailAsync(int userId, DateTime from, DateTime to);
         Task<List<AuditEvent>> GetEntityAuditTrailAsync(string entityType, ulong entityId);
     }
@@ -36,9 +36,16 @@ namespace CryptoTrading.Services
             ulong? entityId,
             object? beforeState, 
             object? afterState, 
-            int? botId = null,
+            Guid? botId = null,
             string? metadata = null)
         {
+            if (!botId.HasValue || botId == Guid.Empty)
+            {
+                _logger.LogDebug("Skipping audit log {EventType} for user {UserId} because botId is missing (demo guard).", 
+                    eventType, userId);
+                return;
+            }
+
             try
             {
                 var httpContext = _httpContextAccessor.HttpContext;

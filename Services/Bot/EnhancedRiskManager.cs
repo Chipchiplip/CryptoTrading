@@ -1,3 +1,4 @@
+using System;
 using CryptoTrading.Data;
 using CryptoTrading.Interfaces.Bot;
 using CryptoTrading.Models;
@@ -25,6 +26,13 @@ namespace CryptoTrading.Services.Bot
         private const decimal DEFAULT_MAX_DAILY_LOSS = 0.10m;
         private const int DEFAULT_MAX_CONSECUTIVE_LOSSES = 5;
         private const int DEFAULT_COOLDOWN_SECONDS = 300;
+
+        // Demo-safe guardrails when no config exists
+        private const decimal DEMO_SAFE_MAX_CAPITAL = 100m;
+        private const decimal DEMO_SAFE_MAX_DAILY_LOSS = 10m;
+        private const int DEMO_SAFE_MAX_CONSECUTIVE_LOSSES = 3;
+        private const int DEMO_SAFE_COOLDOWN_SECONDS = 120;
+        private const decimal DEMO_SAFE_MAX_SLIPPAGE = 0.01m;
 
         public EnhancedRiskManager(
             ApplicationDbContext context,
@@ -81,10 +89,17 @@ namespace CryptoTrading.Services.Bot
                 if (currentExposure > 0)
                 {
                     var dailyLossPercent = Math.Abs(dailyLoss) / currentExposure;
-                    if (dailyLossPercent > config.MaxDailyLoss)
+                    var dailyLossThreshold = config.MaxDailyLoss;
+
+                    if (dailyLossThreshold > 1 && config.MaxAllowedCapital > 0)
+                    {
+                        dailyLossThreshold = Math.Min(1, dailyLossThreshold / config.MaxAllowedCapital);
+                    }
+
+                    if (dailyLossPercent > dailyLossThreshold)
                     {
                         _logger.LogWarning("User {UserId} has exceeded daily loss limit: {Loss:P2}/{Limit:P2}", 
-                            userId, dailyLossPercent, config.MaxDailyLoss);
+                            userId, dailyLossPercent, dailyLossThreshold);
                         return false;
                     }
                 }
@@ -108,14 +123,25 @@ namespace CryptoTrading.Services.Bot
             return Math.Max(0, config.MaxAllowedCapital - currentExposure);
         }
 
-        public async Task<decimal> GetBotCapitalLimitAsync(int userId, int botId, CancellationToken cancellationToken = default)
+        public async Task<decimal> GetBotCapitalLimitAsync(int userId, Guid botId, CancellationToken cancellationToken = default)
         {
+            if (ShouldSkipBotScopedOperation(botId, nameof(GetBotCapitalLimitAsync)))
+            {
+                var fallbackConfig = await GetRiskConfigAsync(userId, null, cancellationToken);
+                return fallbackConfig.MaxAllowedCapital;
+            }
+
             var config = await GetRiskConfigAsync(userId, botId, cancellationToken);
             return config.MaxAllowedCapital;
         }
 
-        public async Task<bool> CheckKillSwitchAsync(int botId, int userId, CancellationToken cancellationToken = default)
+        public async Task<bool> CheckKillSwitchAsync(Guid botId, int userId, CancellationToken cancellationToken = default)
         {
+            if (ShouldSkipBotScopedOperation(botId, nameof(CheckKillSwitchAsync)))
+            {
+                return false;
+            }
+
             var config = await GetRiskConfigAsync(userId, botId, cancellationToken);
 
             if (!config.KillSwitchEnabled)
@@ -169,8 +195,13 @@ namespace CryptoTrading.Services.Bot
             return false;
         }
 
-        public async Task<bool> CheckCooldownAsync(int botId, TimeSpan minCooldown, CancellationToken cancellationToken = default)
+        public async Task<bool> CheckCooldownAsync(Guid botId, TimeSpan minCooldown, CancellationToken cancellationToken = default)
         {
+            if (ShouldSkipBotScopedOperation(botId, nameof(CheckCooldownAsync)))
+            {
+                return false;
+            }
+
             var bot = await _context.TradingBots.FindAsync(new object[] { botId }, cancellationToken);
             if (bot == null) return false;
 
@@ -194,10 +225,14 @@ namespace CryptoTrading.Services.Bot
 
         private async Task<BotRiskConfiguration> GetRiskConfigAsync(
             int userId, 
-            int? botId,
+            Guid? botId,
             CancellationToken cancellationToken = default)
         {
-            var cacheKey = $"RiskConfig_{userId}_{botId}";
+            var normalizedBotId = botId.HasValue && botId.Value != Guid.Empty
+                ? botId
+                : null;
+
+            var cacheKey = $"RiskConfig_{userId}_{normalizedBotId?.ToString("N") ?? "none"}";
 
             if (_cache.TryGetValue(cacheKey, out BotRiskConfiguration? cached) && cached != null)
             {
@@ -206,10 +241,10 @@ namespace CryptoTrading.Services.Bot
 
             // Try bot-specific config first
             BotRiskConfiguration? config = null;
-            if (botId.HasValue)
+            if (normalizedBotId.HasValue)
             {
                 config = await _context.BotRiskConfigurations
-                    .FirstOrDefaultAsync(c => c.UserId == userId && c.BotId == botId.Value, cancellationToken);
+                    .FirstOrDefaultAsync(c => c.UserId == userId && c.BotId == normalizedBotId.Value, cancellationToken);
             }
 
             // Fallback to user-specific config
@@ -231,12 +266,12 @@ namespace CryptoTrading.Services.Bot
             {
                 config = new BotRiskConfiguration
                 {
-                    MaxAllowedCapital = DEFAULT_MAX_CAPITAL_PER_BOT,
-                    MaxSlippage = DEFAULT_MAX_SLIPPAGE,
-                    MaxDailyLoss = DEFAULT_MAX_DAILY_LOSS,
-                    MaxConsecutiveLosses = DEFAULT_MAX_CONSECUTIVE_LOSSES,
-                    CooldownSeconds = DEFAULT_COOLDOWN_SECONDS,
-                    KillSwitchEnabled = true
+                    MaxAllowedCapital = DEMO_SAFE_MAX_CAPITAL,
+                    MaxSlippage = DEMO_SAFE_MAX_SLIPPAGE,
+                    MaxDailyLoss = DEMO_SAFE_MAX_DAILY_LOSS,
+                    MaxConsecutiveLosses = DEMO_SAFE_MAX_CONSECUTIVE_LOSSES,
+                    CooldownSeconds = DEMO_SAFE_COOLDOWN_SECONDS,
+                    KillSwitchEnabled = false
                 };
             }
 
@@ -307,10 +342,15 @@ namespace CryptoTrading.Services.Bot
             return totalLoss;
         }
 
-        public async Task<bool> CheckRateLimitAsync(int botId, int maxOrdersPerCycle, CancellationToken cancellationToken = default)
+        public Task<bool> CheckRateLimitAsync(Guid botId, int maxOrdersPerCycle, CancellationToken cancellationToken = default)
         {
             try
             {
+                if (ShouldSkipBotScopedOperation(botId, nameof(CheckRateLimitAsync)))
+                {
+                    return Task.FromResult(true);
+                }
+
                 var cacheKey = $"OrderCount_{botId}";
                 if (_cache.TryGetValue(cacheKey, out int currentCount))
                 {
@@ -318,37 +358,52 @@ namespace CryptoTrading.Services.Bot
                     {
                         _logger.LogWarning("Bot {BotId} exceeded rate limit: {Count}/{Max}",
                             botId, currentCount, maxOrdersPerCycle);
-                        return false; // Rate limit exceeded
+                        return Task.FromResult(false); // Rate limit exceeded
                     }
                 }
-                return true; // Within limits
+                return Task.FromResult(true); // Within limits
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error checking rate limit for bot {BotId}", botId);
-                return true; // Fail-open for demo
+                return Task.FromResult(true); // Fail-open for demo
             }
         }
 
-        public async Task ResetOrderCountForNewCycleAsync(int botId, CancellationToken cancellationToken = default)
+        public async Task ResetOrderCountForNewCycleAsync(Guid botId, CancellationToken cancellationToken = default)
         {
+            if (ShouldSkipBotScopedOperation(botId, nameof(ResetOrderCountForNewCycleAsync)))
+            {
+                return;
+            }
+
             var cacheKey = $"OrderCount_{botId}";
             _cache.Set(cacheKey, 0, TimeSpan.FromMinutes(10));
             await Task.CompletedTask;
         }
 
-        public async Task RecordOrderPlacedAsync(int botId, CancellationToken cancellationToken = default)
+        public async Task RecordOrderPlacedAsync(Guid botId, CancellationToken cancellationToken = default)
         {
+            if (ShouldSkipBotScopedOperation(botId, nameof(RecordOrderPlacedAsync)))
+            {
+                return;
+            }
+
             var cacheKey = $"OrderCount_{botId}";
             var currentCount = _cache.TryGetValue(cacheKey, out int count) ? count : 0;
             _cache.Set(cacheKey, currentCount + 1, TimeSpan.FromMinutes(10));
             await Task.CompletedTask;
         }
 
-        public async Task RecordTradeResultAsync(int botId, decimal pnl, CancellationToken cancellationToken = default)
+        public async Task RecordTradeResultAsync(Guid botId, decimal pnl, CancellationToken cancellationToken = default)
         {
             try
             {
+                if (ShouldSkipBotScopedOperation(botId, nameof(RecordTradeResultAsync)))
+                {
+                    return;
+                }
+
                 var bot = await _context.TradingBots.FindAsync(new object[] { botId }, cancellationToken);
                 if (bot == null) return;
 
@@ -363,6 +418,17 @@ namespace CryptoTrading.Services.Bot
             {
                 _logger.LogError(ex, "Error recording trade result for bot {BotId}", botId);
             }
+        }
+
+        private bool ShouldSkipBotScopedOperation(Guid botId, string operationName)
+        {
+            if (botId == Guid.Empty)
+            {
+                _logger.LogDebug("{Operation} skipped because botId is empty (demo guard).", operationName);
+                return true;
+            }
+
+            return false;
         }
     }
 }

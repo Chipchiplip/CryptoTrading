@@ -10,15 +10,17 @@ namespace CryptoTrading.Models
     public class TradingBotOrder
     {
         [Key]
+        [Column(TypeName = "bigint unsigned")]
         public ulong Id { get; set; }
 
         [Required]
-        public int TradingBotId { get; set; }
+        public Guid TradingBotId { get; set; }
 
         [ForeignKey(nameof(TradingBotId))]
         public TradingBot? TradingBot { get; set; }
 
         [Required]
+        [Column(TypeName = "bigint unsigned")]
         public ulong OrderId { get; set; }
 
         [ForeignKey(nameof(OrderId))]
@@ -37,7 +39,8 @@ namespace CryptoTrading.Models
         [MaxLength(100)]
         public string? SignalId { get; set; }
 
-        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+        [Column(TypeName = "datetime(6)")]
+        public DateTime CreatedAt { get; set; }
     }
 }
 

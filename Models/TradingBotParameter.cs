@@ -13,7 +13,7 @@ namespace CryptoTrading.Models
         public Guid Id { get; set; }
 
         [Required]
-        public int TradingBotId { get; set; }
+        public Guid TradingBotId { get; set; }
 
         [ForeignKey(nameof(TradingBotId))]
         public TradingBot? TradingBot { get; set; }
@@ -31,7 +31,8 @@ namespace CryptoTrading.Models
         [MaxLength(20)]
         public string? ValueType { get; set; }
 
-        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+        [Column(TypeName = "datetime(6)")]
+        public DateTime CreatedAt { get; set; }
     }
 }
 

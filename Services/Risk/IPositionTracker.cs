@@ -1,3 +1,5 @@
+using System;
+
 namespace CryptoTrading.Services.Risk;
 
 /// <summary>
@@ -8,27 +10,27 @@ public interface IPositionTracker
     /// <summary>
     /// Gets all open positions for a bot
     /// </summary>
-    Task<List<PositionDto>> GetOpenPositionsAsync(int botId);
+    Task<List<PositionDto>> GetOpenPositionsAsync(Guid botId);
 
     /// <summary>
     /// Gets aggregated position summary for a bot
     /// </summary>
-    Task<PositionSummary> GetPositionSummaryAsync(int botId);
+    Task<PositionSummary> GetPositionSummaryAsync(Guid botId);
 
     /// <summary>
     /// Calculates unrealized PnL for all open positions
     /// </summary>
-    Task<decimal> CalculateUnrealizedPnLAsync(int botId, string symbol, decimal currentPrice);
+    Task<decimal> CalculateUnrealizedPnLAsync(Guid botId, string symbol, decimal currentPrice);
 
     /// <summary>
     /// Calculates realized PnL from completed trades
     /// </summary>
-    Task<decimal> CalculateRealizedPnLAsync(int botId, DateTime? since = null);
+    Task<decimal> CalculateRealizedPnLAsync(Guid botId, DateTime? since = null);
 
     /// <summary>
     /// Gets total exposure (open position value) for a bot
     /// </summary>
-    Task<decimal> GetTotalExposureAsync(int botId);
+    Task<decimal> GetTotalExposureAsync(Guid botId);
 
     /// <summary>
     /// Gets total exposure across all bots for a user
@@ -57,7 +59,7 @@ public class PositionDto
 /// </summary>
 public class PositionSummary
 {
-    public int BotId { get; set; }
+    public Guid BotId { get; set; }
     public int OpenPositionCount { get; set; }
     public decimal TotalPositionValue { get; set; }
     public decimal TotalUnrealizedPnL { get; set; }

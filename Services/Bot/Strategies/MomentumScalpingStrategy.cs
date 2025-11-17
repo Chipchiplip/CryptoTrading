@@ -51,7 +51,7 @@ namespace CryptoTrading.Services.Bot.Strategies
             })
         };
 
-        public async Task<StrategyValidationResult> ValidateAsync(
+        public Task<StrategyValidationResult> ValidateAsync(
             BotContext context,
             BotParameters parameters,
             CancellationToken cancellationToken = default)
@@ -62,15 +62,15 @@ namespace CryptoTrading.Services.Bot.Strategies
             var stopLossPercent = parameters.GetValue("stopLossPercent", 3.0m);
 
             if (positionSize <= 0)
-                return StrategyValidationResult.Fail("Position size must be greater than zero");
+                return Task.FromResult(StrategyValidationResult.Fail("Position size must be greater than zero"));
 
             if (takeProfitPercent <= 0)
-                return StrategyValidationResult.Fail("Take profit percent must be greater than zero");
+                return Task.FromResult(StrategyValidationResult.Fail("Take profit percent must be greater than zero"));
 
             if (stopLossPercent <= 0)
-                return StrategyValidationResult.Fail("Stop loss percent must be greater than zero");
+                return Task.FromResult(StrategyValidationResult.Fail("Stop loss percent must be greater than zero"));
 
-            return StrategyValidationResult.Ok();
+            return Task.FromResult(StrategyValidationResult.Ok());
         }
 
         public async Task<BotExecutionResult> ExecuteAsync(

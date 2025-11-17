@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 
 namespace CryptoTrading.Models
@@ -53,5 +54,8 @@ namespace CryptoTrading.Models
         public string? PhoneNumber { get; set; }
         [StringLength(50)]
         public string? Timezone { get; set; }
+
+        public ICollection<Wallet> Wallets { get; set; } = new List<Wallet>();
+        public ICollection<Order> Orders { get; set; } = new List<Order>();
     }
 }

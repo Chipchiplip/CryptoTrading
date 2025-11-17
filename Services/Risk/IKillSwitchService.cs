@@ -1,3 +1,6 @@
+using System;
+using System.Collections.Generic;
+
 namespace CryptoTrading.Services.Risk;
 
 /// <summary>
@@ -12,32 +15,32 @@ public interface IKillSwitchService
     /// <param name="botId">Bot ID</param>
     /// <param name="userId">User ID</param>
     /// <returns>True if bot should be stopped, false otherwise</returns>
-    Task<KillSwitchResult> CheckKillSwitchAsync(int botId, int userId);
+    Task<KillSwitchResult> CheckKillSwitchAsync(Guid botId, int userId);
 
     /// <summary>
     /// Records a trade result for kill switch monitoring
     /// </summary>
-    Task RecordTradeResultAsync(int botId, decimal pnl, bool isProfit);
+    Task RecordTradeResultAsync(Guid botId, decimal pnl, bool isProfit);
 
     /// <summary>
     /// Gets the current risk state for a bot
     /// </summary>
-    Task<BotRiskStateDto> GetRiskStateAsync(int botId);
+    Task<BotRiskStateDto> GetRiskStateAsync(Guid botId);
 
     /// <summary>
     /// Resets daily loss counters (called at start of new trading day)
     /// </summary>
-    Task ResetDailyLossAsync(int botId);
+    Task ResetDailyLossAsync(Guid botId);
 
     /// <summary>
     /// Triggers the kill switch for a bot
     /// </summary>
-    Task TriggerKillSwitchAsync(int botId, string reason, decimal? totalLoss = null);
+    Task TriggerKillSwitchAsync(Guid botId, string reason, decimal? totalLoss = null);
 
     /// <summary>
     /// Clears kill switch state (manual reset)
     /// </summary>
-    Task ClearKillSwitchAsync(int botId);
+    Task ClearKillSwitchAsync(Guid botId);
 }
 
 /// <summary>
@@ -79,7 +82,7 @@ public enum KillSwitchTrigger
 /// </summary>
 public class BotRiskStateDto
 {
-    public int BotId { get; set; }
+    public Guid BotId { get; set; }
     public int ConsecutiveLosses { get; set; }
     public decimal DailyLoss { get; set; }
     public decimal TotalDrawdown { get; set; }

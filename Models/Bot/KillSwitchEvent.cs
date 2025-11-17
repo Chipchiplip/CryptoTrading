@@ -14,13 +14,14 @@ public class KillSwitchEvent
     public int Id { get; set; }
 
     [Required]
-    public int BotId { get; set; }
+    public Guid BotId { get; set; }
 
     [Required]
     [MaxLength(500)]
     public string TriggerReason { get; set; } = string.Empty;
 
     [Required]
+    [Column(TypeName = "datetime(6)")]
     public DateTime TriggerTime { get; set; }
 
     [Column(TypeName = "decimal(18,8)")]
@@ -28,6 +29,7 @@ public class KillSwitchEvent
 
     public int? ConsecutiveLosses { get; set; }
 
+    [Column(TypeName = "datetime(6)")]
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
     // Navigation properties

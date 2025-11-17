@@ -1,5 +1,8 @@
 using CryptoTrading.Models;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
+using System.Collections.Generic;
+using System.Linq;
 
 namespace CryptoTrading.Data
 {
@@ -57,6 +60,11 @@ namespace CryptoTrading.Data
         {
             base.OnModelCreating(modelBuilder);
 
+            var guidConverter = new GuidToStringConverter();
+            var nullableGuidConverter = new ValueConverter<Guid?, string?>(
+                v => v.HasValue ? v.Value.ToString() : null,
+                v => string.IsNullOrEmpty(v) ? (Guid?)null : Guid.Parse(v));
+
             // ==========================
             // USER ENTITY CONFIGURATION
             // ==========================
@@ -80,13 +88,22 @@ namespace CryptoTrading.Data
                 entity.Property(e => e.Level).HasMaxLength(50).HasDefaultValue("Beginner");
                 entity.Property(e => e.IsActive).HasDefaultValue(true);
 
-                entity.Property(e => e.EmailConfirmationToken).HasColumnType("LONGTEXT");
-                entity.Property(e => e.RefreshToken).HasColumnType("LONGTEXT");
-                entity.Property(e => e.PasswordResetToken).HasColumnType("LONGTEXT");
-                entity.Property(e => e.TwoFactorSecret).HasColumnType("LONGTEXT");
+                entity.Property(e => e.EmailConfirmationToken).HasColumnType("longtext");
+                entity.Property(e => e.RefreshToken).HasColumnType("longtext");
+                entity.Property(e => e.PasswordResetToken).HasColumnType("longtext");
+                entity.Property(e => e.TwoFactorSecret).HasColumnType("longtext");
+
+                entity.Property(e => e.EmailConfirmed).HasColumnType("tinyint(1)");
+                entity.Property(e => e.TwoFactorEnabled).HasColumnType("tinyint(1)");
+                entity.Property(e => e.IsActive).HasColumnType("tinyint(1)").HasDefaultValue(true);
 
                 entity.Property(e => e.CreatedAt)
-                      .HasDefaultValueSql("CURRENT_TIMESTAMP(6)");
+                    .HasColumnType("datetime(6)")
+                    .HasDefaultValueSql("CURRENT_TIMESTAMP(6)");
+                entity.Property(e => e.LastLoginAt).HasColumnType("datetime(6)");
+                entity.Property(e => e.RefreshTokenExpiryTime).HasColumnType("datetime(6)");
+                entity.Property(e => e.PasswordResetTokenExpiry).HasColumnType("datetime(6)");
+                entity.Property(e => e.EmailConfirmationTokenExpiry).HasColumnType("datetime(6)");
             });
 
             // ==========================
@@ -99,7 +116,7 @@ namespace CryptoTrading.Data
                 entity.Property(e => e.Id).ValueGeneratedOnAdd();
                 entity.Property(e => e.Ip).HasMaxLength(64);
                 entity.Property(e => e.UserAgent).HasMaxLength(255);
-                entity.Property(e => e.Success).HasDefaultValue(true);
+                entity.Property(e => e.Success).HasColumnType("tinyint(1)").HasDefaultValue(true);
 
                 entity.HasIndex(e => new { e.UserId, e.CreatedAt });
 
@@ -152,6 +169,15 @@ namespace CryptoTrading.Data
                 entity.Property(e => e.Id).ValueGeneratedOnAdd();
 
                 entity.HasIndex(e => new { e.CryptocurrencyId, e.CollectedAtUtc });
+                entity.Property(e => e.PriceUsd).HasPrecision(28, 8);
+                entity.Property(e => e.MarketCap).HasPrecision(28, 2);
+                entity.Property(e => e.Volume24h).HasPrecision(28, 2);
+                entity.Property(e => e.PercentChange1h).HasPrecision(10, 4);
+                entity.Property(e => e.PercentChange24h).HasPrecision(10, 4);
+                entity.Property(e => e.PercentChange7d).HasPrecision(10, 4);
+                entity.Property(e => e.CirculatingSupply).HasPrecision(28, 2);
+                entity.Property(e => e.TotalSupply).HasPrecision(28, 2);
+                entity.Property(e => e.CollectedAtUtc).HasColumnType("datetime(6)");
 
                 entity.HasOne(e => e.Cryptocurrency)
                     .WithMany(c => c.Prices)
@@ -168,6 +194,12 @@ namespace CryptoTrading.Data
                 entity.HasKey(e => e.Id);
                 entity.Property(e => e.Id).ValueGeneratedOnAdd();
                 entity.HasIndex(e => e.CollectedAtUtc);
+                entity.Property(e => e.TotalMarketCap).HasPrecision(28, 2);
+                entity.Property(e => e.TotalVolume).HasPrecision(28, 2);
+                entity.Property(e => e.MarketCapChangePercentage24h).HasPrecision(10, 4);
+                entity.Property(e => e.BtcDominance).HasPrecision(10, 4);
+                entity.Property(e => e.EthDominance).HasPrecision(10, 4);
+                entity.Property(e => e.CollectedAtUtc).HasColumnType("datetime(6)");
             });
 
             // ==========================
@@ -179,9 +211,17 @@ namespace CryptoTrading.Data
                 entity.HasKey(e => e.Id);
                 entity.Property(e => e.Id).ValueGeneratedOnAdd();
                 entity.HasIndex(e => new { e.UserId, e.AssetType, e.CurrencyCode, e.CryptocurrencyId }).IsUnique();
+                entity.Property(e => e.IsDefault).HasColumnType("tinyint(1)").HasDefaultValue(false);
+                entity.Property(e => e.CreatedAt)
+                    .HasColumnType("datetime(6)")
+                    .HasDefaultValueSql("CURRENT_TIMESTAMP(6)");
+                entity.Property(e => e.UpdatedAt)
+                    .HasColumnType("datetime(6)")
+                    .HasDefaultValueSql("CURRENT_TIMESTAMP(6)")
+                    .ValueGeneratedOnAddOrUpdate();
 
                 entity.HasOne(e => e.User)
-                    .WithMany()
+                    .WithMany(u => u.Wallets)
                     .HasForeignKey(e => e.UserId)
                     .OnDelete(DeleteBehavior.Cascade);
 
@@ -200,9 +240,14 @@ namespace CryptoTrading.Data
                 entity.HasKey(e => e.Id);
                 entity.Property(e => e.Id).ValueGeneratedOnAdd();
                 entity.HasIndex(e => new { e.WalletId, e.CreatedAt });
+                entity.Property(e => e.Direction).HasMaxLength(8).IsRequired();
+                entity.Property(e => e.Amount).HasPrecision(38, 18);
+                entity.Property(e => e.CreatedAt)
+                    .HasColumnType("datetime(6)")
+                    .HasDefaultValueSql("CURRENT_TIMESTAMP(6)");
 
                 entity.HasOne(e => e.Wallet)
-                    .WithMany()
+                    .WithMany(w => w.Movements)
                     .HasForeignKey(e => e.WalletId)
                     .OnDelete(DeleteBehavior.Cascade);
             });
@@ -215,11 +260,16 @@ namespace CryptoTrading.Data
                 entity.ToTable("Orders");
                 entity.HasKey(e => e.Id);
                 entity.Property(e => e.Id).ValueGeneratedOnAdd();
+                entity.Property(e => e.PriceUsd).HasPrecision(30, 10);
+                entity.Property(e => e.QuantityCoin).HasPrecision(38, 18);
+                entity.Property(e => e.FilledQty).HasPrecision(38, 18);
+                entity.Property(e => e.CreatedAt).HasColumnType("datetime(6)");
+                entity.Property(e => e.UpdatedAt).HasColumnType("datetime(6)");
                 entity.HasIndex(e => new { e.UserId, e.CreatedAt });
                 entity.HasIndex(e => new { e.CryptocurrencyId, e.Status });
 
                 entity.HasOne(e => e.User)
-                    .WithMany()
+                    .WithMany(u => u.Orders)
                     .HasForeignKey(e => e.UserId)
                     .OnDelete(DeleteBehavior.Cascade);
 
@@ -257,6 +307,10 @@ namespace CryptoTrading.Data
                 entity.ToTable("Trades");
                 entity.HasKey(e => e.Id);
                 entity.Property(e => e.Id).ValueGeneratedOnAdd();
+                entity.Property(e => e.PriceUsd).HasPrecision(30, 10);
+                entity.Property(e => e.QuantityCoin).HasPrecision(38, 18);
+                entity.Property(e => e.FeeUsd).HasPrecision(30, 10);
+                entity.Property(e => e.CreatedAt).HasColumnType("datetime(6)");
                 entity.HasIndex(e => new { e.OrderId, e.CreatedAt });
 
                 entity.HasOne(e => e.Order)
@@ -270,16 +324,28 @@ namespace CryptoTrading.Data
                     .OnDelete(DeleteBehavior.Cascade);
             });
 
-            // DepositTransaction entity configuration
             modelBuilder.Entity<DepositTransaction>(entity =>
             {
                 entity.ToTable("DepositTransactions");
                 entity.HasKey(e => e.Id);
                 entity.Property(e => e.Id).ValueGeneratedOnAdd();
+                entity.Property(e => e.Amount).HasPrecision(18, 2);
+                entity.Property(e => e.CreatedAt)
+                    .HasColumnType("datetime(6)")
+                    .HasDefaultValueSql("CURRENT_TIMESTAMP(6)");
+                entity.Property(e => e.CompletedAt).HasColumnType("datetime(6)");
+                entity.Property(e => e.Provider).HasMaxLength(20).HasDefaultValue("VNPAY");
+                entity.Property(e => e.StripeSessionId).HasMaxLength(128);
+                entity.Property(e => e.StripePaymentIntentId).HasMaxLength(128);
+                entity.Property(e => e.PaymentMethod).HasMaxLength(64);
+
                 entity.HasIndex(e => new { e.UserId, e.CreatedAt });
                 entity.HasIndex(e => e.OrderId).IsUnique();
-                
 
+                entity.HasOne(e => e.User)
+                    .WithMany()
+                    .HasForeignKey(e => e.UserId)
+                    .OnDelete(DeleteBehavior.Cascade);
             });
             // ==========================
             // BOT STRATEGY DEFINITION CONFIG
@@ -291,6 +357,17 @@ namespace CryptoTrading.Data
                 entity.HasIndex(e => new { e.StrategyKey, e.Version }).IsUnique();
                 entity.HasIndex(e => e.IsActive);
 
+                entity.Property(e => e.Id)
+                    .HasColumnType("char(36)")
+                    .HasConversion(
+                        v => v.ToString(),
+                        v => Guid.Parse(v));
+                entity.Property(e => e.ParametersSchema)
+                    .HasColumnType("json")
+                    .HasConversion(
+                        v => v ?? string.Empty,
+                        v => string.IsNullOrEmpty(v) ? null : v)
+                    .IsRequired(false);
                 entity.Property(e => e.CreatedAt)
                       .HasDefaultValueSql("CURRENT_TIMESTAMP(6)");
             });
@@ -302,8 +379,169 @@ namespace CryptoTrading.Data
             {
                 entity.ToTable("TradingBots");
                 entity.HasKey(e => e.Id);
+                entity.Property(e => e.Id)
+                    .HasColumnType("char(36)")
+                    .HasConversion(
+                        v => v.ToString(),
+                        v => Guid.Parse(v));
+                entity.Property(e => e.StrategyDefinitionId)
+                    .HasColumnType("char(36)")
+                    .HasConversion(
+                        v => v.ToString(),
+                        v => Guid.Parse(v));
+                entity.Property(e => e.PositionSizing)
+                    .HasColumnType("json")
+                    .HasConversion(
+                        v => v ?? string.Empty,
+                        v => string.IsNullOrEmpty(v) ? null : v)
+                    .IsRequired(false);
+                entity.Property(e => e.Parameters)
+                    .HasColumnType("json")
+                    .HasConversion(
+                        v => v ?? string.Empty,
+                        v => string.IsNullOrEmpty(v) ? null : v)
+                    .IsRequired(false);
+                entity.Property(e => e.CreatedAt)
+                    .HasColumnType("datetime(6)")
+                    .HasDefaultValueSql("CURRENT_TIMESTAMP(6)");
+                entity.Property(e => e.UpdatedAt).HasColumnType("datetime(6)");
+                entity.Property(e => e.NextRunAt).HasColumnType("datetime(6)");
+
                 entity.HasIndex(e => new { e.UserId, e.Status });
                 entity.HasIndex(e => e.NextRunAt);
+
+                entity.HasOne(e => e.User)
+                    .WithMany()
+                    .HasForeignKey(e => e.UserId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasOne(e => e.StrategyDefinition)
+                    .WithMany()
+                    .HasForeignKey(e => e.StrategyDefinitionId)
+                    .OnDelete(DeleteBehavior.Restrict);
+            });
+
+            modelBuilder.Entity<TradingBotRuntimeSnapshot>(entity =>
+            {
+                entity.ToTable("TradingBotRuntimeSnapshots");
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.Id)
+                    .HasColumnType("bigint unsigned")
+                    .ValueGeneratedOnAdd();
+                entity.Property(e => e.TradingBotId)
+                    .HasColumnType("char(36)")
+                    .HasConversion(
+                        v => v.ToString(),
+                        v => Guid.Parse(v));
+                entity.Property(e => e.RuntimeState)
+                    .HasColumnType("json")
+                    .HasConversion(
+                        v => v ?? "{}",
+                        v => string.IsNullOrEmpty(v) ? "{}" : v)
+                    .IsRequired();
+                entity.Property(e => e.OpenPositionSummary)
+                    .HasColumnType("json")
+                    .HasConversion(
+                        v => v ?? string.Empty,
+                        v => string.IsNullOrEmpty(v) ? null : v)
+                    .IsRequired(false);
+                entity.Property(e => e.CapturedAt)
+                    .HasColumnType("datetime(6)")
+                    .HasDefaultValueSql("CURRENT_TIMESTAMP(6)");
+                entity.Property(e => e.NextTickAt).HasColumnType("datetime(6)");
+                entity.Property(e => e.Version)
+                    .IsConcurrencyToken()
+                    .HasColumnType("datetime(6)")
+                    .HasDefaultValueSql("CURRENT_TIMESTAMP(6)");
+                entity.HasIndex(e => new { e.TradingBotId, e.CapturedAt });
+
+                entity.HasOne(e => e.TradingBot)
+                    .WithMany()
+                    .HasForeignKey(e => e.TradingBotId)
+                    .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            modelBuilder.Entity<TradingBotOrder>(entity =>
+            {
+                entity.ToTable("TradingBotOrders");
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.Id)
+                    .HasColumnType("bigint unsigned")
+                    .ValueGeneratedOnAdd();
+                entity.Property(e => e.TradingBotId)
+                    .HasColumnType("char(36)")
+                    .HasConversion(
+                        v => v.ToString(),
+                        v => Guid.Parse(v));
+                entity.Property(e => e.OrderId).HasColumnType("bigint unsigned");
+                entity.Property(e => e.Intent).HasMaxLength(50);
+                entity.Property(e => e.SignalId).HasMaxLength(100);
+                entity.Property(e => e.CreatedAt)
+                    .HasColumnType("datetime(6)")
+                    .HasDefaultValueSql("CURRENT_TIMESTAMP(6)");
+                entity.HasIndex(e => e.OrderId).IsUnique();
+                entity.HasIndex(e => new { e.TradingBotId, e.CreatedAt });
+
+                entity.HasOne(e => e.TradingBot)
+                    .WithMany()
+                    .HasForeignKey(e => e.TradingBotId)
+                    .OnDelete(DeleteBehavior.Cascade);
+                entity.HasOne(e => e.Order)
+                    .WithOne()
+                    .HasForeignKey<TradingBotOrder>(e => e.OrderId)
+                    .OnDelete(DeleteBehavior.Restrict);
+            });
+
+            modelBuilder.Entity<TradingBotLog>(entity =>
+            {
+                entity.ToTable("TradingBotLogs");
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.Id)
+                    .HasColumnType("bigint unsigned")
+                    .ValueGeneratedOnAdd();
+                entity.Property(e => e.TradingBotId)
+                    .HasColumnType("char(36)")
+                    .HasConversion(
+                        v => v.ToString(),
+                        v => Guid.Parse(v));
+                entity.Property(e => e.Payload)
+                    .HasColumnType("json")
+                    .HasConversion(
+                        v => v ?? string.Empty,
+                        v => string.IsNullOrEmpty(v) ? null : v)
+                    .IsRequired(false);
+                entity.Property(e => e.CreatedAt)
+                    .HasColumnType("datetime(6)")
+                    .HasDefaultValueSql("CURRENT_TIMESTAMP(6)");
+                entity.HasIndex(e => new { e.TradingBotId, e.CreatedAt });
+                entity.HasIndex(e => e.Level);
+
+                entity.HasOne(e => e.TradingBot)
+                    .WithMany()
+                    .HasForeignKey(e => e.TradingBotId)
+                    .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            modelBuilder.Entity<TradingBotParameter>(entity =>
+            {
+                entity.ToTable("TradingBotParameters");
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.TradingBotId)
+                    .HasColumnType("char(36)")
+                    .HasConversion(
+                        v => v.ToString(),
+                        v => Guid.Parse(v));
+                entity.Property(e => e.ParameterKey).HasMaxLength(100);
+                entity.Property(e => e.ValueType).HasMaxLength(20);
+                entity.Property(e => e.CreatedAt)
+                    .HasColumnType("datetime(6)")
+                    .HasDefaultValueSql("CURRENT_TIMESTAMP(6)");
+                entity.HasIndex(e => new { e.TradingBotId, e.ParameterKey });
+
+                entity.HasOne(e => e.TradingBot)
+                    .WithMany()
+                    .HasForeignKey(e => e.TradingBotId)
+                    .OnDelete(DeleteBehavior.Cascade);
             });
 
             // ==========================
@@ -314,6 +552,25 @@ namespace CryptoTrading.Data
                 entity.ToTable("AuditEvents");
                 entity.HasKey(e => e.Id);
                 entity.Property(e => e.Id).ValueGeneratedOnAdd();
+                entity.Property(e => e.BotId)
+                    .HasColumnType("char(36)")
+                    .HasConversion(nullableGuidConverter);
+                entity.Property(e => e.BeforeState)
+                    .HasColumnType("json")
+                    .HasConversion(
+                        v => v ?? string.Empty,
+                        v => string.IsNullOrEmpty(v) ? null : v)
+                    .IsRequired(false);
+                entity.Property(e => e.AfterState)
+                    .HasColumnType("json")
+                    .HasConversion(
+                        v => v ?? string.Empty,
+                        v => string.IsNullOrEmpty(v) ? null : v)
+                    .IsRequired(false);
+                entity.Property(e => e.Metadata).HasColumnType("text");
+                entity.Property(e => e.CreatedAt)
+                    .HasColumnType("datetime(6)")
+                    .HasDefaultValueSql("CURRENT_TIMESTAMP(6)");
                 entity.HasIndex(e => new { e.UserId, e.CreatedAt });
                 entity.HasIndex(e => e.CorrelationId);
                 entity.HasIndex(e => new { e.EntityType, e.EntityId });
@@ -354,11 +611,29 @@ namespace CryptoTrading.Data
                 entity.ToTable("BotRiskConfigurations");
                 entity.HasKey(e => e.Id);
                 entity.HasIndex(e => new { e.UserId, e.BotId });
+                entity.Property(e => e.BotId)
+                    .HasColumnType("char(36)")
+                    .HasConversion(nullableGuidConverter);
+                entity.Property(e => e.MaxAllowedCapital).HasColumnType("decimal(30,10)");
+                entity.Property(e => e.MaxSlippage).HasColumnType("decimal(10,4)");
+                entity.Property(e => e.MaxDailyLoss).HasColumnType("decimal(10,4)");
+                entity.Property(e => e.CreatedAt)
+                    .HasColumnType("datetime(6)")
+                    .HasDefaultValueSql("CURRENT_TIMESTAMP(6)");
+                entity.Property(e => e.UpdatedAt)
+                    .HasColumnType("datetime(6)")
+                    .HasDefaultValueSql("CURRENT_TIMESTAMP(6)")
+                    .ValueGeneratedOnAddOrUpdate();
 
                 entity.HasOne(e => e.User)
                     .WithMany()
                     .HasForeignKey(e => e.UserId)
                     .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasOne(e => e.Bot)
+                    .WithMany()
+                    .HasForeignKey(e => e.BotId)
+                    .OnDelete(DeleteBehavior.SetNull);
             });
 
             // ==========================
@@ -369,6 +644,16 @@ namespace CryptoTrading.Data
                 entity.ToTable("ReconciliationResults");
                 entity.HasKey(e => e.Id);
                 entity.Property(e => e.Id).ValueGeneratedOnAdd();
+                entity.Property(e => e.Mismatches)
+                    .HasColumnType("json")
+                    .HasConversion(
+                        v => v ?? string.Empty,
+                        v => string.IsNullOrEmpty(v) ? null : v)
+                    .IsRequired(false);
+                entity.Property(e => e.ErrorMessage).HasColumnType("text");
+                entity.Property(e => e.CreatedAt)
+                    .HasColumnType("datetime(6)")
+                    .HasDefaultValueSql("CURRENT_TIMESTAMP(6)");
                 entity.HasIndex(e => new { e.EntityType, e.ReconciliationTime });
             });
 
@@ -401,7 +686,21 @@ namespace CryptoTrading.Data
                 entity.ToTable("BotRiskStates");
                 entity.HasKey(e => e.Id);
                 entity.HasIndex(e => e.BotId);
-                entity.Property(e => e.BotId).IsRequired();
+                entity.Property(e => e.BotId)
+                    .IsRequired()
+                    .HasColumnType("char(36)")
+                    .HasConversion(guidConverter);
+                entity.Property(e => e.DailyLoss).HasColumnType("decimal(18,8)");
+                entity.Property(e => e.TotalDrawdown).HasColumnType("decimal(18,8)");
+                entity.Property(e => e.DailyLossResetAt)
+                    .HasColumnType("datetime(6)")
+                    .HasDefaultValueSql("CURRENT_TIMESTAMP(6)");
+                entity.Property(e => e.LastOrderAt)
+                    .HasColumnType("datetime(6)");
+                entity.Property(e => e.UpdatedAt)
+                    .HasColumnType("datetime(6)")
+                    .HasDefaultValueSql("CURRENT_TIMESTAMP(6)")
+                    .ValueGeneratedOnAddOrUpdate();
 
                 entity.HasOne(e => e.Bot)
                     .WithMany()
@@ -418,7 +717,17 @@ namespace CryptoTrading.Data
                 entity.HasKey(e => e.Id);
                 entity.HasIndex(e => e.BotId);
                 entity.HasIndex(e => e.TriggerTime);
-                entity.Property(e => e.BotId).IsRequired();
+                entity.Property(e => e.BotId)
+                    .IsRequired()
+                    .HasColumnType("char(36)")
+                    .HasConversion(guidConverter);
+                entity.Property(e => e.TriggerTime)
+                    .HasColumnType("datetime(6)")
+                    .HasDefaultValueSql("CURRENT_TIMESTAMP(6)");
+                entity.Property(e => e.CreatedAt)
+                    .HasColumnType("datetime(6)")
+                    .HasDefaultValueSql("CURRENT_TIMESTAMP(6)");
+                entity.Property(e => e.TotalLoss).HasColumnType("decimal(18,8)");
 
                 entity.HasOne(e => e.Bot)
                     .WithMany()
@@ -443,8 +752,10 @@ namespace CryptoTrading.Data
                     .HasColumnType("decimal(18,8)");
 
                 entity.Property(e => e.CreatedAt)
+                    .HasColumnType("datetime(6)")
                     .HasDefaultValueSql("CURRENT_TIMESTAMP(6)");
                 entity.Property(e => e.UpdatedAt)
+                    .HasColumnType("datetime(6)")
                     .HasDefaultValueSql("CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6)");
             });
         }

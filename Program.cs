@@ -85,11 +85,13 @@ builder.Services.AddSwaggerGen(c =>
 var mysqlConnectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
     options.UseMySql(mysqlConnectionString, new MySqlServerVersion(new Version(8, 0, 21)),
-        mySqlOptions => 
+        mySqlOptions =>
         {
             mySqlOptions.SchemaBehavior(Pomelo.EntityFrameworkCore.MySql.Infrastructure.MySqlSchemaBehavior.Ignore);
             mySqlOptions.CommandTimeout(30); // 30 second timeout for database queries
-        }));
+        })
+        .ReplaceService<Microsoft.EntityFrameworkCore.Metadata.Conventions.Infrastructure.IConventionSetBuilder, 
+            CryptoTrading.Data.CustomConventionSetBuilder>());
 
 // JWT Settings
 builder.Services.Configure<JwtSettings>(builder.Configuration.GetSection("JwtSettings"));
@@ -327,7 +329,9 @@ async Task RunSqlMigrationScripts(ApplicationDbContext db, ILogger logger)
             "004_SeedDefaultConfigurations.sql",
             "004_FixBotRiskStateBotIdToGuid_Simple.sql",
             "005_CreateFeeLedgerTable.sql",
-            "006_PriceConstraintsAndBilling_MySQL.sql"
+            "006_PriceConstraintsAndBilling_MySQL.sql",
+            "007_AddRiskAndOpsTables.sql",
+            "008_FixTradingBotRuntimeSnapshotVersion.sql"  // Fix Version column type from byte[] to DateTime
         };
         
         logger.LogInformation("📌 Using OLD SCHEMA (INT UserId) - Compatible with existing code");

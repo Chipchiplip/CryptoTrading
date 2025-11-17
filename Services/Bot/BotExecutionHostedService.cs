@@ -63,6 +63,12 @@ namespace CryptoTrading.Services.Bot
                             (b.Status == "Running" || b.Status == "Starting") &&
                             b.NextRunAt.HasValue &&
                             b.NextRunAt.Value <= DateTime.UtcNow)
+                        .Select(b => new
+                        {
+                            b.Id,
+                            b.UserId,
+                            StrategyKey = b.StrategyDefinition != null ? b.StrategyDefinition.StrategyKey : ""
+                        })
                         .ToListAsync(stoppingToken);
 
                     foreach (var bot in botsToRun)
@@ -71,7 +77,7 @@ namespace CryptoTrading.Services.Bot
                         {
                             BotId = bot.Id,
                             UserId = bot.UserId,
-                            StrategyKey = bot.StrategyDefinition?.StrategyKey ?? "",
+                            StrategyKey = bot.StrategyKey,
                             ScheduledAt = DateTime.UtcNow
                         };
 
@@ -120,7 +126,6 @@ namespace CryptoTrading.Services.Bot
 
             // Load bot
             var bot = await context.TradingBots
-                .Include(b => b.StrategyDefinition)
                 .FirstOrDefaultAsync(b => b.Id == job.BotId, stoppingToken);
 
             if (bot == null)
@@ -129,11 +134,24 @@ namespace CryptoTrading.Services.Bot
                 return;
             }
 
+            // Load strategy definition separately to avoid Include issues
+            var strategyDef = await context.BotStrategyDefinitions
+                .FirstOrDefaultAsync(s => s.Id == bot.StrategyDefinitionId, stoppingToken);
+
+            if (strategyDef == null)
+            {
+                _logger.LogError("Strategy definition {StrategyId} not found for bot {BotId}", bot.StrategyDefinitionId, bot.Id);
+                bot.Status = "Error";
+                bot.LastStatusReason = "Strategy definition not found";
+                await context.SaveChangesAsync(stoppingToken);
+                return;
+            }
+
             // Load strategy
-            var strategy = strategyRegistry.GetStrategy(bot.StrategyDefinition!.StrategyKey);
+            var strategy = strategyRegistry.GetStrategy(strategyDef.StrategyKey);
             if (strategy == null)
             {
-                _logger.LogError("Strategy {StrategyKey} not found", bot.StrategyDefinition!.StrategyKey);
+                _logger.LogError("Strategy {StrategyKey} not found", strategyDef.StrategyKey);
                 bot.Status = "Error";
                 bot.LastStatusReason = "Strategy not found";
                 await context.SaveChangesAsync(stoppingToken);
@@ -276,7 +294,7 @@ namespace CryptoTrading.Services.Bot
             }
         }
 
-        private async Task<object?> LoadStateObjectAsync(ApplicationDbContext context, int botId, Type type, CancellationToken cancellationToken)
+        private async Task<object?> LoadStateObjectAsync(ApplicationDbContext context, Guid botId, Type type, CancellationToken cancellationToken)
         {
             var snapshot = await context.TradingBotRuntimeSnapshots
                 .Where(s => s.TradingBotId == botId)
@@ -296,7 +314,7 @@ namespace CryptoTrading.Services.Bot
             }
         }
 
-        private async Task SaveStateObjectAsync(ApplicationDbContext context, int botId, object state, CancellationToken cancellationToken)
+        private async Task SaveStateObjectAsync(ApplicationDbContext context, Guid botId, object state, CancellationToken cancellationToken)
         {
             var stateJson = JsonSerializer.Serialize(state);
 
@@ -315,7 +333,7 @@ namespace CryptoTrading.Services.Bot
 
     public class BotExecutionJob
     {
-        public int BotId { get; set; }
+        public Guid BotId { get; set; }
         public int UserId { get; set; }
         public string StrategyKey { get; set; } = string.Empty;
         public DateTime ScheduledAt { get; set; }

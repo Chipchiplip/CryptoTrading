@@ -1,8 +1,9 @@
+using System;
+using System.Text.Json;
 using CryptoTrading.Data;
 using CryptoTrading.Interfaces.Bot;
 using CryptoTrading.Models;
 using Microsoft.Extensions.Logging;
-using System.Text.Json;
 
 namespace CryptoTrading.Services.Bot
 {
@@ -12,13 +13,13 @@ namespace CryptoTrading.Services.Bot
     public class BotLogger : IBotLogger
     {
         private readonly ApplicationDbContext _context;
-        private readonly int _botId;
+        private readonly Guid _botId;
         private readonly ILogger<BotLogger> _logger;
         private readonly List<TradingBotLog> _pendingLogs = new();
 
         public BotLogger(
             ApplicationDbContext context,
-            int botId,
+            Guid botId,
             ILogger<BotLogger> logger)
         {
             _context = context;

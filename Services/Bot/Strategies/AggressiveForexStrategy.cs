@@ -62,7 +62,7 @@ namespace CryptoTrading.Services.Bot.Strategies
             })
         };
 
-        public async Task<StrategyValidationResult> ValidateAsync(
+        public Task<StrategyValidationResult> ValidateAsync(
             BotContext context,
             BotParameters parameters,
             CancellationToken cancellationToken = default)
@@ -73,15 +73,15 @@ namespace CryptoTrading.Services.Bot.Strategies
             var cutLossUSD = parameters.GetValue("cutLossUSD", 5000m);
 
             if (initialLot <= 0)
-                return StrategyValidationResult.Fail("Initial lot must be greater than zero");
+                return Task.FromResult(StrategyValidationResult.Fail("Initial lot must be greater than zero"));
 
             if (capitalAllocation <= 0)
-                return StrategyValidationResult.Fail("Capital allocation must be greater than zero");
+                return Task.FromResult(StrategyValidationResult.Fail("Capital allocation must be greater than zero"));
 
             if (cutLossUSD <= 0)
-                return StrategyValidationResult.Fail("Cut loss must be greater than zero");
+                return Task.FromResult(StrategyValidationResult.Fail("Cut loss must be greater than zero"));
 
-            return StrategyValidationResult.Ok();
+            return Task.FromResult(StrategyValidationResult.Ok());
         }
 
         public async Task<BotExecutionResult> ExecuteAsync(
@@ -353,16 +353,16 @@ namespace CryptoTrading.Services.Bot.Strategies
             }
         }
 
-        private async Task<decimal> CalculateEMAAsync(BotContext context, AggressiveForexRuntimeState state, decimal currentPrice, BotParameters parameters)
+        private Task<decimal> CalculateEMAAsync(BotContext context, AggressiveForexRuntimeState state, decimal currentPrice, BotParameters parameters)
         {
             var period = parameters.GetValue("emaPeriod", 200);
             
             if (state.PriceHistory.Count < period)
             {
-                return currentPrice; // Not enough data, return current price
+                return Task.FromResult(currentPrice); // Not enough data, return current price
             }
 
-            return CalculateEMA(state.PriceHistory, period);
+            return Task.FromResult(CalculateEMA(state.PriceHistory, period));
         }
 
         private decimal CalculateEMA(List<PricePoint> prices, int period)
@@ -380,10 +380,10 @@ namespace CryptoTrading.Services.Bot.Strategies
             return ema;
         }
 
-        private async Task<decimal> CalculateRSIAsync(BotContext context, AggressiveForexRuntimeState state, decimal currentPrice, BotParameters parameters)
+        private Task<decimal> CalculateRSIAsync(BotContext context, AggressiveForexRuntimeState state, decimal currentPrice, BotParameters parameters)
         {
             var period = parameters.GetValue("rsiPeriod", 5);
-            return CalculateRSI(state.PriceHistory, period);
+            return Task.FromResult(CalculateRSI(state.PriceHistory, period));
         }
 
         private decimal CalculateRSI(List<PricePoint> prices, int period)
@@ -449,7 +449,7 @@ namespace CryptoTrading.Services.Bot.Strategies
             }
         }
 
-        private async Task OpenInitialPosition(BotContext context, AggressiveForexRuntimeState state, decimal currentPrice, TrendDirection trend, decimal lot)
+        private Task OpenInitialPosition(BotContext context, AggressiveForexRuntimeState state, decimal currentPrice, TrendDirection trend, decimal lot)
         {
             var quantity = trend == TrendDirection.Up ? lot : -lot;
             
@@ -464,6 +464,7 @@ namespace CryptoTrading.Services.Bot.Strategies
 
             state.Positions.Add(position);
             context.Logger.LogInfo("Trading", $"Opened initial {(trend == TrendDirection.Up ? "LONG" : "SHORT")} position: {Math.Abs(quantity)} @ ${currentPrice:F2}");
+            return Task.CompletedTask;
         }
 
         private bool CanPyramid(AggressiveForexRuntimeState state, decimal currentPrice, TrendDirection trend, BotParameters parameters)
@@ -479,7 +480,7 @@ namespace CryptoTrading.Services.Bot.Strategies
             return totalInvestment > 0 && (totalPnL / totalInvestment) >= pyramidTriggerPercent;
         }
 
-        private async Task AddPyramidPosition(BotContext context, AggressiveForexRuntimeState state, decimal currentPrice, TrendDirection trend, BotParameters parameters)
+        private Task AddPyramidPosition(BotContext context, AggressiveForexRuntimeState state, decimal currentPrice, TrendDirection trend, BotParameters parameters)
         {
             var pyramidLotMultiplier = parameters.GetValue("pyramidLotMultiplier", 1.0m);
             var lastPosition = state.Positions.LastOrDefault();
@@ -499,6 +500,7 @@ namespace CryptoTrading.Services.Bot.Strategies
             state.TotalPyramidOrders++;
             
             context.Logger.LogInfo("Trading", $"Added pyramid position: {Math.Abs(quantity)} @ ${currentPrice:F2}");
+            return Task.CompletedTask;
         }
 
         private bool CanMartingale(AggressiveForexRuntimeState state, decimal currentPrice, BotParameters parameters)
@@ -514,7 +516,7 @@ namespace CryptoTrading.Services.Bot.Strategies
             return totalInvestment > 0 && (totalPnL / totalInvestment) <= -martingaleDistancePercent;
         }
 
-        private async Task AddMartingalePosition(BotContext context, AggressiveForexRuntimeState state, decimal currentPrice, BotParameters parameters)
+        private Task AddMartingalePosition(BotContext context, AggressiveForexRuntimeState state, decimal currentPrice, BotParameters parameters)
         {
             var martingaleMultiplier = parameters.GetValue("martingaleMultiplier", 1.1m);
             var lastPosition = state.Positions.LastOrDefault();
@@ -537,6 +539,7 @@ namespace CryptoTrading.Services.Bot.Strategies
             state.TotalMartingaleOrders++;
             
             context.Logger.LogInfo("Trading", $"Added martingale position: {Math.Abs(quantity)} @ ${currentPrice:F2}");
+            return Task.CompletedTask;
         }
 
         private async Task ApplyRiskManagementAsync(BotContext context, AggressiveForexRuntimeState state, decimal currentPrice, BotParameters parameters)
@@ -581,7 +584,7 @@ namespace CryptoTrading.Services.Bot.Strategies
             }
         }
 
-        private async Task CloseAllPositions(BotContext context, AggressiveForexRuntimeState state, decimal currentPrice, string reason)
+        private Task CloseAllPositions(BotContext context, AggressiveForexRuntimeState state, decimal currentPrice, string reason)
         {
             foreach (var position in state.Positions.ToList())
             {
@@ -594,6 +597,7 @@ namespace CryptoTrading.Services.Bot.Strategies
             state.TotalMartingaleOrders = 0;
             state.PeakEquity = 0;
             state.TrailingStopPrice = 0;
+            return Task.CompletedTask;
         }
 
         private Task SimulatePositionManagement(AggressiveForexRuntimeState state, OhlcvData candle, TrendDirection trend, BotParameters parameters, List<SimulationTradeDto> trades, decimal availableCash)

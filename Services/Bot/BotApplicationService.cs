@@ -1,14 +1,15 @@
+using System;
+using System.Collections.Generic;
+using System.Text.Json;
+using System.Threading;
 using CryptoTrading.Data;
 using CryptoTrading.Interfaces.Bot;
 using CryptoTrading.Models;
 using CryptoTrading.Models.DTOs;
 using CryptoTrading.Services.Trading;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Logging;
-using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
-using System.Threading;
-using System.Collections.Generic;
+using Microsoft.Extensions.Logging;
 
 namespace CryptoTrading.Services.Bot
 {
@@ -80,7 +81,7 @@ namespace CryptoTrading.Services.Bot
             return await MapToBotDetailDto(bot, strategyDef);
         }
 
-        public async Task<TradingBotDetailDto> UpdateAsync(int userId, int botId, UpdateBotRequest request)
+        public async Task<TradingBotDetailDto> UpdateAsync(int userId, Guid botId, UpdateBotRequest request)
         {
             var bot = await _context.TradingBots
                 .Include(b => b.StrategyDefinition)
@@ -122,7 +123,7 @@ namespace CryptoTrading.Services.Bot
             return await MapToBotDetailDto(bot, bot.StrategyDefinition!);
         }
 
-        public async Task DeleteAsync(int userId, int botId)
+        public async Task DeleteAsync(int userId, Guid botId)
         {
             var bot = await _context.TradingBots
                 .FirstOrDefaultAsync(b => b.Id == botId && b.UserId == userId);
@@ -144,7 +145,7 @@ namespace CryptoTrading.Services.Bot
             _logger.LogInformation("Deleted bot {BotId}", botId);
         }
 
-        public async Task<TradingBotDetailDto> GetAsync(int userId, int botId)
+        public async Task<TradingBotDetailDto> GetAsync(int userId, Guid botId)
         {
             var bot = await _context.TradingBots
                 .Include(b => b.StrategyDefinition)
@@ -204,7 +205,7 @@ namespace CryptoTrading.Services.Bot
             };
         }
 
-        public async Task<string> StartAsync(int userId, int botId, StartBotRequest request)
+        public async Task<string> StartAsync(int userId, Guid botId, StartBotRequest request)
         {
             var bot = await _context.TradingBots
                 .Include(b => b.StrategyDefinition)
@@ -347,7 +348,7 @@ namespace CryptoTrading.Services.Bot
             return botId.ToString();
         }
 
-        public async Task StopAsync(int userId, int botId, StopBotRequest request)
+        public async Task StopAsync(int userId, Guid botId, StopBotRequest request)
         {
             var bot = await _context.TradingBots
                 .FirstOrDefaultAsync(b => b.Id == botId && b.UserId == userId);
@@ -371,7 +372,7 @@ namespace CryptoTrading.Services.Bot
             _logger.LogInformation("Bot {BotId} stopping (reason: {Reason})", botId, request.Reason);
         }
 
-        public async Task NudgeAsync(int userId, int botId)
+        public async Task NudgeAsync(int userId, Guid botId)
         {
             var bot = await _context.TradingBots
                 .FirstOrDefaultAsync(b => b.Id == botId && b.UserId == userId);
@@ -393,7 +394,7 @@ namespace CryptoTrading.Services.Bot
             _logger.LogInformation("Bot {BotId} nudged for immediate execution", botId);
         }
 
-        public async Task<PaginatedResponse<BotLogDto>> GetLogsAsync(int userId, int botId, BotLogsQuery query)
+        public async Task<PaginatedResponse<BotLogDto>> GetLogsAsync(int userId, Guid botId, BotLogsQuery query)
         {
             // Verify ownership
             var botExists = await _context.TradingBots
@@ -459,7 +460,7 @@ namespace CryptoTrading.Services.Bot
             };
         }
 
-        public async Task<PaginatedResponse<BotOrderDto>> GetOrdersAsync(int userId, int botId, int page = 1, int pageSize = 20)
+        public async Task<PaginatedResponse<BotOrderDto>> GetOrdersAsync(int userId, Guid botId, int page = 1, int pageSize = 20)
         {
             // Verify ownership
             var botExists = await _context.TradingBots
@@ -517,7 +518,7 @@ namespace CryptoTrading.Services.Bot
             };
         }
 
-        public async Task<SimulationResultDto> SimulateAsync(int userId, int botId, SimulationRequest request)
+        public async Task<SimulationResultDto> SimulateAsync(int userId, Guid botId, SimulationRequest request)
         {
             var bot = await _context.TradingBots
                 .Include(b => b.StrategyDefinition)

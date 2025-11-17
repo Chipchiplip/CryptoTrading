@@ -1,3 +1,4 @@
+using System;
 using CryptoTrading.Models.DTOs;
 using System.Text.Json;
 
@@ -64,7 +65,7 @@ namespace CryptoTrading.Interfaces.Bot
     /// </summary>
     public class BotContext
     {
-        public int BotId { get; set; }
+        public Guid BotId { get; set; }
         public int UserId { get; set; }
         public string BaseAsset { get; set; } = string.Empty;
         public string QuoteAsset { get; set; } = string.Empty;

@@ -14,7 +14,7 @@ public class BotRiskState
     public int Id { get; set; }
 
     [Required]
-    public int BotId { get; set; }
+    public Guid BotId { get; set; }
 
     /// <summary>
     /// Number of consecutive losing trades
@@ -30,6 +30,7 @@ public class BotRiskState
     /// <summary>
     /// Last time daily loss was reset
     /// </summary>
+    [Column(TypeName = "datetime(6)")]
     public DateTime DailyLossResetAt { get; set; } = DateTime.UtcNow;
 
     /// <summary>
@@ -41,6 +42,7 @@ public class BotRiskState
     /// <summary>
     /// Timestamp of last order placed
     /// </summary>
+    [Column(TypeName = "datetime(6)")]
     public DateTime? LastOrderAt { get; set; }
 
     /// <summary>
@@ -48,6 +50,7 @@ public class BotRiskState
     /// </summary>
     public int OrderCountThisCycle { get; set; } = 0;
 
+    [Column(TypeName = "datetime(6)")]
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 
     // Navigation properties

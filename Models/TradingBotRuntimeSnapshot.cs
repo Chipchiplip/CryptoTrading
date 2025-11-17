@@ -10,10 +10,11 @@ namespace CryptoTrading.Models
     public class TradingBotRuntimeSnapshot
     {
         [Key]
+        [Column(TypeName = "bigint unsigned")]
         public ulong Id { get; set; }
 
         [Required]
-        public int TradingBotId { get; set; }
+        public Guid TradingBotId { get; set; }
 
         [ForeignKey(nameof(TradingBotId))]
         public TradingBot? TradingBot { get; set; }
@@ -22,13 +23,14 @@ namespace CryptoTrading.Models
         /// When this snapshot was captured
         /// </summary>
         [Required]
-        public DateTime CapturedAt { get; set; } = DateTime.UtcNow;
+        [Column(TypeName = "datetime(6)")]
+        public DateTime CapturedAt { get; set; }
 
         /// <summary>
         /// Serialized runtime state (JSON)
         /// </summary>
         [Required]
-        [Column(TypeName = "JSON")]
+        [Column(TypeName = "json")]
         public string RuntimeState { get; set; } = "{}";
 
         /// <summary>
@@ -40,19 +42,21 @@ namespace CryptoTrading.Models
         /// <summary>
         /// Summary of open positions (JSON)
         /// </summary>
-        [Column(TypeName = "JSON")]
+        [Column(TypeName = "json")]
         public string? OpenPositionSummary { get; set; }
 
         /// <summary>
         /// Next scheduled tick time
         /// </summary>
+        [Column(TypeName = "datetime(6)")]
         public DateTime? NextTickAt { get; set; }
 
         /// <summary>
         /// Version for optimistic concurrency control
         /// </summary>
-        [Timestamp]
-        public byte[]? Version { get; set; }
+        [ConcurrencyCheck]
+        [Column(TypeName = "datetime(6)")]
+        public DateTime? Version { get; set; }
     }
 }
 

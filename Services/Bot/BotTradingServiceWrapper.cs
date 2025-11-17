@@ -1,3 +1,4 @@
+using System;
 using CryptoTrading.Interfaces.Bot;
 using CryptoTrading.Models.DTOs;
 using CryptoTrading.Services.Trading;
@@ -11,12 +12,12 @@ namespace CryptoTrading.Services.Bot
     {
         private readonly ITradingService _tradingService;
         private readonly int _userId;
-        private readonly int _botId;
+        private readonly Guid _botId;
 
         public BotTradingServiceWrapper(
             ITradingService tradingService,
             int userId,
-            int botId)
+            Guid botId)
         {
             _tradingService = tradingService;
             _userId = userId;

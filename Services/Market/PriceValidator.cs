@@ -162,16 +162,16 @@ public class PriceValidator : IPriceValidator
         return result;
     }
 
-    public async Task<bool> IsDeviationAcceptableAsync(
+    public Task<bool> IsDeviationAcceptableAsync(
         string symbol,
         decimal currentPrice,
         decimal previousPrice)
     {
         if (previousPrice <= 0)
-            return true; // No baseline to compare
+            return Task.FromResult(true); // No baseline to compare
 
         var deviationPercent = Math.Abs((currentPrice - previousPrice) / previousPrice) * 100;
-        return deviationPercent <= _maxDeviationPercent;
+        return Task.FromResult(deviationPercent <= _maxDeviationPercent);
     }
 
     public bool IsStaleData(DateTime timestamp)
@@ -180,12 +180,12 @@ public class PriceValidator : IPriceValidator
         return age > _staleDataThreshold;
     }
 
-    public async Task<List<OHLCVCandle>> FilterOutliersAsync(
+    public Task<List<OHLCVCandle>> FilterOutliersAsync(
         string symbol,
         List<OHLCVCandle> candles)
     {
         if (candles.Count < 10)
-            return candles; // Not enough data for statistical analysis
+            return Task.FromResult(candles); // Not enough data for statistical analysis
 
         // Calculate mean and standard deviation of close prices
         var closePrices = candles.Select(c => (double)c.Close).ToList();
@@ -220,10 +220,10 @@ public class PriceValidator : IPriceValidator
                 outlierCount, candles.Count, symbol);
         }
 
-        return filtered;
+        return Task.FromResult(filtered);
     }
 
-    private async Task<decimal?> GetPreviousPriceAsync(string symbol)
+    private Task<decimal?> GetPreviousPriceAsync(string symbol)
     {
         try
         {
@@ -239,15 +239,15 @@ public class PriceValidator : IPriceValidator
             if (history != null && history.Count > 0)
             {
                 // Return most recent price
-                return history.OrderByDescending(p => p.Timestamp).First().Price;
+                return Task.FromResult<decimal?>(history.OrderByDescending(p => p.Timestamp).First().Price);
             }
 
-            return null;
+            return Task.FromResult<decimal?>(null);
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to retrieve previous price for {Symbol}", symbol);
-            return null;
+            return Task.FromResult<decimal?>(null);
         }
     }
 

@@ -73,7 +73,7 @@ namespace CryptoTrading.Interfaces.Bot
     public interface IPortfolioService
     {
         Task<decimal> GetBalanceAsync(int userId, string asset, CancellationToken cancellationToken = default);
-        Task<List<PositionInfo>> GetOpenPositionsAsync(int botId, CancellationToken cancellationToken = default);
+        Task<List<PositionInfo>> GetOpenPositionsAsync(Guid botId, CancellationToken cancellationToken = default);
     }
 
     public class PositionInfo
@@ -94,17 +94,17 @@ namespace CryptoTrading.Interfaces.Bot
         Task<decimal> GetMaxExposureAsync(int userId, CancellationToken cancellationToken = default);
 
         // Phase 3 additions - Dynamic capital and pre-execution guardrails
-        Task<decimal> GetBotCapitalLimitAsync(int userId, int botId, CancellationToken cancellationToken = default);
-        Task<bool> CheckKillSwitchAsync(int botId, int userId, CancellationToken cancellationToken = default);
-        Task<bool> CheckCooldownAsync(int botId, TimeSpan minCooldown, CancellationToken cancellationToken = default);
-        Task<bool> CheckRateLimitAsync(int botId, int maxOrdersPerCycle, CancellationToken cancellationToken = default);
+        Task<decimal> GetBotCapitalLimitAsync(int userId, Guid botId, CancellationToken cancellationToken = default);
+        Task<bool> CheckKillSwitchAsync(Guid botId, int userId, CancellationToken cancellationToken = default);
+        Task<bool> CheckCooldownAsync(Guid botId, TimeSpan minCooldown, CancellationToken cancellationToken = default);
+        Task<bool> CheckRateLimitAsync(Guid botId, int maxOrdersPerCycle, CancellationToken cancellationToken = default);
 
         // Phase 3B additions - Order tracking for rate limiting
-        Task ResetOrderCountForNewCycleAsync(int botId, CancellationToken cancellationToken = default);
-        Task RecordOrderPlacedAsync(int botId, CancellationToken cancellationToken = default);
+        Task ResetOrderCountForNewCycleAsync(Guid botId, CancellationToken cancellationToken = default);
+        Task RecordOrderPlacedAsync(Guid botId, CancellationToken cancellationToken = default);
 
         // Phase 4 additions - Kill switch trade result tracking
-        Task RecordTradeResultAsync(int botId, decimal pnl, CancellationToken cancellationToken = default);
+        Task RecordTradeResultAsync(Guid botId, decimal pnl, CancellationToken cancellationToken = default);
     }
 
     /// <summary>

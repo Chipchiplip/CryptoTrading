@@ -254,6 +254,30 @@ namespace CryptoTrading.Tests
             // Assert.Equal(4000m, maxExposure); // Would be correct with proper exposure calculation
         }
 
+        [Fact]
+        public async Task GetBotCapitalLimitAsync_NoConfig_UsesDemoSafeDefaults()
+        {
+            // Arrange: user without any stored risk configuration
+            var unknownUserId = 999;
+            var botId = Guid.NewGuid();
+
+            // Act
+            var capital = await _riskManager.GetBotCapitalLimitAsync(unknownUserId, botId);
+
+            // Assert
+            Assert.Equal(100m, capital);
+        }
+
+        [Fact]
+        public async Task CheckKillSwitchAsync_WithEmptyBotId_ShouldReturnFalse()
+        {
+            // Act
+            var result = await _riskManager.CheckKillSwitchAsync(Guid.Empty, 1);
+
+            // Assert
+            Assert.False(result);
+        }
+
         public void Dispose()
         {
             _context?.Dispose();

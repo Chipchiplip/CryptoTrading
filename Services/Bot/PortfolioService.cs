@@ -1,3 +1,4 @@
+using System;
 using CryptoTrading.Data;
 using CryptoTrading.Interfaces.Bot;
 using Microsoft.EntityFrameworkCore;
@@ -46,7 +47,7 @@ namespace CryptoTrading.Services.Bot
         }
 
         public async Task<List<PositionInfo>> GetOpenPositionsAsync(
-            int botId,
+            Guid botId,
             CancellationToken cancellationToken = default)
         {
             // Get bot orders that are filled or partially filled

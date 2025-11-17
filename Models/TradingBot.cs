@@ -10,7 +10,7 @@ namespace CryptoTrading.Models
     public class TradingBot
     {
         [Key]
-        public int Id { get; set; }
+        public Guid Id { get; set; }
 
         /// <summary>
         /// Owner user ID
@@ -92,8 +92,10 @@ namespace CryptoTrading.Models
         [MaxLength(1000)]
         public string? LastStatusReason { get; set; }
 
-        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+        [Column(TypeName = "datetime(6)")]
+        public DateTime CreatedAt { get; set; }
 
+        [Column(TypeName = "datetime(6)")]
         public DateTime? UpdatedAt { get; set; }
     }
 }

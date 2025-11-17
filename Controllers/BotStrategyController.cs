@@ -148,18 +148,18 @@ namespace CryptoTrading.Controllers
         [ProducesResponseType(typeof(object), 202)]
         [ProducesResponseType(typeof(object), 400)]
         [ProducesResponseType(typeof(object), 500)]
-        public async Task<ActionResult> UploadPlugin(IFormFile file, [FromHeader(Name = "X-Strategy-Key")] string strategyKey)
+        public Task<ActionResult> UploadPlugin(IFormFile file, [FromHeader(Name = "X-Strategy-Key")] string strategyKey)
         {
             try
             {
                 if (file == null || file.Length == 0)
                 {
-                    return BadRequest(new { error = "No file uploaded" });
+                    return Task.FromResult<ActionResult>(BadRequest(new { error = "No file uploaded" }));
                 }
 
                 if (string.IsNullOrEmpty(strategyKey))
                 {
-                    return BadRequest(new { error = "Strategy key required" });
+                    return Task.FromResult<ActionResult>(BadRequest(new { error = "Strategy key required" }));
                 }
 
                 // TODO: Implement plugin upload logic
@@ -169,12 +169,12 @@ namespace CryptoTrading.Controllers
                 // 4. Load and register strategy
 
                 _logger.LogWarning("Plugin upload not yet implemented");
-                return Accepted(new { message = "Plugin upload feature coming soon" });
+                return Task.FromResult<ActionResult>(Accepted(new { message = "Plugin upload feature coming soon" }));
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error uploading plugin");
-                return StatusCode(500, new { error = "Failed to upload plugin" });
+                return Task.FromResult<ActionResult>(StatusCode(500, new { error = "Failed to upload plugin" }));
             }
         }
     }

@@ -1,6 +1,5 @@
 using CryptoTrading.Models.Market;
 using CryptoTrading.Services;
-using CryptoTrading.Services;
 using Microsoft.Extensions.Logging;
 
 namespace CryptoTrading.Services.Market;

@@ -1,9 +1,10 @@
+using System;
+using System.Security.Claims;
 using CryptoTrading.Interfaces;
 using CryptoTrading.Interfaces.Bot;
 using CryptoTrading.Models.DTOs;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using System.Security.Claims;
 
 namespace CryptoTrading.Controllers
 {
@@ -65,8 +66,8 @@ namespace CryptoTrading.Controllers
         /// <summary>
         /// Get bot details by ID
         /// </summary>
-        [HttpGet("{id:int}")]
-        public async Task<ActionResult<TradingBotDetailDto>> GetBot(int id)
+        [HttpGet("{id:guid}")]
+        public async Task<ActionResult<TradingBotDetailDto>> GetBot(Guid id)
         {
             try
             {
@@ -111,8 +112,8 @@ namespace CryptoTrading.Controllers
         /// <summary>
         /// Update bot configuration (only when stopped)
         /// </summary>
-        [HttpPut("{id:int}")]
-        public async Task<ActionResult<TradingBotDetailDto>> UpdateBot(int id, [FromBody] UpdateBotRequest request)
+        [HttpPut("{id:guid}")]
+        public async Task<ActionResult<TradingBotDetailDto>> UpdateBot(Guid id, [FromBody] UpdateBotRequest request)
         {
             try
             {
@@ -138,8 +139,8 @@ namespace CryptoTrading.Controllers
         /// <summary>
         /// Delete a bot
         /// </summary>
-        [HttpDelete("{id:int}")]
-        public async Task<ActionResult> DeleteBot(int id)
+        [HttpDelete("{id:guid}")]
+        public async Task<ActionResult> DeleteBot(Guid id)
         {
             try
             {
@@ -165,12 +166,12 @@ namespace CryptoTrading.Controllers
         /// <summary>
         /// Start a bot
         /// </summary>
-        [HttpPost("{id:int}/start")]
+        [HttpPost("{id:guid}/start")]
         [ProducesResponseType(typeof(BotOperationResponse), 202)]
         [ProducesResponseType(typeof(ErrorResponse), 404)]
         [ProducesResponseType(typeof(ErrorResponse), 400)]
         [ProducesResponseType(typeof(ErrorResponse), 500)]
-        public async Task<IActionResult> StartBot(int id, [FromBody] StartBotRequest request)
+        public async Task<IActionResult> StartBot(Guid id, [FromBody] StartBotRequest request)
         {
             try
             {
@@ -196,8 +197,8 @@ namespace CryptoTrading.Controllers
         /// <summary>
         /// Stop a bot
         /// </summary>
-        [HttpPost("{id:int}/stop")]
-        public async Task<ActionResult> StopBot(int id, [FromBody] StopBotRequest request)
+        [HttpPost("{id:guid}/stop")]
+        public async Task<ActionResult> StopBot(Guid id, [FromBody] StopBotRequest request)
         {
             try
             {
@@ -223,8 +224,8 @@ namespace CryptoTrading.Controllers
         /// <summary>
         /// Trigger immediate execution (nudge)
         /// </summary>
-        [HttpPost("{id:int}/nudge")]
-        public async Task<ActionResult> NudgeBot(int id)
+        [HttpPost("{id:guid}/nudge")]
+        public async Task<ActionResult> NudgeBot(Guid id)
         {
             try
             {
@@ -250,9 +251,9 @@ namespace CryptoTrading.Controllers
         /// <summary>
         /// Get bot execution logs
         /// </summary>
-        [HttpGet("{id}/logs")]
+        [HttpGet("{id:guid}/logs")]
         public async Task<ActionResult<PaginatedResponse<BotLogDto>>> GetLogs(
-            int id,
+            Guid id,
             [FromQuery] string? level,
             [FromQuery] string? category,
             [FromQuery] DateTime? fromDate,
@@ -290,9 +291,9 @@ namespace CryptoTrading.Controllers
         /// <summary>
         /// Get bot orders
         /// </summary>
-        [HttpGet("{id}/orders")]
+        [HttpGet("{id:guid}/orders")]
         public async Task<ActionResult<PaginatedResponse<BotOrderDto>>> GetOrders(
-            int id,
+            Guid id,
             [FromQuery] int page = 1,
             [FromQuery] int pageSize = 20)
         {
@@ -316,9 +317,9 @@ namespace CryptoTrading.Controllers
         /// <summary>
         /// Run backtest simulation
         /// </summary>
-        [HttpPost("{id}/simulate")]
+        [HttpPost("{id:guid}/simulate")]
         public async Task<ActionResult<SimulationResultDto>> Simulate(
-            int id,
+            Guid id,
             [FromBody] SimulationRequest request)
         {
             try

@@ -32,10 +32,26 @@ namespace CryptoTrading.Services.Trading.Extensions
             IEnumerable<ulong> walletIds,
             CancellationToken cancellationToken = default)
         {
-            var ids = string.Join(",", walletIds);
-            var wallets = await context.Set<Wallet>()
-                .FromSqlRaw($"SELECT * FROM Wallets WHERE Id IN ({ids}) FOR UPDATE")
-                .ToListAsync(cancellationToken);
+            var walletIdList = walletIds.ToList();
+            if (walletIdList.Count == 0)
+            {
+                return new List<Wallet>();
+            }
+
+            // Use parameterized query with individual parameters for safety
+            // EF Core doesn't support IN clause well with FromSqlRaw, so we'll query individually
+            // or use a workaround with proper parameterization
+            var wallets = new List<Wallet>();
+            foreach (var walletId in walletIdList)
+            {
+                var wallet = await context.Set<Wallet>()
+                    .FromSqlRaw("SELECT * FROM Wallets WHERE Id = {0} FOR UPDATE", walletId)
+                    .FirstOrDefaultAsync(cancellationToken);
+                if (wallet != null)
+                {
+                    wallets.Add(wallet);
+                }
+            }
 
             return wallets;
         }

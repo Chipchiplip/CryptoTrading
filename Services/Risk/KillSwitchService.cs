@@ -1,3 +1,4 @@
+using System;
 using CryptoTrading.Data;
 using CryptoTrading.Models;
 using Microsoft.EntityFrameworkCore;
@@ -40,8 +41,13 @@ public class KillSwitchService : IKillSwitchService
             configuration["Trading:KillSwitch:DefaultMaxDrawdownPercent"] ?? "20.0");
     }
 
-    public async Task<KillSwitchResult> CheckKillSwitchAsync(int botId, int userId)
+    public async Task<KillSwitchResult> CheckKillSwitchAsync(Guid botId, int userId)
     {
+            if (IsBotContextMissing(botId, nameof(CheckKillSwitchAsync)))
+            {
+                return KillSwitchResult.Continue();
+            }
+
         if (!_killSwitchEnabled)
         {
             return KillSwitchResult.Continue();
@@ -134,8 +140,13 @@ public class KillSwitchService : IKillSwitchService
         }
     }
 
-    public async Task RecordTradeResultAsync(int botId, decimal pnl, bool isProfit)
+    public async Task RecordTradeResultAsync(Guid botId, decimal pnl, bool isProfit)
     {
+            if (IsBotContextMissing(botId, nameof(RecordTradeResultAsync)))
+            {
+                return;
+            }
+
         try
         {
             var riskState = await GetOrCreateRiskStateAsync(botId);
@@ -180,8 +191,13 @@ public class KillSwitchService : IKillSwitchService
         }
     }
 
-    public async Task<BotRiskStateDto> GetRiskStateAsync(int botId)
+    public async Task<BotRiskStateDto> GetRiskStateAsync(Guid botId)
     {
+            if (IsBotContextMissing(botId, nameof(GetRiskStateAsync)))
+            {
+                return new BotRiskStateDto { BotId = Guid.Empty };
+            }
+
         var riskState = await GetOrCreateRiskStateAsync(botId);
 
         return new BotRiskStateDto
@@ -196,8 +212,13 @@ public class KillSwitchService : IKillSwitchService
         };
     }
 
-    public async Task ResetDailyLossAsync(int botId)
+    public async Task ResetDailyLossAsync(Guid botId)
     {
+            if (IsBotContextMissing(botId, nameof(ResetDailyLossAsync)))
+            {
+                return;
+            }
+
         try
         {
             var riskState = await GetOrCreateRiskStateAsync(botId);
@@ -218,8 +239,13 @@ public class KillSwitchService : IKillSwitchService
         }
     }
 
-    public async Task TriggerKillSwitchAsync(int botId, string reason, decimal? totalLoss = null)
+    public async Task TriggerKillSwitchAsync(Guid botId, string reason, decimal? totalLoss = null)
     {
+            if (IsBotContextMissing(botId, nameof(TriggerKillSwitchAsync)))
+            {
+                return;
+            }
+
         try
         {
             // Record kill switch event
@@ -257,8 +283,13 @@ public class KillSwitchService : IKillSwitchService
         }
     }
 
-    public async Task ClearKillSwitchAsync(int botId)
+    public async Task ClearKillSwitchAsync(Guid botId)
     {
+            if (IsBotContextMissing(botId, nameof(ClearKillSwitchAsync)))
+            {
+                return;
+            }
+
         try
         {
             var riskState = await GetOrCreateRiskStateAsync(botId);
@@ -278,8 +309,13 @@ public class KillSwitchService : IKillSwitchService
         }
     }
 
-    private async Task<BotRiskState> GetOrCreateRiskStateAsync(int botId)
+    private async Task<BotRiskState> GetOrCreateRiskStateAsync(Guid botId)
     {
+        if (IsBotContextMissing(botId, nameof(GetOrCreateRiskStateAsync)))
+        {
+            throw new InvalidOperationException("Bot context is required for risk state operations.");
+        }
+
         var riskState = await _context.BotRiskStates.FirstOrDefaultAsync(r => r.BotId == botId);
 
         if (riskState == null)
@@ -309,5 +345,16 @@ public class KillSwitchService : IKillSwitchService
         }
 
         return riskState;
+    }
+
+    private bool IsBotContextMissing(Guid botId, string operationName)
+    {
+        if (botId == Guid.Empty)
+        {
+            _logger.LogDebug("{Operation} skipped because botId is empty (demo guard).", operationName);
+            return true;
+        }
+
+        return false;
     }
 }

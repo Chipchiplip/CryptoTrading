@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations.Schema;
 
 namespace CryptoTrading.Models
 {
@@ -21,6 +22,8 @@ namespace CryptoTrading.Models
         
         // Navigation properties
         public User User { get; set; } = null!;
+        
+        [NotMapped]
         public ICollection<WatchlistItem> Items { get; set; } = new List<WatchlistItem>();
     }
 

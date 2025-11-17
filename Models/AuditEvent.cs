@@ -19,7 +19,7 @@ namespace CryptoTrading.Models
         [Required]
         public int UserId { get; set; }
 
-        public int? BotId { get; set; }
+        public Guid? BotId { get; set; }
 
         [Required]
         [MaxLength(50)]
@@ -41,6 +41,7 @@ namespace CryptoTrading.Models
         [Column(TypeName = "text")]
         public string? Metadata { get; set; }
 
+        [Column(TypeName = "datetime(6)")]
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
         [MaxLength(100)]
@@ -122,7 +123,7 @@ namespace CryptoTrading.Models
 
         public int? UserId { get; set; } // NULL for global defaults
 
-        public int? BotId { get; set; } // NULL for user defaults
+        public Guid? BotId { get; set; } // NULL for user defaults
 
         [Column(TypeName = "decimal(30,10)")]
         public decimal MaxAllowedCapital { get; set; } = 100000m;
@@ -139,11 +140,14 @@ namespace CryptoTrading.Models
 
         public bool KillSwitchEnabled { get; set; } = true;
 
+        [Column(TypeName = "datetime(6)")]
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+        [Column(TypeName = "datetime(6)")]
         public DateTime? UpdatedAt { get; set; }
 
         // Navigation properties
         public User? User { get; set; }
+        public TradingBot? Bot { get; set; }
     }
 
     /// <summary>
