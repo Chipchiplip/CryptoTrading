@@ -121,7 +121,12 @@ public class TradingController : ControllerBase
     {
         var userId = GetUserId();
         _logger.LogDebug("Fetching PnL history for user {UserId}", userId);
-        
+
+        if (!string.Equals(granularity, "hourly", StringComparison.OrdinalIgnoreCase))
+        {
+            return BadRequest(new { message = "Only granularity=hourly is supported at the moment." });
+        }
+
         var pnlHistory = await GetDashboardPnlHistoryData(userId, granularity, date);
         return Ok(pnlHistory);
     }
@@ -223,6 +228,34 @@ public class TradingController : ControllerBase
                 })
                 .ToDictionaryAsync(x => x.CryptocurrencyId, x => x.Price);
             
+            // Fallback: if no historical price before/at yesterday, try latest known price overall
+            var missingPriceIds = positions
+                .Where(p => !yesterdayPrices.ContainsKey(p.CryptocurrencyId) || yesterdayPrices[p.CryptocurrencyId] <= 0)
+                .Select(p => p.CryptocurrencyId)
+                .Distinct()
+                .ToList();
+
+            if (missingPriceIds.Any())
+            {
+                var fallbackPrices = await _db.CryptoPrices
+                    .Where(p => missingPriceIds.Contains(p.CryptocurrencyId) && p.CollectedAtUtc <= DateTime.UtcNow)
+                    .GroupBy(p => p.CryptocurrencyId)
+                    .Select(g => new
+                    {
+                        CryptocurrencyId = g.Key,
+                        Price = g.OrderByDescending(p => p.CollectedAtUtc).Select(p => p.PriceUsd).FirstOrDefault()
+                    })
+                    .ToListAsync();
+
+                foreach (var fp in fallbackPrices)
+                {
+                    if (fp.Price > 0)
+                    {
+                        yesterdayPrices[fp.CryptocurrencyId] = fp.Price;
+                    }
+                }
+            }
+            
             foreach (var pos in positions)
             {
                 var latestPrice = yesterdayPrices.GetValueOrDefault(pos.CryptocurrencyId, 0m);
@@ -253,7 +286,9 @@ public class TradingController : ControllerBase
                 return -((t.PriceUsd * t.QuantityCoin) + t.FeeUsd);
         });
 
-        var todayPnlPercent = totalBalance > 0 ? (todayPnl / totalBalance) * 100m : 0m;
+        // Percent PnL should be based on starting equity of the day (yesterday's NAV)
+        var pnlDenominator = previousTotalBalance > 0 ? previousTotalBalance : totalBalance;
+        var todayPnlPercent = pnlDenominator > 0 ? (todayPnl / pnlDenominator) * 100m : 0m;
 
         var totalBalanceChange = totalBalance - previousTotalBalance;
         var totalBalanceChangePercent = previousTotalBalance > 0 
@@ -268,7 +303,7 @@ public class TradingController : ControllerBase
             TodayPnl = todayPnl,
             TodayPnlPercent = todayPnlPercent,
             AvailableBalance = availableBalance,
-            AvailableBalancePercent = totalBalance > 0 ? (availableBalance / totalBalance) * 100m : 0m,
+            AvailableBalancePercent = usdBalance > 0 ? (availableBalance / usdBalance) * 100m : 0m,
             OpenOrdersCount = openOrders.Count,
             OpenOrdersBuy = openOrdersBuy,
             OpenOrdersSell = openOrdersSell
@@ -310,26 +345,24 @@ public class TradingController : ControllerBase
             .OrderBy(t => t.CreatedAt)
             .ToListAsync();
 
-        // Get positions (net quantity per cryptocurrency)
-        var positions = allTrades
-            .GroupBy(t => t.CryptocurrencyId)
-            .Select(g => new
-            {
-                CryptocurrencyId = g.Key,
-                QtyCoin = g.Sum(t => t.Order.Side == "BUY" ? t.QuantityCoin : -t.QuantityCoin)
-            })
-            .Where(p => p.QtyCoin != 0)
-            .ToList();
+        // Prepare position map and starting positions before fromDate
+        var positions = new Dictionary<int, decimal>();
+        foreach (var trade in allTrades.Where(t => t.CreatedAt.Date < fromDate))
+        {
+            var key = trade.CryptocurrencyId;
+            var delta = trade.Order.Side == "BUY" ? trade.QuantityCoin : -trade.QuantityCoin;
+            positions[key] = positions.GetValueOrDefault(key) + delta;
+        }
 
-        // Preload all price data for the date range and cryptocurrencies to avoid N+1 queries
-        var cryptoIds = positions.Select(p => p.CryptocurrencyId).Distinct().ToList();
+        // Collect crypto ids that ever appear (for price preload)
+        var cryptoIds = allTrades.Select(t => t.CryptocurrencyId).Distinct().ToList();
         var allPrices = new Dictionary<(int CryptoId, DateTime Date), decimal>();
         
         if (cryptoIds.Any())
         {
+            // Include prices up to toDate so we can carry-forward latest known price
             var priceData = await _db.CryptoPrices
-                .Where(p => cryptoIds.Contains(p.CryptocurrencyId) && 
-                           p.CollectedAtUtc.Date >= fromDate && 
+                .Where(p => cryptoIds.Contains(p.CryptocurrencyId) &&
                            p.CollectedAtUtc.Date <= toDate)
                 .Select(p => new { p.CryptocurrencyId, Date = p.CollectedAtUtc.Date, p.PriceUsd, p.CollectedAtUtc })
                 .ToListAsync();
@@ -347,6 +380,25 @@ public class TradingController : ControllerBase
             foreach (var price in groupedPrices)
             {
                 allPrices[(price.CryptocurrencyId, price.Date)] = price.Price;
+            }
+
+            // Seed a fallback price at fromDate using the latest price before fromDate (if any)
+            var preStartPrices = priceData
+                .Where(p => p.Date < fromDate)
+                .GroupBy(p => p.CryptocurrencyId)
+                .Select(g => new
+                {
+                    CryptocurrencyId = g.Key,
+                    Price = g.OrderByDescending(p => p.Date).ThenByDescending(p => p.CollectedAtUtc).First().PriceUsd
+                });
+
+            foreach (var price in preStartPrices)
+            {
+                var key = (price.CryptocurrencyId, fromDate);
+                if (!allPrices.ContainsKey(key))
+                {
+                    allPrices[key] = price.Price;
+                }
             }
         }
 
@@ -389,31 +441,54 @@ public class TradingController : ControllerBase
 
         decimal runningUsdBalance = usdBalanceBeforeStart;
 
-        // For each day in the range, calculate NAV using preloaded prices
-        for (int i = totalDays; i >= 0; i--)
+        // Pre-split trades by date for efficient daily application
+        var tradesByDate = allTrades
+            .Where(t => t.CreatedAt.Date >= fromDate && t.CreatedAt.Date <= toDate)
+            .GroupBy(t => t.CreatedAt.Date)
+            .ToDictionary(g => g.Key, g => g.ToList());
+
+        // Iterate forward day by day, rolling positions and balances
+        for (int i = 0; i <= totalDays; i++)
         {
             var date = fromDate.AddDays(i);
+
+            // Apply daily USD delta before valuing
+            if (usdDailyChanges.TryGetValue(date, out var delta))
+            {
+                runningUsdBalance += delta;
+            }
+
+            // Apply trades of the day to positions
+            if (tradesByDate.TryGetValue(date, out var dayTrades))
+            {
+                foreach (var trade in dayTrades)
+                {
+                    var key = trade.CryptocurrencyId;
+                    var deltaQty = trade.Order.Side == "BUY" ? trade.QuantityCoin : -trade.QuantityCoin;
+                    positions[key] = positions.GetValueOrDefault(key) + deltaQty;
+                    if (positions[key] == 0)
+                    {
+                        positions.Remove(key);
+                    }
+                }
+            }
+
             decimal nav = 0m;
 
+            // Value current positions using latest price on or before current date
             foreach (var pos in positions)
             {
-                // Find the latest available price on or before this date
                 decimal latestPrice = 0m;
                 for (var checkDate = date; checkDate >= fromDate; checkDate = checkDate.AddDays(-1))
                 {
-                    if (allPrices.TryGetValue((pos.CryptocurrencyId, checkDate), out var price))
+                    if (allPrices.TryGetValue((pos.Key, checkDate), out var price))
                     {
                         latestPrice = price;
                         break;
                     }
                 }
 
-                nav += pos.QtyCoin * latestPrice;
-            }
-
-            if (usdDailyChanges.TryGetValue(date, out var delta))
-            {
-                runningUsdBalance += delta;
+                nav += pos.Value * latestPrice;
             }
 
             nav += runningUsdBalance;
