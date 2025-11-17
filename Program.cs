@@ -129,7 +129,7 @@ builder.Services.AddCors(options =>
 
 // Infrastructure Services
 builder.Services.Configure<CloudflareImagesOptions>(builder.Configuration.GetSection("Cloudflare"));
-builder.Services.AddHttpClient<ICloudflareImagesService, CloudflareImagesService>();
+builder.Services.AddSingleton<ICloudflareImagesService, CloudflareImagesService>();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
 builder.Services.AddScoped<IEmailSender, EmailService>();

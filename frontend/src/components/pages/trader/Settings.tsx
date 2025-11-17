@@ -185,25 +185,22 @@ export default function Settings() {
         return;
       }
 
-      const formData = new FormData();
-      formData.append('file', file);
-
       const uploadResponse = await fetch(uploadInfo.data.uploadUrl, {
-        method: 'POST',
-        body: formData,
+        method: 'PUT',
+        headers: {
+          'Content-Type': file.type || 'application/octet-stream',
+        },
+        body: file,
       });
-      const uploadJson = await uploadResponse.json().catch(() => ({} as any));
 
-      const uploadedId = (uploadJson as any)?.result?.id;
-      if (!uploadResponse.ok || !uploadedId) {
-        const message = (uploadJson as any)?.errors?.[0]?.message || 'Failed to upload image.';
-        throw new Error(message);
+      if (!uploadResponse.ok) {
+        throw new Error('Failed to upload image to Cloudflare R2.');
       }
 
       const publicUrl =
         uploadInfo.data.publicUrl ||
         (uploadInfo.data.publicUrlBase
-          ? `${uploadInfo.data.publicUrlBase}/${uploadInfo.data.uploadId}/public`
+          ? `${uploadInfo.data.publicUrlBase}/${uploadInfo.data.uploadId}`
           : undefined);
 
       if (!publicUrl) {

@@ -742,7 +742,8 @@ namespace CryptoTrading.Services.Auth
 
         private string ValidateAvatarUrl(string avatarUrl)
         {
-            if (!Uri.TryCreate(avatarUrl, UriKind.Absolute, out var avatarUri))
+            if (!Uri.TryCreate(avatarUrl, UriKind.Absolute, out var avatarUri) ||
+                avatarUri.Scheme != Uri.UriSchemeHttps)
             {
                 throw new Exception("Invalid avatar URL format");
             }
@@ -756,23 +757,22 @@ namespace CryptoTrading.Services.Auth
                 allowedOrigins.Add(_cloudflareOptions.DeliveryUrl);
             }
 
-            var isAllowed = allowedOrigins.Any(origin =>
+            var allowedHosts = allowedOrigins
+                .Select(origin => NormalizeAllowedOrigin(origin))
+                .Select(origin => Uri.TryCreate(origin, UriKind.Absolute, out var uri) ? uri.Host : null)
+                .Where(host => !string.IsNullOrWhiteSpace(host))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            if (!allowedHosts.Any())
             {
-                var normalized = NormalizeAllowedOrigin(origin);
-                if (avatarUrl.StartsWith(normalized, StringComparison.OrdinalIgnoreCase))
-                {
-                    return true;
-                }
+                throw new Exception("Avatar URL domain is not allowed");
+            }
 
-                if (Uri.TryCreate(normalized, UriKind.Absolute, out var allowedUri))
-                {
-                    return string.Equals(allowedUri.Host, avatarUri.Host, StringComparison.OrdinalIgnoreCase);
-                }
+            var hostAllowed = allowedHosts.Any(host =>
+                string.Equals(host, avatarUri.Host, StringComparison.OrdinalIgnoreCase));
 
-                return false;
-            });
-
-            if (!isAllowed)
+            if (!hostAllowed)
             {
                 throw new Exception("Avatar URL domain is not allowed");
             }

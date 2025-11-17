@@ -1,127 +1,140 @@
-using System.Collections.Generic;
-using System.Net.Http.Headers;
-using System.Net.Http.Json;
-using System.Text.Json;
-using System.Linq;
+using Amazon.S3;
+using Amazon.S3.Model;
 using CryptoTrading.Interfaces;
 using CryptoTrading.Models.DTOs;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using System.IO;
 
 namespace CryptoTrading.Infrastructure.Cloudflare
 {
     public class CloudflareImagesService : ICloudflareImagesService
     {
-        private readonly HttpClient _httpClient;
         private readonly CloudflareImagesOptions _options;
         private readonly ILogger<CloudflareImagesService> _logger;
+        private readonly IAmazonS3 _s3Client;
+        private readonly TimeProvider _timeProvider;
 
         public CloudflareImagesService(
-            HttpClient httpClient,
             IOptions<CloudflareImagesOptions> options,
-            ILogger<CloudflareImagesService> logger)
+            ILogger<CloudflareImagesService> logger,
+            TimeProvider? timeProvider = null)
         {
-            _httpClient = httpClient;
             _options = options.Value;
             _logger = logger;
-
-            if (_httpClient.BaseAddress == null)
-            {
-                _httpClient.BaseAddress = new Uri("https://api.cloudflare.com/");
-            }
+            _timeProvider = timeProvider ?? TimeProvider.System;
+            _s3Client = CreateClient();
         }
 
-        public async Task<CloudflareDirectUploadResponseDto> RequestDirectUploadUrlAsync(string? fileName = null)
+        public Task<CloudflareDirectUploadResponseDto> RequestDirectUploadUrlAsync(string? fileName = null)
         {
-            EnsureOptions();
+            ValidateOptions();
 
-            var requestUri = $"client/v4/accounts/{_options.AccountId}/images/v2/direct_upload";
-            using var request = new HttpRequestMessage(HttpMethod.Post, requestUri);
-            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _options.ApiToken);
+            var objectKey = BuildObjectKey(fileName);
+            var expiresAt = _timeProvider.GetUtcNow().AddMinutes(
+                _options.UploadUrlExpiryMinutes <= 0 ? 15 : _options.UploadUrlExpiryMinutes);
 
-            var payload = new Dictionary<string, object?>();
-            if (!string.IsNullOrWhiteSpace(fileName))
+            var request = new GetPreSignedUrlRequest
             {
-                payload["metadata"] = new { fileName };
-            }
-
-            request.Content = JsonContent.Create(payload, options: new JsonSerializerOptions
-            {
-                PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-            });
-
-            var response = await _httpClient.SendAsync(request);
-            var json = await response.Content.ReadFromJsonAsync<CloudflareDirectUploadApiResponse>(new JsonSerializerOptions
-            {
-                PropertyNameCaseInsensitive = true
-            });
-
-            if (!response.IsSuccessStatusCode || json == null || !json.Success || json.Result == null)
-            {
-                var message = json?.Errors?.FirstOrDefault()?.Message ?? response.ReasonPhrase ?? "Unable to request upload URL";
-                _logger.LogError("Failed to get Cloudflare direct upload URL: {Message}", message);
-                throw new InvalidOperationException(message);
-            }
-
-            var uploadId = json.Result.Id ?? string.Empty;
-            var uploadUrl = json.Result.UploadURL ?? string.Empty;
-
-            if (string.IsNullOrWhiteSpace(uploadId) || string.IsNullOrWhiteSpace(uploadUrl))
-            {
-                throw new InvalidOperationException("Cloudflare response missing upload data");
-            }
-
-            return new CloudflareDirectUploadResponseDto
-            {
-                UploadId = uploadId,
-                UploadUrl = uploadUrl,
-                PublicUrl = BuildPublicUrl(uploadId),
-                PublicUrlBase = BuildPublicUrlBase()
+                BucketName = _options.BucketName,
+                Key = objectKey,
+                Verb = HttpVerb.PUT,
+                Expires = expiresAt.UtcDateTime,
+                Protocol = Protocol.HTTPS,
             };
+
+            string uploadUrl;
+            try
+            {
+                uploadUrl = _s3Client.GetPreSignedURL(request);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to generate R2 presigned URL for {ObjectKey}", objectKey);
+                throw;
+            }
+
+            var publicBase = BuildPublicUrlBase();
+            var publicUrl = string.IsNullOrWhiteSpace(publicBase)
+                ? null
+                : $"{publicBase}/{_options.BucketName}/{objectKey}".Replace("//", "/");
+
+            return Task.FromResult(new CloudflareDirectUploadResponseDto
+            {
+                UploadId = objectKey,
+                UploadUrl = uploadUrl,
+                PublicUrl = publicUrl,
+                PublicUrlBase = string.IsNullOrWhiteSpace(publicBase)
+                    ? null
+                    : $"{publicBase}/{_options.BucketName}".TrimEnd('/')
+            });
         }
 
-        private void EnsureOptions()
+        private void ValidateOptions()
         {
-            if (string.IsNullOrWhiteSpace(_options.AccountId) || string.IsNullOrWhiteSpace(_options.ApiToken))
+            if (string.IsNullOrWhiteSpace(_options.AccessKeyId) || string.IsNullOrWhiteSpace(_options.SecretAccessKey))
             {
-                throw new InvalidOperationException("Cloudflare account configuration is missing");
+                throw new InvalidOperationException("Cloudflare R2 credentials are missing");
+            }
+
+            if (string.IsNullOrWhiteSpace(_options.BucketName))
+            {
+                throw new InvalidOperationException("Cloudflare R2 bucket name is not configured");
+            }
+
+            if (string.IsNullOrWhiteSpace(_options.DeliveryUrl))
+            {
+                throw new InvalidOperationException("Cloudflare delivery URL is not configured");
             }
         }
 
-        private string? BuildPublicUrl(string uploadId)
+        private string BuildObjectKey(string? fileName)
         {
-            var baseUrl = BuildPublicUrlBase();
-            if (string.IsNullOrWhiteSpace(baseUrl))
-            {
-                return null;
-            }
+            var safeName = string.IsNullOrWhiteSpace(fileName)
+                ? "avatar"
+                : Path.GetFileName(fileName);
 
-            return $"{baseUrl}/{uploadId}/public";
+            var extension = Path.GetExtension(safeName);
+            var prefix = _options.UploadPrefix?.Trim('/') ?? string.Empty;
+            var key = $"{Guid.NewGuid():N}{extension}";
+
+            return string.IsNullOrEmpty(prefix)
+                ? key
+                : $"{prefix}/{key}".Replace("//", "/");
         }
 
         private string? BuildPublicUrlBase()
         {
-            return string.IsNullOrWhiteSpace(_options.DeliveryUrl)
-                ? null
-                : _options.DeliveryUrl.TrimEnd('/');
+            if (!Uri.TryCreate(_options.DeliveryUrl, UriKind.Absolute, out var uri))
+            {
+                return null;
+            }
+
+            return uri.GetLeftPart(UriPartial.Authority).TrimEnd('/');
         }
 
-        private sealed class CloudflareDirectUploadApiResponse
+        private IAmazonS3 CreateClient()
         {
-            public bool Success { get; set; }
-            public CloudflareDirectUploadResult? Result { get; set; }
-            public List<CloudflareError>? Errors { get; set; }
-        }
+            if (string.IsNullOrWhiteSpace(_options.DeliveryUrl))
+            {
+                throw new InvalidOperationException("Cloudflare delivery URL is not configured");
+            }
 
-        private sealed class CloudflareDirectUploadResult
-        {
-            public string? Id { get; set; }
-            public string? UploadURL { get; set; }
-        }
+            var endpoint = _options.DeliveryUrl;
+            if (Uri.TryCreate(_options.DeliveryUrl, UriKind.Absolute, out var uri))
+            {
+                endpoint = uri.GetLeftPart(UriPartial.Authority);
+            }
 
-        private sealed class CloudflareError
-        {
-            public string? Message { get; set; }
+            var config = new AmazonS3Config
+            {
+                ServiceURL = endpoint,
+                ForcePathStyle = true,
+                AuthenticationRegion = "auto",
+                UseHttp = false
+            };
+
+            return new AmazonS3Client(_options.AccessKeyId, _options.SecretAccessKey, config);
         }
     }
 }

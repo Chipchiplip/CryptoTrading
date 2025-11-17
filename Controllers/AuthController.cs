@@ -151,7 +151,7 @@ public class AuthController : ControllerBase
     }
 
     /// <summary>
-    /// Request a direct upload URL for Cloudflare Images
+    /// Request a presigned R2 upload URL for avatars
     /// </summary>
     [Authorize]
     [HttpPost("avatar/upload-url")]
