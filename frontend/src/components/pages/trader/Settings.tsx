@@ -185,6 +185,8 @@ export default function Settings() {
         return;
       }
 
+      // ✅ Upload trực tiếp vào presigned URL từ backend
+      // Content-Type phải match với file type
       const uploadResponse = await fetch(uploadInfo.data.uploadUrl, {
         method: 'PUT',
         headers: {
@@ -212,9 +214,20 @@ export default function Settings() {
       });
 
       if (updateResult.ok) {
-        setAvatarUrl(updateResult.data.avatarUrl || publicUrl);
+        const newAvatarUrl = updateResult.data.avatarUrl || publicUrl;
+        setAvatarUrl(newAvatarUrl);
         setProfileSuccess('Avatar updated successfully!');
         setProfileError('');
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(
+            new CustomEvent('profile:avatar-updated', {
+              detail: {
+                avatarUrl: newAvatarUrl,
+                fullName: updateResult.data.fullName,
+              },
+            })
+          );
+        }
       } else {
         setAvatarUploadError(updateResult.error);
       }
@@ -426,10 +439,12 @@ export default function Settings() {
               Admin
             </TabsTrigger>
           )}
-          <TabsTrigger value="api" className="data-[state=active]:bg-emerald-500 data-[state=active]:text-black">
-            <Key className="w-4 h-4 mr-2" />
-            API Keys
-          </TabsTrigger>
+          {currentUserInfo?.role === 'Admin' && (
+            <TabsTrigger value="api" className="data-[state=active]:bg-emerald-500 data-[state=active]:text-black">
+              <Key className="w-4 h-4 mr-2" />
+              API Keys
+            </TabsTrigger>
+          )}
           <TabsTrigger value="activity" className="data-[state=active]:bg-emerald-500 data-[state=active]:text-black">
             <Activity className="w-4 h-4 mr-2" />
             Login Activity
@@ -826,15 +841,16 @@ export default function Settings() {
             </Card>
           </TabsContent>
         )}
-       
-        <TabsContent value="api">
-          <Card className="bg-gray-900 border-gray-800 p-6">
-            <div className="flex items-center justify-between mb-6">
-              <h2 className="text-xl">API Keys</h2>
-              <Button className="bg-emerald-500 text-black hover:bg-emerald-600">
-                Create New Key
-              </Button>
-            </div>
+
+        {currentUserInfo?.role === 'Admin' && (
+          <TabsContent value="api">
+            <Card className="bg-gray-900 border-gray-800 p-6">
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-xl">API Keys</h2>
+                <Button className="bg-emerald-500 text-black hover:bg-emerald-600">
+                  Create New Key
+                </Button>
+              </div>
             <div className="space-y-4">
               {apiKeys.map((key) => (
                 <div key={key.id} className="p-4 bg-gray-800 rounded-lg">
@@ -870,6 +886,7 @@ export default function Settings() {
             </div>
           </Card>
         </TabsContent>
+        )}
 
         <TabsContent value="activity">
           <Card className="bg-gray-900 border-gray-800 p-6">

@@ -5,6 +5,7 @@ using CryptoTrading.Models.DTOs;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using System.IO;
+using System.Text;
 
 namespace CryptoTrading.Infrastructure.Cloudflare
 {
@@ -43,10 +44,14 @@ namespace CryptoTrading.Infrastructure.Cloudflare
                 Protocol = Protocol.HTTPS,
             };
 
+            // ✅ Không set ContentType ở đây - để client tự set khi upload
+            // Điều này tránh signature mismatch error
+
             string uploadUrl;
             try
             {
                 uploadUrl = _s3Client.GetPreSignedURL(request);
+                _logger.LogInformation("Generated R2 presigned URL for {ObjectKey}: {UploadUrl}", objectKey, uploadUrl);
             }
             catch (Exception ex)
             {
@@ -54,19 +59,15 @@ namespace CryptoTrading.Infrastructure.Cloudflare
                 throw;
             }
 
-            var publicBase = BuildPublicUrlBase();
-            var publicUrl = string.IsNullOrWhiteSpace(publicBase)
-                ? null
-                : $"{publicBase}/{_options.BucketName}/{objectKey}".Replace("//", "/");
+            // ✅ Build public URL từ DeliveryUrl (pub-xxx.r2.dev)
+            var publicUrl = BuildPublicUrl(objectKey);
 
             return Task.FromResult(new CloudflareDirectUploadResponseDto
             {
                 UploadId = objectKey,
                 UploadUrl = uploadUrl,
                 PublicUrl = publicUrl,
-                PublicUrlBase = string.IsNullOrWhiteSpace(publicBase)
-                    ? null
-                    : $"{publicBase}/{_options.BucketName}".TrimEnd('/')
+                PublicUrlBase = BuildPublicUrlBase()
             });
         }
 
@@ -80,6 +81,11 @@ namespace CryptoTrading.Infrastructure.Cloudflare
             if (string.IsNullOrWhiteSpace(_options.BucketName))
             {
                 throw new InvalidOperationException("Cloudflare R2 bucket name is not configured");
+            }
+
+            if (string.IsNullOrWhiteSpace(_options.AccountId))
+            {
+                throw new InvalidOperationException("Cloudflare Account ID is not configured");
             }
 
             if (string.IsNullOrWhiteSpace(_options.DeliveryUrl))
@@ -113,26 +119,62 @@ namespace CryptoTrading.Infrastructure.Cloudflare
             return uri.GetLeftPart(UriPartial.Authority).TrimEnd('/');
         }
 
-        private IAmazonS3 CreateClient()
+        private string? BuildPublicUrl(string objectKey)
         {
-            if (string.IsNullOrWhiteSpace(_options.DeliveryUrl))
+            var baseUrl = BuildPublicUrlBase();
+            if (string.IsNullOrWhiteSpace(baseUrl))
             {
-                throw new InvalidOperationException("Cloudflare delivery URL is not configured");
+                return null;
             }
 
-            var endpoint = _options.DeliveryUrl;
-            if (Uri.TryCreate(_options.DeliveryUrl, UriKind.Absolute, out var uri))
+            // ✅ Public URL format: https://pub-xxx.r2.dev/<objectKey>
+            // KHÔNG bao gồm bucket name vì R2 public URL đã map sẵn
+            return CombineUrl(baseUrl, objectKey);
+        }
+
+        private static string CombineUrl(string? baseUrl, params string?[] segments)
+        {
+            if (string.IsNullOrWhiteSpace(baseUrl))
             {
-                endpoint = uri.GetLeftPart(UriPartial.Authority);
+                return string.Empty;
             }
+
+            var builder = new StringBuilder(baseUrl.TrimEnd('/'));
+
+            foreach (var segment in segments)
+            {
+                if (string.IsNullOrWhiteSpace(segment))
+                {
+                    continue;
+                }
+
+                builder.Append('/');
+                builder.Append(segment.Trim('/'));
+            }
+
+            return builder.ToString();
+        }
+
+        private IAmazonS3 CreateClient()
+        {
+            if (string.IsNullOrWhiteSpace(_options.AccountId))
+            {
+                throw new InvalidOperationException("Cloudflare Account ID is not configured");
+            }
+
+            // ✅ S3 API endpoint cho Cloudflare R2
+            // Format: https://<accountid>.r2.cloudflarestorage.com
+            var s3Endpoint = $"https://{_options.AccountId}.r2.cloudflarestorage.com";
 
             var config = new AmazonS3Config
             {
-                ServiceURL = endpoint,
+                ServiceURL = s3Endpoint,
                 ForcePathStyle = true,
                 AuthenticationRegion = "auto",
                 UseHttp = false
             };
+
+            _logger.LogInformation("Creating R2 S3 client with endpoint: {Endpoint}", s3Endpoint);
 
             return new AmazonS3Client(_options.AccessKeyId, _options.SecretAccessKey, config);
         }

@@ -91,10 +91,22 @@ namespace CryptoTrading.Services.Auth
                 await _unitOfWork.Users.AddAsync(user);
                 await _unitOfWork.SaveChangesAsync();
 
-                // Gửi mail xác nhận
-                await SendEmailConfirmationAsync(user.Email, emailConfirmToken);
-
                 _logger.LogInformation("User registered successfully: {Email}", registerDto.Email);
+
+                // ✅ Gửi mail xác nhận trong background để không block response
+                // Fire-and-forget pattern: không await để return response ngay lập tức
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        await SendEmailConfirmationAsync(user.Email, emailConfirmToken);
+                        _logger.LogInformation("Confirmation email sent to {Email}", user.Email);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Failed to send confirmation email to {Email}", user.Email);
+                    }
+                });
 
                 return new AuthResponseDto
                 {
