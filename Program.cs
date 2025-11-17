@@ -1,4 +1,5 @@
 using CryptoTrading.Data;
+using CryptoTrading.Infrastructure.Cloudflare;
 using CryptoTrading.Interfaces;
 using CryptoTrading.Models;
 using CryptoTrading.Repositories;
@@ -127,6 +128,8 @@ builder.Services.AddCors(options =>
 });
 
 // Infrastructure Services
+builder.Services.Configure<CloudflareImagesOptions>(builder.Configuration.GetSection("Cloudflare"));
+builder.Services.AddHttpClient<ICloudflareImagesService, CloudflareImagesService>();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
 builder.Services.AddScoped<IEmailSender, EmailService>();

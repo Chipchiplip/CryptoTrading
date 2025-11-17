@@ -14,12 +14,18 @@ public class AuthController : ControllerBase
     private readonly IAuthService _authService;
     private readonly ICurrentUser _currentUser;
     private readonly IUserService _userService;
+    private readonly ICloudflareImagesService _cloudflareImagesService;
 
-    public AuthController(IAuthService authService, ICurrentUser currentUser, IUserService userService)
+    public AuthController(
+        IAuthService authService,
+        ICurrentUser currentUser,
+        IUserService userService,
+        ICloudflareImagesService cloudflareImagesService)
     {
         _authService = authService;
         _currentUser = currentUser;
         _userService = userService;
+        _cloudflareImagesService = cloudflareImagesService;
     }
 
     /// <summary>
@@ -137,6 +143,30 @@ public class AuthController : ControllerBase
             }
 
             return Ok(profile);
+        }
+        catch (Exception ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// Request a direct upload URL for Cloudflare Images
+    /// </summary>
+    [Authorize]
+    [HttpPost("avatar/upload-url")]
+    public async Task<IActionResult> GetAvatarUploadUrl([FromBody] CloudflareDirectUploadRequestDto? request)
+    {
+        try
+        {
+            var userId = _currentUser.UserId;
+            if (userId == null)
+            {
+                return Unauthorized(new { message = "User not authenticated" });
+            }
+
+            var result = await _cloudflareImagesService.RequestDirectUploadUrlAsync(request?.FileName);
+            return Ok(result);
         }
         catch (Exception ex)
         {

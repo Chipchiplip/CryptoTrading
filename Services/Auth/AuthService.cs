@@ -1,3 +1,4 @@
+using CryptoTrading.Infrastructure.Cloudflare;
 using CryptoTrading.Interfaces;
 using CryptoTrading.Models;
 using CryptoTrading.Services;
@@ -13,6 +14,7 @@ using CryptoTrading.Models.DTOs.ExternalAuth;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
+using System.Linq;
 
 namespace CryptoTrading.Services.Auth
 {
@@ -28,6 +30,7 @@ namespace CryptoTrading.Services.Auth
         private readonly IHttpClientFactory _httpClientFactory;
         private readonly IConfiguration _configuration;
         private readonly ILevelService _levelService;
+        private readonly CloudflareImagesOptions _cloudflareOptions;
 
         public AuthService(
             IUnitOfWork unitOfWork,
@@ -39,7 +42,8 @@ namespace CryptoTrading.Services.Auth
             IHttpClientFactory httpClientFactory,
             IConfiguration configuration,
             IRoleService roleService,
-            ILevelService levelService)
+            ILevelService levelService,
+            IOptions<CloudflareImagesOptions> cloudflareOptions)
         {
             _unitOfWork = unitOfWork;
             _jwtSettings = jwtSettings.Value;
@@ -51,6 +55,7 @@ namespace CryptoTrading.Services.Auth
             _levelService = levelService;
             _httpClientFactory = httpClientFactory;
             _configuration = configuration;
+            _cloudflareOptions = cloudflareOptions.Value;
         }
 
         // ====== ĐĂNG KÝ (REGISTER) ======
@@ -675,7 +680,9 @@ namespace CryptoTrading.Services.Auth
                     CreatedAt = user.CreatedAt,
                     LastLoginAt = user.LastLoginAt,
                     PhoneNumber = user.PhoneNumber,
-                    Timezone = user.Timezone
+                    Timezone = user.Timezone,
+                    AvatarUrl = user.AvatarUrl,
+                    Bio = user.Bio
                 };
             }
             catch (Exception ex)
@@ -702,7 +709,9 @@ namespace CryptoTrading.Services.Auth
                 }
                 if (dto.AvatarUrl != null)
                 {
-                    user.AvatarUrl = dto.AvatarUrl;
+                    user.AvatarUrl = string.IsNullOrWhiteSpace(dto.AvatarUrl)
+                        ? null
+                        : ValidateAvatarUrl(dto.AvatarUrl);
                 }
                 if (dto.Bio != null)
                 {
@@ -729,6 +738,57 @@ namespace CryptoTrading.Services.Auth
                 _logger.LogError(ex, "Update profile failed for userId: {UserId}", userId);
                 throw;
             }
+        }
+
+        private string ValidateAvatarUrl(string avatarUrl)
+        {
+            if (!Uri.TryCreate(avatarUrl, UriKind.Absolute, out var avatarUri))
+            {
+                throw new Exception("Invalid avatar URL format");
+            }
+
+            var allowedOrigins = (_cloudflareOptions.AllowedAvatarDomains ?? Array.Empty<string>())
+                .Where(origin => !string.IsNullOrWhiteSpace(origin))
+                .ToList();
+
+            if (!allowedOrigins.Any() && !string.IsNullOrWhiteSpace(_cloudflareOptions.DeliveryUrl))
+            {
+                allowedOrigins.Add(_cloudflareOptions.DeliveryUrl);
+            }
+
+            var isAllowed = allowedOrigins.Any(origin =>
+            {
+                var normalized = NormalizeAllowedOrigin(origin);
+                if (avatarUrl.StartsWith(normalized, StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+
+                if (Uri.TryCreate(normalized, UriKind.Absolute, out var allowedUri))
+                {
+                    return string.Equals(allowedUri.Host, avatarUri.Host, StringComparison.OrdinalIgnoreCase);
+                }
+
+                return false;
+            });
+
+            if (!isAllowed)
+            {
+                throw new Exception("Avatar URL domain is not allowed");
+            }
+
+            return avatarUrl;
+        }
+
+        private static string NormalizeAllowedOrigin(string origin)
+        {
+            var trimmed = origin.Trim();
+            if (!trimmed.Contains("://", StringComparison.Ordinal))
+            {
+                trimmed = $"https://{trimmed.TrimStart('/')}";
+            }
+
+            return trimmed.TrimEnd('/');
         }
 
         public async Task<bool> ChangePasswordAsync(int userId, ChangePasswordDto dto)
