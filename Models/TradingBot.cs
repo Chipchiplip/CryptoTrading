@@ -10,7 +10,7 @@ namespace CryptoTrading.Models
     public class TradingBot
     {
         [Key]
-        public Guid Id { get; set; }
+        public int Id { get; set; }
 
         /// <summary>
         /// Owner user ID

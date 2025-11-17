@@ -14,7 +14,7 @@ public class BotRiskState
     public int Id { get; set; }
 
     [Required]
-    public Guid BotId { get; set; }
+    public int BotId { get; set; }
 
     /// <summary>
     /// Number of consecutive losing trades

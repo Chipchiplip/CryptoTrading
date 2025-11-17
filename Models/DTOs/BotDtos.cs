@@ -9,7 +9,7 @@ namespace CryptoTrading.Models.DTOs
     /// </summary>
     public class StrategyDefinitionDto
     {
-        public Guid Id { get; set; }
+        public int Id { get; set; }
         public string StrategyKey { get; set; } = string.Empty;
         public string Version { get; set; } = string.Empty;
         public string DisplayName { get; set; } = string.Empty;
@@ -25,49 +25,49 @@ namespace CryptoTrading.Models.DTOs
     /// <summary>
     /// Summary for bot list/dashboard
     /// </summary>
-    public class TradingBotSummaryDto
-    {
-        public Guid Id { get; set; }
-        public string Name { get; set; } = string.Empty;
-        public string Status { get; set; } = string.Empty;
-        public string BaseAsset { get; set; } = string.Empty;
-        public string QuoteAsset { get; set; } = string.Empty;
-        public StrategyInfoDto Strategy { get; set; } = new();
-        public BotRuntimeInfoDto? Runtime { get; set; }
-        public DateTime CreatedAt { get; set; }
-        public DateTime? UpdatedAt { get; set; }
-    }
+        public class TradingBotSummaryDto
+        {
+            public int Id { get; set; }
+            public string Name { get; set; } = string.Empty;
+            public string Status { get; set; } = string.Empty;
+            public string BaseAsset { get; set; } = string.Empty;
+            public string QuoteAsset { get; set; } = string.Empty;
+            public StrategyInfoDto Strategy { get; set; } = new();
+            public BotRuntimeInfoDto? Runtime { get; set; }
+            public DateTime CreatedAt { get; set; }
+            public DateTime? UpdatedAt { get; set; }
+        }
 
-    /// <summary>
-    /// Detailed bot configuration and state
-    /// </summary>
-    public class TradingBotDetailDto
-    {
-        public Guid Id { get; set; }
-        public int UserId { get; set; }
-        public string Name { get; set; } = string.Empty;
-        public string Status { get; set; } = string.Empty;
-        public string? RiskProfile { get; set; }
-        public string BaseAsset { get; set; } = string.Empty;
-        public string QuoteAsset { get; set; } = string.Empty;
-        public StrategyInfoDto Strategy { get; set; } = new();
-        public Dictionary<string, object>? Parameters { get; set; }
-        public Dictionary<string, object>? PositionSizing { get; set; }
-        public int ExecutionIntervalSeconds { get; set; }
-        public DateTime? NextRunAt { get; set; }
-        public string? LastStatusReason { get; set; }
-        public BotRuntimeInfoDto? Runtime { get; set; }
-        public DateTime CreatedAt { get; set; }
-        public DateTime? UpdatedAt { get; set; }
-    }
+        /// <summary>
+        /// Detailed bot configuration and state
+        /// </summary>
+        public class TradingBotDetailDto
+        {
+            public int Id { get; set; }
+            public int UserId { get; set; }
+            public string Name { get; set; } = string.Empty;
+            public string Status { get; set; } = string.Empty;
+            public string? RiskProfile { get; set; }
+            public string BaseAsset { get; set; } = string.Empty;
+            public string QuoteAsset { get; set; } = string.Empty;
+            public StrategyInfoDto Strategy { get; set; } = new();
+            public Dictionary<string, object>? Parameters { get; set; }
+            public Dictionary<string, object>? PositionSizing { get; set; }
+            public int ExecutionIntervalSeconds { get; set; }
+            public DateTime? NextRunAt { get; set; }
+            public string? LastStatusReason { get; set; }
+            public BotRuntimeInfoDto? Runtime { get; set; }
+            public DateTime CreatedAt { get; set; }
+            public DateTime? UpdatedAt { get; set; }
+        }
 
-    public class StrategyInfoDto
-    {
-        public Guid Id { get; set; }
-        public string Key { get; set; } = string.Empty;
-        public string Version { get; set; } = string.Empty;
-        public string DisplayName { get; set; } = string.Empty;
-    }
+        public class StrategyInfoDto
+        {
+            public Guid Id { get; set; }
+            public string Key { get; set; } = string.Empty;
+            public string Version { get; set; } = string.Empty;
+            public string DisplayName { get; set; } = string.Empty;
+        }
 
     public class BotRuntimeInfoDto
     {
@@ -165,7 +165,7 @@ namespace CryptoTrading.Models.DTOs
     public class BotLogDto
     {
         public ulong Id { get; set; }
-        public Guid BotId { get; set; }
+        public int BotId { get; set; }
         public string Level { get; set; } = string.Empty;
         public string? Category { get; set; }
         public string Message { get; set; } = string.Empty;
@@ -191,7 +191,7 @@ namespace CryptoTrading.Models.DTOs
     public class BotOrderDto
     {
         public ulong Id { get; set; }
-        public Guid BotId { get; set; }
+        public int BotId { get; set; }
         public ulong OrderId { get; set; }
         public string Intent { get; set; } = string.Empty;
         public string? SignalId { get; set; }
@@ -206,7 +206,7 @@ namespace CryptoTrading.Models.DTOs
     /// </summary>
     public class BotStatusUpdatedEvent
     {
-        public Guid BotId { get; set; }
+        public int BotId { get; set; }
         public string Status { get; set; } = string.Empty;
         public string? Reason { get; set; }
         public DateTime? NextRunAt { get; set; }
@@ -218,7 +218,7 @@ namespace CryptoTrading.Models.DTOs
     /// </summary>
     public class BotMetricUpdatedEvent
     {
-        public Guid BotId { get; set; }
+        public int BotId { get; set; }
         public decimal Pnl { get; set; }
         public int OpenOrders { get; set; }
         public decimal Exposure { get; set; }
@@ -231,7 +231,7 @@ namespace CryptoTrading.Models.DTOs
     /// </summary>
     public class BotExecutionLogAppendedEvent
     {
-        public Guid BotId { get; set; }
+        public int BotId { get; set; }
         public string Level { get; set; } = string.Empty;
         public string? Category { get; set; }
         public string Message { get; set; } = string.Empty;
@@ -244,7 +244,7 @@ namespace CryptoTrading.Models.DTOs
     /// </summary>
     public class BotOrderEvent
     {
-        public Guid BotId { get; set; }
+        public int BotId { get; set; }
         public ulong OrderId { get; set; }
         public string Intent { get; set; } = string.Empty;
         public string Status { get; set; } = string.Empty;
@@ -259,7 +259,7 @@ namespace CryptoTrading.Models.DTOs
     /// </summary>
     public class BotAlertRaisedEvent
     {
-        public Guid BotId { get; set; }
+        public int BotId { get; set; }
         public string Severity { get; set; } = string.Empty; // info, warn, error, critical
         public string Code { get; set; } = string.Empty;
         public string Message { get; set; } = string.Empty;

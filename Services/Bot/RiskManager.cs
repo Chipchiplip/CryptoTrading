@@ -126,7 +126,7 @@ namespace CryptoTrading.Services.Bot
         /// <summary>
         /// Gets bot capital limit for allocation
         /// </summary>
-        public async Task<decimal> GetBotCapitalLimitAsync(int userId, Guid botId, CancellationToken cancellationToken = default)
+        public async Task<decimal> GetBotCapitalLimitAsync(int userId, int botId, CancellationToken cancellationToken = default)
         {
             var userLimits = await GetUserCapitalLimitsAsync(userId, cancellationToken);
 
@@ -157,7 +157,7 @@ namespace CryptoTrading.Services.Bot
         /// <summary>
         /// Checks if kill switch is triggered for a bot
         /// </summary>
-        public async Task<bool> CheckKillSwitchAsync(Guid botId, int userId, CancellationToken cancellationToken = default)
+        public async Task<bool> CheckKillSwitchAsync(int botId, int userId, CancellationToken cancellationToken = default)
         {
             if (_killSwitchService == null)
             {
@@ -188,7 +188,7 @@ namespace CryptoTrading.Services.Bot
         /// <summary>
         /// Checks cooldown for order placement
         /// </summary>
-        public async Task<bool> CheckCooldownAsync(Guid botId, TimeSpan minCooldown, CancellationToken cancellationToken = default)
+        public async Task<bool> CheckCooldownAsync(int botId, TimeSpan minCooldown, CancellationToken cancellationToken = default)
         {
             try
             {
@@ -223,7 +223,7 @@ namespace CryptoTrading.Services.Bot
         /// <summary>
         /// Checks rate limit for order placement
         /// </summary>
-        public async Task<bool> CheckRateLimitAsync(Guid botId, int maxOrdersPerCycle, CancellationToken cancellationToken = default)
+        public async Task<bool> CheckRateLimitAsync(int botId, int maxOrdersPerCycle, CancellationToken cancellationToken = default)
         {
             try
             {
@@ -257,7 +257,7 @@ namespace CryptoTrading.Services.Bot
         /// <summary>
         /// Resets order count for a new execution cycle
         /// </summary>
-        public async Task ResetOrderCountForNewCycleAsync(Guid botId, CancellationToken cancellationToken = default)
+        public async Task ResetOrderCountForNewCycleAsync(int botId, CancellationToken cancellationToken = default)
         {
             try
             {
@@ -296,7 +296,7 @@ namespace CryptoTrading.Services.Bot
         /// <summary>
         /// Records that an order was placed (updates timestamp and counter)
         /// </summary>
-        public async Task RecordOrderPlacedAsync(Guid botId, CancellationToken cancellationToken = default)
+        public async Task RecordOrderPlacedAsync(int botId, CancellationToken cancellationToken = default)
         {
             try
             {
@@ -337,9 +337,9 @@ namespace CryptoTrading.Services.Bot
         }
 
         /// <summary>
-        /// Records a trade result for kill switch monitoring (Guid wrapper)
+        /// Records a trade result for kill switch monitoring
         /// </summary>
-        public async Task RecordTradeResultAsync(Guid botId, decimal pnl, CancellationToken cancellationToken = default)
+        public async Task RecordTradeResultAsync(int botId, decimal pnl, CancellationToken cancellationToken = default)
         {
             if (_killSwitchService == null)
             {

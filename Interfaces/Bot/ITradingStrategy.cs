@@ -64,7 +64,7 @@ namespace CryptoTrading.Interfaces.Bot
     /// </summary>
     public class BotContext
     {
-        public Guid BotId { get; set; }
+        public int BotId { get; set; }
         public int UserId { get; set; }
         public string BaseAsset { get; set; } = string.Empty;
         public string QuoteAsset { get; set; } = string.Empty;

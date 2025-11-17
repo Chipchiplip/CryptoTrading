@@ -13,7 +13,7 @@ namespace CryptoTrading.Models
         public Guid Id { get; set; }
 
         [Required]
-        public Guid TradingBotId { get; set; }
+        public int TradingBotId { get; set; }
 
         [ForeignKey(nameof(TradingBotId))]
         public TradingBot? TradingBot { get; set; }

@@ -276,7 +276,7 @@ namespace CryptoTrading.Services.Bot
             }
         }
 
-        private async Task<object?> LoadStateObjectAsync(ApplicationDbContext context, Guid botId, Type type, CancellationToken cancellationToken)
+        private async Task<object?> LoadStateObjectAsync(ApplicationDbContext context, int botId, Type type, CancellationToken cancellationToken)
         {
             var snapshot = await context.TradingBotRuntimeSnapshots
                 .Where(s => s.TradingBotId == botId)
@@ -296,7 +296,7 @@ namespace CryptoTrading.Services.Bot
             }
         }
 
-        private async Task SaveStateObjectAsync(ApplicationDbContext context, Guid botId, object state, CancellationToken cancellationToken)
+        private async Task SaveStateObjectAsync(ApplicationDbContext context, int botId, object state, CancellationToken cancellationToken)
         {
             var stateJson = JsonSerializer.Serialize(state);
 
@@ -315,7 +315,7 @@ namespace CryptoTrading.Services.Bot
 
     public class BotExecutionJob
     {
-        public Guid BotId { get; set; }
+        public int BotId { get; set; }
         public int UserId { get; set; }
         public string StrategyKey { get; set; } = string.Empty;
         public DateTime ScheduledAt { get; set; }

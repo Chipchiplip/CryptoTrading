@@ -12,13 +12,13 @@ namespace CryptoTrading.Services.Bot
     public class BotLogger : IBotLogger
     {
         private readonly ApplicationDbContext _context;
-        private readonly Guid _botId;
+        private readonly int _botId;
         private readonly ILogger<BotLogger> _logger;
         private readonly List<TradingBotLog> _pendingLogs = new();
 
         public BotLogger(
             ApplicationDbContext context,
-            Guid botId,
+            int botId,
             ILogger<BotLogger> logger)
         {
             _context = context;

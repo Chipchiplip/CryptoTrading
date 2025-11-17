@@ -109,7 +109,6 @@ namespace CryptoTrading.Tests
 
             var bot = new TradingBot
             {
-                Id = Guid.NewGuid(),
                 UserId = 1,
                 StrategyDefinitionId = strategy.Id,
                 Name = "Test Bot",
@@ -142,7 +141,6 @@ namespace CryptoTrading.Tests
         public async Task CheckKillSwitchAsync_ConsecutiveLosses_ShouldActivate()
         {
             // Arrange
-            var botId = Guid.NewGuid();
             var strategy = new BotStrategyDefinition
             {
                 Id = Guid.NewGuid(),
@@ -157,7 +155,6 @@ namespace CryptoTrading.Tests
 
             var bot = new TradingBot
             {
-                Id = botId,
                 UserId = 1,
                 StrategyDefinitionId = strategy.Id,
                 Name = "Test Bot",
@@ -168,6 +165,9 @@ namespace CryptoTrading.Tests
             };
 
             _context.TradingBots.Add(bot);
+            await _context.SaveChangesAsync();
+
+            var botId = bot.Id;
 
             // Add consecutive losing orders (simplified - in production would track PnL from trades)
             for (int i = 0; i < 4; i++)
@@ -201,7 +201,7 @@ namespace CryptoTrading.Tests
             await _context.SaveChangesAsync();
 
             // Act
-            var killSwitchActive = await _riskManager.CheckKillSwitchAsync(1, botId);
+            var killSwitchActive = await _riskManager.CheckKillSwitchAsync(botId, 1);
 
             // Assert
             // Note: Current implementation uses placeholder PnL calculation
@@ -229,7 +229,6 @@ namespace CryptoTrading.Tests
 
             var bot = new TradingBot
             {
-                Id = Guid.NewGuid(),
                 UserId = 1,
                 StrategyDefinitionId = strategy.Id,
                 Name = "Test Bot",

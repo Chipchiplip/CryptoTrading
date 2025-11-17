@@ -19,7 +19,7 @@ namespace CryptoTrading.Models
         [Required]
         public int UserId { get; set; }
 
-        public Guid? BotId { get; set; }
+        public int? BotId { get; set; }
 
         [Required]
         [MaxLength(50)]
@@ -122,7 +122,7 @@ namespace CryptoTrading.Models
 
         public int? UserId { get; set; } // NULL for global defaults
 
-        public Guid? BotId { get; set; } // NULL for user defaults
+        public int? BotId { get; set; } // NULL for user defaults
 
         [Column(TypeName = "decimal(30,10)")]
         public decimal MaxAllowedCapital { get; set; } = 100000m;
