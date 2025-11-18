@@ -1170,55 +1170,145 @@ namespace CryptoTrading.Services.Auth
 
             var confirmUrl = $"{baseUrl}/confirm-email?email={Uri.EscapeDataString(email)}&token={Uri.EscapeDataString(token)}";
 
-            var subject = "Confirm Your Email - Crypto Trading";
+            var subject = "Confirm Your Email - CryptoTrade";
             var body = $@"
-                <html>
-                <body style='font-family: Arial, sans-serif; background-color: #f5f7fa; padding: 20px;'>
-                    <div style='max-width: 600px; margin: 0 auto; background: white; border-radius: 15px; padding: 40px; box-shadow: 0 10px 30px rgba(0,0,0,0.1);'>
-                        <div style='text-align: center; margin-bottom: 30px;'>
-                            <h1 style='color: #667eea; margin: 0; font-size: 28px;'>🔐 Crypto Trading</h1>
-                        </div>
-                        
-                        <h2 style='color: #333; margin-bottom: 20px;'>Welcome to Crypto Trading!</h2>
-                        <p style='color: #666; font-size: 16px; line-height: 1.6;'>
-                            Thank you for registering. Please confirm your email address by clicking the button below:
-                        </p>
-                        
-                        <div style='text-align: center; margin: 40px 0;'>
-                            <a href='{confirmUrl}' 
-                               style='background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                                      color: white;
-                                      padding: 16px 50px;
-                                      text-decoration: none;
-                                      border-radius: 8px;
-                                      font-weight: bold;
-                                      font-size: 16px;
-                                      display: inline-block;
-                                      box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);'>
-                                ✓ Confirm Email Address
-                            </a>
-                        </div>
-                        
-                        <div style='background: #f8f9fa; padding: 20px; border-radius: 8px; margin: 30px 0;'>
-                            <p style='color: #666; font-size: 14px; margin: 0 0 10px 0;'>
-                                <strong>Or copy this link:</strong>
+<!DOCTYPE html>
+<html lang='en'>
+<head>
+    <meta charset='UTF-8'>
+    <meta name='viewport' content='width=device-width, initial-scale=1.0'>
+    <title>Confirm Your Email</title>
+</head>
+<body style='margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, ""Segoe UI"", Roboto, ""Helvetica Neue"", Arial, sans-serif; background: #000000;'>
+    <table role='presentation' width='100%' cellpadding='0' cellspacing='0' border='0' style='background: #000000; padding: 40px 16px;'>
+        <tr>
+            <td align='center'>
+                <table role='presentation' width='100%' cellpadding='0' cellspacing='0' border='0' style='max-width: 600px;'>
+
+                    <!-- Logo -->
+                    <tr>
+                        <td align='center' style='padding-bottom: 40px;'>
+                            <table cellpadding='0' cellspacing='0' border='0'>
+                                <tr>
+                                    <td style='background: linear-gradient(135deg, #10b981 0%, #059669 100%); width: 56px; height: 56px; border-radius: 12px; text-align: center; vertical-align: middle; font-size: 28px;'>
+                                        🛡️
+                                    </td>
+                                    <td style='padding-left: 12px; font-size: 24px; font-weight: 700; color: #10b981; vertical-align: middle;'>
+                                        CryptoTrade
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+
+                    <!-- Main Content Card -->
+                    <tr>
+                        <td style='background: #111111; border: 1px solid #1f2937; border-radius: 16px; padding: 48px 32px;'>
+
+                            <!-- Icon Circle -->
+                            <table role='presentation' width='100%' cellpadding='0' cellspacing='0' border='0'>
+                                <tr>
+                                    <td align='center' style='padding-bottom: 32px;'>
+                                        <div style='width: 100px; height: 100px; background: linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(5, 150, 105, 0.1) 100%); border: 3px solid rgba(16, 185, 129, 0.3); border-radius: 50%; display: inline-block; text-align: center; line-height: 94px; font-size: 48px;'>
+                                            ✉️
+                                        </div>
+                                    </td>
+                                </tr>
+                            </table>
+
+                            <!-- Title -->
+                            <h1 style='margin: 0 0 16px 0; color: #ffffff; font-size: 28px; font-weight: 700; text-align: center; line-height: 1.3;'>
+                                Welcome to CryptoTrade!
+                            </h1>
+
+                            <!-- Description -->
+                            <p style='margin: 0 0 32px 0; color: #9ca3af; font-size: 16px; line-height: 1.6; text-align: center;'>
+                                Thank you for registering. We're excited to have you on board!<br>
+                                Please confirm your email address to get started.
                             </p>
-                            <code style='background: white; padding: 10px; border-radius: 5px; display: block; word-break: break-all; color: #667eea; font-size: 12px;'>
-                                {confirmUrl}
-                            </code>
-                        </div>
-                        
-                        <div style='border-top: 2px solid #f0f0f0; padding-top: 20px; margin-top: 30px;'>
-                            <p style='color: #999; font-size: 13px; margin: 0;'>
-                                ⏰ This link will expire in <strong>24 hours</strong>.
-                            </p>
-                            <p style='color: #999; font-size: 13px; margin: 10px 0 0 0;'>
+
+                            <!-- CTA Button -->
+                            <table role='presentation' width='100%' cellpadding='0' cellspacing='0' border='0'>
+                                <tr>
+                                    <td align='center' style='padding: 0 0 32px 0;'>
+                                        <a href='{confirmUrl}' style='display: inline-block; background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: #000000; padding: 18px 56px; text-decoration: none; border-radius: 12px; font-weight: 700; font-size: 16px; box-shadow: 0 8px 24px rgba(16, 185, 129, 0.35); transition: transform 0.2s;'>
+                                            ✓ Confirm Email Address
+                                        </a>
+                                    </td>
+                                </tr>
+                            </table>
+
+                            <!-- Alternative Link Box -->
+                            <table role='presentation' width='100%' cellpadding='0' cellspacing='0' border='0'>
+                                <tr>
+                                    <td style='background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.2); border-radius: 12px; padding: 24px;'>
+                                        <p style='margin: 0 0 12px 0; color: #10b981; font-size: 14px; font-weight: 600; text-align: center;'>
+                                            Or copy and paste this link:
+                                        </p>
+                                        <div style='background: #1f2937; padding: 14px; border-radius: 8px; border: 1px solid #374151;'>
+                                            <p style='margin: 0; color: #10b981; font-size: 12px; font-family: monospace; word-break: break-all; text-align: center; line-height: 1.6;'>
+                                                {confirmUrl}
+                                            </p>
+                                        </div>
+                                    </td>
+                                </tr>
+                            </table>
+
+                            <!-- Info Divider -->
+                            <table role='presentation' width='100%' cellpadding='0' cellspacing='0' border='0' style='margin-top: 40px;'>
+                                <tr>
+                                    <td style='border-top: 1px solid #1f2937; padding-top: 24px;'>
+                                        <table role='presentation' width='100%' cellpadding='0' cellspacing='0' border='0'>
+                                            <tr>
+                                                <td style='padding: 8px 0;'>
+                                                    <table cellpadding='0' cellspacing='0' border='0'>
+                                                        <tr>
+                                                            <td style='font-size: 20px; padding-right: 8px; vertical-align: middle;'>⏰</td>
+                                                            <td style='color: #6b7280; font-size: 13px; line-height: 1.5; vertical-align: middle;'>
+                                                                This link will expire in <strong style='color: #9ca3af;'>24 hours</strong>
+                                                            </td>
+                                                        </tr>
+                                                    </table>
+                                                </td>
+                                            </tr>
+                                            <tr>
+                                                <td style='padding: 8px 0;'>
+                                                    <table cellpadding='0' cellspacing='0' border='0'>
+                                                        <tr>
+                                                            <td style='font-size: 20px; padding-right: 8px; vertical-align: middle;'>🔒</td>
+                                                            <td style='color: #6b7280; font-size: 13px; line-height: 1.5; vertical-align: middle;'>
+                                                                For your security, don't share this link with anyone
+                                                            </td>
+                                                        </tr>
+                                                    </table>
+                                                </td>
+                                            </tr>
+                                        </table>
+                                    </td>
+                                </tr>
+                            </table>
+
+                        </td>
+                    </tr>
+
+                    <!-- Footer -->
+                    <tr>
+                        <td style='padding-top: 32px; text-align: center;'>
+                            <p style='margin: 0 0 8px 0; color: #6b7280; font-size: 13px; line-height: 1.5;'>
                                 If you didn't create this account, please ignore this email.
                             </p>
-                        </div>
-                    </div>
-                </body>
-                </html>
+                            <p style='margin: 0; color: #4b5563; font-size: 12px;'>
+                                © 2025 CryptoTrade. All rights reserved.
+                            </p>
+                        </td>
+                    </tr>
+
+                </table>
+            </td>
+        </tr>
+    </table>
+</body>
+</html>
             ";
 
             await _emailSender.SendEmailAsync(email, subject, body, true);
@@ -1234,55 +1324,199 @@ namespace CryptoTrading.Services.Auth
 
             var resetUrl = $"{baseUrl}/reset-password?email={Uri.EscapeDataString(email)}&token={Uri.EscapeDataString(token)}";
 
-            var subject = "Reset Your Password - Crypto Trading";
+            var subject = "Reset Your Password - CryptoTrade";
             var body = $@"
-                <html>
-                <body style='font-family: Arial, sans-serif; background-color: #f5f7fa; padding: 20px;'>
-                    <div style='max-width: 600px; margin: 0 auto; background: white; border-radius: 15px; padding: 40px; box-shadow: 0 10px 30px rgba(0,0,0,0.1);'>
-                        <div style='text-align: center; margin-bottom: 30px;'>
-                            <h1 style='color: #dc3545; margin: 0; font-size: 28px;'>🔒 Crypto Trading</h1>
-                        </div>
-                        
-                        <h2 style='color: #333; margin-bottom: 20px;'>Password Reset Request</h2>
-                        <p style='color: #666; font-size: 16px; line-height: 1.6;'>
-                            We received a request to reset your password. Click the button below to proceed:
-                        </p>
-                        
-                        <div style='text-align: center; margin: 40px 0;'>
-                            <a href='{resetUrl}' 
-                               style='background: #dc3545;
-                                      color: white;
-                                      padding: 16px 50px;
-                                      text-decoration: none;
-                                      border-radius: 8px;
-                                      font-weight: bold;
-                                      font-size: 16px;
-                                      display: inline-block;
-                                      box-shadow: 0 5px 15px rgba(220, 53, 69, 0.4);'>
-                                🔑 Reset Password
-                            </a>
-                        </div>
-                        
-                        <div style='background: #f8f9fa; padding: 20px; border-radius: 8px; margin: 30px 0;'>
-                            <p style='color: #666; font-size: 14px; margin: 0 0 10px 0;'>
-                                <strong>Or copy this link:</strong>
+<!DOCTYPE html>
+<html lang='en'>
+<head>
+    <meta charset='UTF-8'>
+    <meta name='viewport' content='width=device-width, initial-scale=1.0'>
+    <title>Reset Your Password</title>
+</head>
+<body style='margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, ""Segoe UI"", Roboto, ""Helvetica Neue"", Arial, sans-serif; background: #000000;'>
+    <table role='presentation' width='100%' cellpadding='0' cellspacing='0' border='0' style='background: #000000; padding: 40px 16px;'>
+        <tr>
+            <td align='center'>
+                <table role='presentation' width='100%' cellpadding='0' cellspacing='0' border='0' style='max-width: 600px;'>
+
+                    <!-- Logo -->
+                    <tr>
+                        <td align='center' style='padding-bottom: 40px;'>
+                            <table cellpadding='0' cellspacing='0' border='0'>
+                                <tr>
+                                    <td style='background: linear-gradient(135deg, #10b981 0%, #059669 100%); width: 56px; height: 56px; border-radius: 12px; text-align: center; vertical-align: middle; font-size: 28px;'>
+                                        🔐
+                                    </td>
+                                    <td style='padding-left: 12px; font-size: 24px; font-weight: 700; color: #10b981; vertical-align: middle;'>
+                                        CryptoTrade
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+
+                    <!-- Main Content Card -->
+                    <tr>
+                        <td style='background: #111111; border: 1px solid #1f2937; border-radius: 16px; padding: 48px 32px;'>
+
+                            <!-- Icon Circle -->
+                            <table role='presentation' width='100%' cellpadding='0' cellspacing='0' border='0'>
+                                <tr>
+                                    <td align='center' style='padding-bottom: 32px;'>
+                                        <div style='width: 100px; height: 100px; background: linear-gradient(135deg, rgba(239, 68, 68, 0.1) 0%, rgba(220, 38, 38, 0.1) 100%); border: 3px solid rgba(239, 68, 68, 0.35); border-radius: 50%; display: inline-block; text-align: center; line-height: 94px; font-size: 48px;'>
+                                            🔑
+                                        </div>
+                                    </td>
+                                </tr>
+                            </table>
+
+                            <!-- Title -->
+                            <h1 style='margin: 0 0 16px 0; color: #ffffff; font-size: 28px; font-weight: 700; text-align: center; line-height: 1.3;'>
+                                Reset Your Password
+                            </h1>
+
+                            <!-- Description -->
+                            <p style='margin: 0 0 28px 0; color: #9ca3af; font-size: 16px; line-height: 1.6; text-align: center;'>
+                                We received a request to reset your password.<br>
+                                Click the button below to create a new password for your account.
                             </p>
-                            <code style='background: white; padding: 10px; border-radius: 5px; display: block; word-break: break-all; color: #dc3545; font-size: 12px;'>
-                                {resetUrl}
-                            </code>
-                        </div>
-                        
-                        <div style='border-top: 2px solid #f0f0f0; padding-top: 20px; margin-top: 30px;'>
-                            <p style='color: #999; font-size: 13px; margin: 0;'>
-                                ⏰ This link will expire in <strong>1 hour</strong>.
+
+                            <!-- Warning Alert -->
+                            <table role='presentation' width='100%' cellpadding='0' cellspacing='0' border='0' style='margin-bottom: 32px;'>
+                                <tr>
+                                    <td style='background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.25); border-left: 4px solid #ef4444; border-radius: 12px; padding: 20px;'>
+                                        <table cellpadding='0' cellspacing='0' border='0'>
+                                            <tr>
+                                                <td style='font-size: 20px; padding-right: 12px; vertical-align: top;'>⚠️</td>
+                                                <td>
+                                                    <p style='margin: 0 0 8px 0; color: #ef4444; font-size: 14px; font-weight: 700;'>
+                                                        Security Notice
+                                                    </p>
+                                                    <p style='margin: 0; color: #9ca3af; font-size: 13px; line-height: 1.6;'>
+                                                        If you didn't request this password reset, please <strong style='color: #ef4444;'>secure your account immediately</strong> and ignore this email.
+                                                    </p>
+                                                </td>
+                                            </tr>
+                                        </table>
+                                    </td>
+                                </tr>
+                            </table>
+
+                            <!-- CTA Button -->
+                            <table role='presentation' width='100%' cellpadding='0' cellspacing='0' border='0'>
+                                <tr>
+                                    <td align='center' style='padding: 0 0 32px 0;'>
+                                        <a href='{resetUrl}' style='display: inline-block; background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: #000000; padding: 18px 56px; text-decoration: none; border-radius: 12px; font-weight: 700; font-size: 16px; box-shadow: 0 8px 24px rgba(16, 185, 129, 0.35);'>
+                                            🔑 Reset Password
+                                        </a>
+                                    </td>
+                                </tr>
+                            </table>
+
+                            <!-- Alternative Link Box -->
+                            <table role='presentation' width='100%' cellpadding='0' cellspacing='0' border='0'>
+                                <tr>
+                                    <td style='background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.2); border-radius: 12px; padding: 24px;'>
+                                        <p style='margin: 0 0 12px 0; color: #10b981; font-size: 14px; font-weight: 600; text-align: center;'>
+                                            Or copy and paste this link:
+                                        </p>
+                                        <div style='background: #1f2937; padding: 14px; border-radius: 8px; border: 1px solid #374151;'>
+                                            <p style='margin: 0; color: #10b981; font-size: 12px; font-family: monospace; word-break: break-all; text-align: center; line-height: 1.6;'>
+                                                {resetUrl}
+                                            </p>
+                                        </div>
+                                    </td>
+                                </tr>
+                            </table>
+
+                            <!-- Info Section -->
+                            <table role='presentation' width='100%' cellpadding='0' cellspacing='0' border='0' style='margin-top: 40px;'>
+                                <tr>
+                                    <td style='border-top: 1px solid #1f2937; padding-top: 24px;'>
+                                        <table role='presentation' width='100%' cellpadding='0' cellspacing='0' border='0'>
+                                            <tr>
+                                                <td style='padding: 8px 0;'>
+                                                    <table cellpadding='0' cellspacing='0' border='0'>
+                                                        <tr>
+                                                            <td style='font-size: 20px; padding-right: 8px; vertical-align: middle;'>⏰</td>
+                                                            <td style='color: #6b7280; font-size: 13px; line-height: 1.5; vertical-align: middle;'>
+                                                                This link will expire in <strong style='color: #ef4444;'>1 hour</strong>
+                                                            </td>
+                                                        </tr>
+                                                    </table>
+                                                </td>
+                                            </tr>
+                                            <tr>
+                                                <td style='padding: 8px 0;'>
+                                                    <table cellpadding='0' cellspacing='0' border='0'>
+                                                        <tr>
+                                                            <td style='font-size: 20px; padding-right: 8px; vertical-align: middle;'>🔒</td>
+                                                            <td style='color: #6b7280; font-size: 13px; line-height: 1.5; vertical-align: middle;'>
+                                                                For security, this link can only be used once
+                                                            </td>
+                                                        </tr>
+                                                    </table>
+                                                </td>
+                                            </tr>
+                                            <tr>
+                                                <td style='padding: 8px 0;'>
+                                                    <table cellpadding='0' cellspacing='0' border='0'>
+                                                        <tr>
+                                                            <td style='font-size: 20px; padding-right: 8px; vertical-align: middle;'>💡</td>
+                                                            <td style='color: #6b7280; font-size: 13px; line-height: 1.5; vertical-align: middle;'>
+                                                                After resetting, you'll need to log in with your new password
+                                                            </td>
+                                                        </tr>
+                                                    </table>
+                                                </td>
+                                            </tr>
+                                        </table>
+                                    </td>
+                                </tr>
+                            </table>
+
+                        </td>
+                    </tr>
+
+                    <!-- Support Card -->
+                    <tr>
+                        <td style='padding-top: 24px;'>
+                            <table role='presentation' width='100%' cellpadding='0' cellspacing='0' border='0'>
+                                <tr>
+                                    <td style='background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.2); border-radius: 12px; padding: 24px; text-align: center;'>
+                                        <p style='margin: 0 0 8px 0; color: #10b981; font-size: 14px; font-weight: 700;'>
+                                            Need Help?
+                                        </p>
+                                        <p style='margin: 0 0 12px 0; color: #9ca3af; font-size: 13px; line-height: 1.5;'>
+                                            If you're having trouble, contact our support team
+                                        </p>
+                                        <a href='mailto:support@cryptotrade.com' style='color: #10b981; text-decoration: none; font-weight: 600; font-size: 14px;'>
+                                            support@cryptotrade.com
+                                        </a>
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+
+                    <!-- Footer -->
+                    <tr>
+                        <td style='padding-top: 32px; text-align: center;'>
+                            <p style='margin: 0 0 8px 0; color: #6b7280; font-size: 13px; line-height: 1.5;'>
+                                This is an automated security email from CryptoTrade.
                             </p>
-                            <p style='color: #999; font-size: 13px; margin: 10px 0 0 0;'>
-                                ⚠️ If you didn't request this, please <strong>secure your account immediately</strong>.
+                            <p style='margin: 0; color: #4b5563; font-size: 12px;'>
+                                © 2025 CryptoTrade. All rights reserved.
                             </p>
-                        </div>
-                    </div>
-                </body>
-                </html>
+                        </td>
+                    </tr>
+
+                </table>
+            </td>
+        </tr>
+    </table>
+</body>
+</html>
             ";
 
             await _emailSender.SendEmailAsync(email, subject, body, true);
