@@ -25,6 +25,9 @@ namespace CryptoTrading.Models
         public string Currency { get; set; } = "VND";
 
         [MaxLength(20)]
+        public string Provider { get; set; } = "VNPAY";
+
+        [MaxLength(20)]
         public string Status { get; set; } = "PENDING"; // PENDING, SUCCESS, FAILED, CANCELLED
 
         [MaxLength(50)]
@@ -35,6 +38,15 @@ namespace CryptoTrading.Models
 
         [MaxLength(255)]
         public string? VnpayMessage { get; set; }
+
+        [MaxLength(128)]
+        public string? StripeSessionId { get; set; }
+
+        [MaxLength(128)]
+        public string? StripePaymentIntentId { get; set; }
+
+        [MaxLength(64)]
+        public string? PaymentMethod { get; set; }
 
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
         public DateTime? CompletedAt { get; set; }

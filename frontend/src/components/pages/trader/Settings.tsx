@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef, ChangeEvent } from 'react';
 import { User, Shield, Key, Activity, Camera, Copy, CheckCircle2, QrCode, AlertTriangle, Loader2, Users } from 'lucide-react';
 import { Card } from '../../ui/card';
 import { Button } from '../../ui/button';
@@ -47,11 +47,15 @@ export default function Settings() {
 
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
+  const [avatarUrl, setAvatarUrl] = useState<string>('');
   const [phoneNumber, setPhoneNumber] = useState('');
   const [timezone, setTimezone] = useState('');
   const [profileLoading, setProfileLoading] = useState(false);
   const [profileSuccess, setProfileSuccess] = useState('');
   const [profileError, setProfileError] = useState('');
+  const [avatarUploadError, setAvatarUploadError] = useState('');
+  const [avatarUploading, setAvatarUploading] = useState(false);
+  const avatarInputRef = useRef<HTMLInputElement | null>(null);
 
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -93,6 +97,7 @@ export default function Settings() {
           setEmail(result.data.email || '');
           setPhoneNumber(result.data.phoneNumber || '');
           setTimezone(result.data.timezone || '');
+          setAvatarUrl(result.data.avatarUrl || '');
         } else {
           setProfileError(result.error);
         }
@@ -109,7 +114,8 @@ export default function Settings() {
       fullName,
       email,
       phoneNumber,
-      timezone
+      timezone,
+      avatarUrl: avatarUrl || undefined,
     });
     if (result.ok) {
     setProfileSuccess('Profile updated successfully!');
@@ -148,6 +154,91 @@ export default function Settings() {
       setPasswordError(result.error);
     }
     setPasswordLoading(false);
+  };
+
+  const handleAvatarButtonClick = () => {
+    avatarInputRef.current?.click();
+  };
+
+  const handleAvatarFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setAvatarUploadError('');
+    setProfileSuccess('');
+
+    const maxSize = 2 * 1024 * 1024; // 2MB
+    if (!file.type.startsWith('image/')) {
+      setAvatarUploadError('Please select a valid image file.');
+      event.target.value = '';
+      return;
+    }
+    if (file.size > maxSize) {
+      setAvatarUploadError('Image must be smaller than 2MB.');
+      event.target.value = '';
+      return;
+    }
+
+    setAvatarUploading(true);
+    try {
+      const uploadInfo = await AuthApi.requestAvatarUploadUrl(file.name);
+      if (!uploadInfo.ok) {
+        setAvatarUploadError(uploadInfo.error);
+        return;
+      }
+
+      // ✅ Upload trực tiếp vào presigned URL từ backend
+      // Content-Type phải match với file type
+      const uploadResponse = await fetch(uploadInfo.data.uploadUrl, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': file.type || 'application/octet-stream',
+        },
+        body: file,
+      });
+
+      if (!uploadResponse.ok) {
+        throw new Error('Failed to upload image to Cloudflare R2.');
+      }
+
+      const publicUrl =
+        uploadInfo.data.publicUrl ||
+        (uploadInfo.data.publicUrlBase
+          ? `${uploadInfo.data.publicUrlBase}/${uploadInfo.data.uploadId}`
+          : undefined);
+
+      if (!publicUrl) {
+        throw new Error('Unable to determine public image URL.');
+      }
+
+      const updateResult = await AuthApi.updateProfile({
+        avatarUrl: publicUrl,
+      });
+
+      if (updateResult.ok) {
+        const newAvatarUrl = updateResult.data.avatarUrl || publicUrl;
+        setAvatarUrl(newAvatarUrl);
+        setProfileSuccess('Avatar updated successfully!');
+        setProfileError('');
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(
+            new CustomEvent('profile:avatar-updated', {
+              detail: {
+                avatarUrl: newAvatarUrl,
+                fullName: updateResult.data.fullName,
+              },
+            })
+          );
+        }
+      } else {
+        setAvatarUploadError(updateResult.error);
+      }
+    } catch (error: any) {
+      setAvatarUploadError(error?.message || 'Failed to upload avatar.');
+    } finally {
+      setAvatarUploading(false);
+      event.target.value = '';
+    }
   };
 
   const handleEnable2FA = async () => {
@@ -384,10 +475,12 @@ export default function Settings() {
               Admin
             </TabsTrigger>
           )}
-          <TabsTrigger value="api" className="data-[state=active]:bg-emerald-500 data-[state=active]:text-black">
-            <Key className="w-4 h-4 mr-2" />
-            API Keys
-          </TabsTrigger>
+          {currentUserInfo?.role === 'Admin' && (
+            <TabsTrigger value="api" className="data-[state=active]:bg-emerald-500 data-[state=active]:text-black">
+              <Key className="w-4 h-4 mr-2" />
+              API Keys
+            </TabsTrigger>
+          )}
           <TabsTrigger value="activity" className="data-[state=active]:bg-emerald-500 data-[state=active]:text-black">
             <Activity className="w-4 h-4 mr-2" />
             Login Activity
@@ -412,15 +505,34 @@ export default function Settings() {
             <div className="space-y-6">
               <div className="flex items-center gap-6">
                 <Avatar className="w-24 h-24">
-                  <AvatarImage src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${email || 'default'}`} />
+                  <AvatarImage src={avatarUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${email || 'default'}`} />
                   <AvatarFallback>{fullName ? fullName.substring(0, 2).toUpperCase() : 'TR'}</AvatarFallback>
                 </Avatar>
                 <div>
-                  <Button variant="outline" className="border-gray-700 mb-2">
-                    <Camera className="w-4 h-4 mr-2" />
-                    Change Photo
+                  <input
+                    ref={avatarInputRef}
+                    type="file"
+                    accept="image/png,image/jpeg,image/gif"
+                    className="hidden"
+                    onChange={handleAvatarFileChange}
+                  />
+                  <Button
+                    variant="outline"
+                    className="border-gray-700 mb-2"
+                    onClick={handleAvatarButtonClick}
+                    disabled={avatarUploading}
+                  >
+                    {avatarUploading ? (
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    ) : (
+                      <Camera className="w-4 h-4 mr-2" />
+                    )}
+                    {avatarUploading ? 'Uploading...' : 'Change Photo'}
                   </Button>
                   <p className="text-sm text-gray-400">JPG, PNG or GIF (max. 2MB)</p>
+                  {avatarUploadError && (
+                    <p className="text-sm text-red-500 mt-2">{avatarUploadError}</p>
+                  )}
                 </div>
               </div>
 
@@ -759,15 +871,16 @@ export default function Settings() {
             </Card>
           </TabsContent>
         )}
-       
-        <TabsContent value="api">
-          <Card className="bg-gray-900 border-gray-800 p-6">
-            <div className="flex items-center justify-between mb-6">
-              <h2 className="text-xl">API Keys</h2>
-              <Button className="bg-emerald-500 text-black hover:bg-emerald-600">
-                Create New Key
-              </Button>
-            </div>
+
+        {currentUserInfo?.role === 'Admin' && (
+          <TabsContent value="api">
+            <Card className="bg-gray-900 border-gray-800 p-6">
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-xl">API Keys</h2>
+                <Button className="bg-emerald-500 text-black hover:bg-emerald-600">
+                  Create New Key
+                </Button>
+              </div>
             <div className="space-y-4">
               {apiKeys.map((key) => (
                 <div key={key.id} className="p-4 bg-gray-800 rounded-lg">
@@ -803,6 +916,7 @@ export default function Settings() {
             </div>
           </Card>
         </TabsContent>
+        )}
 
         <TabsContent value="activity">
           <Card className="bg-gray-900 border-gray-800 p-6">

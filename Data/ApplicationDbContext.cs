@@ -272,19 +272,28 @@ namespace CryptoTrading.Data
                       .HasMaxLength(50);
                 entity.Property(e => e.Amount)
                       .HasColumnType("decimal(18,2)");
-                entity.Property(e => e.Currency)
-                      .IsRequired()
-                      .HasMaxLength(20)
-                      .HasDefaultValue("VND");
-                entity.Property(e => e.Status)
-                      .HasMaxLength(20)
-                      .HasDefaultValue("PENDING");
-                entity.Property(e => e.VnpayTransactionId)
-                      .HasMaxLength(50);
-                entity.Property(e => e.VnpayResponseCode)
-                      .HasMaxLength(10);
-                entity.Property(e => e.VnpayMessage)
-                      .HasMaxLength(255);
+                  entity.Property(e => e.Currency)
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasDefaultValue("VND");
+                  entity.Property(e => e.Provider)
+                        .HasMaxLength(20)
+                        .HasDefaultValue("VNPAY");
+                  entity.Property(e => e.Status)
+                        .HasMaxLength(20)
+                        .HasDefaultValue("PENDING");
+                  entity.Property(e => e.VnpayTransactionId)
+                        .HasMaxLength(50);
+                  entity.Property(e => e.VnpayResponseCode)
+                        .HasMaxLength(10);
+                  entity.Property(e => e.VnpayMessage)
+                        .HasMaxLength(255);
+                  entity.Property(e => e.StripeSessionId)
+                        .HasMaxLength(128);
+                  entity.Property(e => e.StripePaymentIntentId)
+                        .HasMaxLength(128);
+                  entity.Property(e => e.PaymentMethod)
+                        .HasMaxLength(64);
                 entity.Property(e => e.CreatedAt)
                       .HasDefaultValueSql("CURRENT_TIMESTAMP(6)");
 

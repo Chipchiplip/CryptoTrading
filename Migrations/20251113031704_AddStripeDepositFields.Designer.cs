@@ -4,6 +4,7 @@ using CryptoTrading.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace CryptoTrading.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20251113031704_AddStripeDepositFields")]
+    partial class AddStripeDepositFields
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -294,7 +297,7 @@ namespace CryptoTrading.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("Levels", (string)null);
+                    b.ToTable("Levels");
                 });
 
             modelBuilder.Entity("CryptoTrading.Models.LoginActivity", b =>
@@ -451,115 +454,6 @@ namespace CryptoTrading.Migrations
                     b.HasIndex("WalletId");
 
                     b.ToTable("OrderHolds", (string)null);
-                });
-
-            modelBuilder.Entity("CryptoTrading.Models.PaymentHistory", b =>
-                {
-                    b.Property<ulong>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("BIGINT UNSIGNED");
-
-                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<ulong>("Id"));
-
-                    b.Property<decimal>("Amount")
-                        .HasColumnType("decimal(18,2)");
-
-                    b.Property<DateTime>("CreatedAtUtc")
-                        .HasColumnType("datetime(6)");
-
-                    b.Property<string>("Currency")
-                        .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasMaxLength(3)
-                        .HasColumnType("varchar(3)")
-                        .HasDefaultValue("VND");
-
-                    b.Property<string>("PaymentMethod")
-                        .HasMaxLength(32)
-                        .HasColumnType("varchar(32)");
-
-                    b.Property<int?>("PlanType")
-                        .HasColumnType("int");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasMaxLength(16)
-                        .HasColumnType("varchar(16)");
-
-                    b.Property<ulong?>("SubscriptionId")
-                        .HasColumnType("BIGINT UNSIGNED");
-
-                    b.Property<DateTime?>("UpdatedAtUtc")
-                        .HasColumnType("datetime(6)");
-
-                    b.Property<int>("UserId")
-                        .HasColumnType("int");
-
-                    b.Property<string>("VnpayOrderId")
-                        .HasMaxLength(128)
-                        .HasColumnType("varchar(128)");
-
-                    b.Property<string>("VnpayTransactionId")
-                        .HasMaxLength(128)
-                        .HasColumnType("varchar(128)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("SubscriptionId");
-
-                    b.HasIndex("VnpayOrderId");
-
-                    b.HasIndex("UserId", "CreatedAtUtc");
-
-                    b.ToTable("PaymentHistories", (string)null);
-                });
-
-            modelBuilder.Entity("CryptoTrading.Models.Subscription", b =>
-                {
-                    b.Property<ulong>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("BIGINT UNSIGNED");
-
-                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<ulong>("Id"));
-
-                    b.Property<DateTime?>("CanceledAtUtc")
-                        .HasColumnType("datetime(6)");
-
-                    b.Property<DateTime>("CreatedAtUtc")
-                        .HasColumnType("datetime(6)");
-
-                    b.Property<DateTime>("CurrentPeriodEndUtc")
-                        .HasColumnType("datetime(6)");
-
-                    b.Property<DateTime>("CurrentPeriodStartUtc")
-                        .HasColumnType("datetime(6)");
-
-                    b.Property<int>("PlanType")
-                        .HasColumnType("int");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasMaxLength(16)
-                        .HasColumnType("varchar(16)");
-
-                    b.Property<DateTime>("UpdatedAtUtc")
-                        .HasColumnType("datetime(6)");
-
-                    b.Property<int>("UserId")
-                        .HasColumnType("int");
-
-                    b.Property<string>("VnpayTransactionId")
-                        .HasMaxLength(128)
-                        .HasColumnType("varchar(128)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("UserId")
-                        .IsUnique();
-
-                    b.HasIndex("UserId", "Status");
-
-                    b.ToTable("Subscriptions", (string)null);
                 });
 
             modelBuilder.Entity("CryptoTrading.Models.Trade", b =>
@@ -1025,7 +919,7 @@ namespace CryptoTrading.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("Roles", (string)null);
+                    b.ToTable("Roles");
                 });
 
             modelBuilder.Entity("CryptoTrading.Models.CryptoPrice", b =>
@@ -1037,6 +931,17 @@ namespace CryptoTrading.Migrations
                         .IsRequired();
 
                     b.Navigation("Cryptocurrency");
+                });
+
+            modelBuilder.Entity("CryptoTrading.Models.DepositTransaction", b =>
+                {
+                    b.HasOne("CryptoTrading.Models.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("CryptoTrading.Models.LoginActivity", b =>
@@ -1086,35 +991,6 @@ namespace CryptoTrading.Migrations
                     b.Navigation("Order");
 
                     b.Navigation("Wallet");
-                });
-
-            modelBuilder.Entity("CryptoTrading.Models.PaymentHistory", b =>
-                {
-                    b.HasOne("CryptoTrading.Models.Subscription", "Subscription")
-                        .WithMany()
-                        .HasForeignKey("SubscriptionId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.HasOne("CryptoTrading.Models.User", "User")
-                        .WithMany()
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Subscription");
-
-                    b.Navigation("User");
-                });
-
-            modelBuilder.Entity("CryptoTrading.Models.Subscription", b =>
-                {
-                    b.HasOne("CryptoTrading.Models.User", "User")
-                        .WithMany()
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("CryptoTrading.Models.Trade", b =>

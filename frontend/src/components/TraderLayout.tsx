@@ -27,6 +27,7 @@ import { setAccessToken } from '../api/http';
 import { useNavigate } from 'react-router-dom';
 import { useDashboardSummary } from '../contexts/DashboardContext';
 import NotificationsPanel from './NotificationsPanel';
+import { AuthApi, UserProfileDto } from '../api/auth';
 
 interface TraderLayoutProps {
   children: React.ReactNode;
@@ -38,6 +39,7 @@ export default function TraderLayout({ children, currentPage, onNavigate }: Trad
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [userProfile, setUserProfile] = useState<UserProfileDto | null>(null);
   const userMenuRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
   
@@ -60,6 +62,66 @@ export default function TraderLayout({ children, currentPage, onNavigate }: Trad
       document.removeEventListener('mousedown', handleClickOutside);
     };
   }, [userMenuOpen]);
+
+  // Load profile data so header/avatar reflects stored avatarUrl
+  useEffect(() => {
+    let isMounted = true;
+    const fetchProfile = async () => {
+      try {
+        const result = await AuthApi.getProfile();
+        if (result.ok && isMounted) {
+          setUserProfile(result.data);
+        } else if (!result.ok) {
+          console.error('[TraderLayout] Failed to fetch profile:', result.error);
+        }
+      } catch (error) {
+        console.error('[TraderLayout] Exception while fetching profile:', error);
+      }
+    };
+
+    fetchProfile();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    const handleProfileUpdate = (event: Event) => {
+      const detail = (event as CustomEvent<{ avatarUrl?: string; fullName?: string }>).detail;
+      if (!detail) {
+        return;
+      }
+
+      setUserProfile((prev) => {
+        if (!prev) {
+          return {
+            id: 0,
+            email: '',
+            fullName: detail.fullName || '',
+            role: '',
+            level: 0,
+            status: 0,
+            createdAt: '',
+            emailConfirmed: false,
+            twoFactorEnabled: false,
+            avatarUrl: detail.avatarUrl,
+          } as UserProfileDto;
+        }
+
+        return {
+          ...prev,
+          avatarUrl: detail.avatarUrl ?? prev.avatarUrl,
+          fullName: detail.fullName ?? prev.fullName,
+        };
+      });
+    };
+
+    window.addEventListener('profile:avatar-updated', handleProfileUpdate as EventListener);
+
+    return () => {
+      window.removeEventListener('profile:avatar-updated', handleProfileUpdate as EventListener);
+    };
+  }, []);
 
   // ✅ Handle logout
   const handleLogout = () => {
@@ -163,6 +225,13 @@ export default function TraderLayout({ children, currentPage, onNavigate }: Trad
     </div>
   );
 
+  const avatarSrc =
+    userProfile?.avatarUrl ||
+    'https://api.dicebear.com/7.x/avataaars/svg?seed=trader';
+  const avatarFallbackText =
+    userProfile?.fullName?.trim().slice(0, 2).toUpperCase() || 'TR';
+  const displayName = userProfile?.fullName || 'Trader';
+
   return (
     <>
     <div className="flex h-screen bg-black text-white">
@@ -232,10 +301,10 @@ export default function TraderLayout({ children, currentPage, onNavigate }: Trad
                   className="flex items-center gap-2 cursor-pointer hover:bg-gray-900 rounded-lg px-2 py-1 transition-colors"
                 >
                   <Avatar className="w-8 h-8">
-                    <AvatarImage src="https://api.dicebear.com/7.x/avataaars/svg?seed=trader" />
-                    <AvatarFallback>TR</AvatarFallback>
+                    <AvatarImage src={avatarSrc} />
+                    <AvatarFallback>{avatarFallbackText}</AvatarFallback>
                   </Avatar>
-                  <span className="hidden sm:inline">Trader</span>
+                  <span className="hidden sm:inline">{displayName}</span>
                   <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${userMenuOpen ? 'rotate-180' : ''}`} />
                 </div>
                 
