@@ -55,6 +55,26 @@ namespace CryptoTrading.Interfaces.Bot
             DateTime endDate,
             string interval = "1h",
             CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// Gets comprehensive market data for AI recommendations
+        /// </summary>
+        Task<MarketDataForAi?> GetMarketDataAsync(string symbol, CancellationToken cancellationToken = default);
+    }
+
+    /// <summary>
+    /// Market data structure for AI recommendations
+    /// </summary>
+    public class MarketDataForAi
+    {
+        public decimal CurrentPrice { get; set; }
+        public string? Trend1h { get; set; } // "uptrend", "downtrend", "neutral"
+        public string? Trend4h { get; set; }
+        public double? VolumeChangePercent { get; set; }
+        public double? Volatility { get; set; }
+        public decimal? SupportLevel { get; set; }
+        public decimal? ResistanceLevel { get; set; }
+        public bool? HasBadNews { get; set; }
     }
 
     public class OhlcvData

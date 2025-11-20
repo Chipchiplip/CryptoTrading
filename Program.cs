@@ -174,6 +174,15 @@ builder.Services.AddSingleton<CryptoTrading.Services.Bot.BotSignalRDispatcher>()
 // Bot Strategies
 builder.Services.AddTransient<CryptoTrading.Services.Bot.Strategies.GridTradingStrategy>();
 
+// AI Recommendation Service
+builder.Services.AddHttpClient("AiRecommendationService", client =>
+{
+    var aiServiceUrl = builder.Configuration["AiService:BaseUrl"] ?? "http://localhost:8000";
+    client.BaseAddress = new Uri(aiServiceUrl);
+    client.Timeout = TimeSpan.FromSeconds(30);
+});
+builder.Services.AddScoped<CryptoTrading.Services.Bot.AiRecommendationService>();
+
 // VNPay Service
 builder.Services.AddScoped<CryptoTrading.Services.Payment.IVnPayService, CryptoTrading.Services.Payment.VnPayService>();
 
