@@ -1,13 +1,13 @@
 import { useState, useEffect, useRef } from 'react';
-import { 
-  LayoutDashboard, 
-  Star, 
-  TrendingUp, 
-  ListOrdered, 
-  History, 
-  Briefcase, 
-  Wallet, 
-  ArrowDownToLine, 
+import {
+  LayoutDashboard,
+  Star,
+  TrendingUp,
+  ListOrdered,
+  History,
+  Briefcase,
+  Wallet,
+  ArrowDownToLine,
   ArrowUpFromLine,
   CreditCard,
   Settings,
@@ -19,12 +19,12 @@ import {
   BarChart3,
   LogOut,
   User,
-  Loader2
+  Loader2,
+  Bot,
+  Cpu
 } from 'lucide-react';
 import { Input } from './ui/input';
 import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar';
-import { Badge } from './ui/badge';
-import { Button } from './ui/button';
 import { setAccessToken } from '../api/http';
 import { useNavigate } from 'react-router-dom';
 import { DashboardApi, DashboardSummary } from '../services/dashboard';
@@ -71,8 +71,8 @@ export default function TraderLayout({ children, currentPage, onNavigate }: Trad
         setBalanceLoading(true);
         console.log('[TraderLayout] Fetching dashboard summary for sidebar balance...');
         const result = await DashboardApi.getSummary();
-        console.log('[TraderLayout] API result:', { ok: result.ok, hasData: !!result.data, error: result.ok ? null : result.error });
-        if (result.ok && result.data) {
+        console.log('[TraderLayout] API result:', result);
+        if (result.ok) {
           console.log('[TraderLayout] Dashboard summary loaded:', {
             totalBalance: result.data.totalBalance,
             totalBalanceChange: result.data.totalBalanceChange,
@@ -81,7 +81,6 @@ export default function TraderLayout({ children, currentPage, onNavigate }: Trad
           setDashboardSummary(result.data);
         } else {
           console.error('[TraderLayout] Failed to fetch dashboard summary:', result.error);
-          // Set to null to show error state
           setDashboardSummary(null);
         }
       } catch (error) {
@@ -160,7 +159,7 @@ export default function TraderLayout({ children, currentPage, onNavigate }: Trad
 
   // ✅ Handle logout
   const handleLogout = () => {
-    setAccessToken(null);
+    setAccessToken(null, null);
     setUserMenuOpen(false);
     navigate('/login');
   };
@@ -183,6 +182,8 @@ export default function TraderLayout({ children, currentPage, onNavigate }: Trad
     { id: 'watchlist', label: 'Watchlist', icon: Star },
     { id: 'market', label: 'Market', icon: BarChart3 },
     { id: 'trade', label: 'Trade', icon: TrendingUp },
+    { id: 'ai-chat', label: 'AI Chat', icon: Bot },
+    { id: 'bots', label: 'Bots', icon: Cpu },
     { id: 'orders', label: 'Orders', icon: ListOrdered },
     { id: 'trades-history', label: 'Trades', icon: History },
     { id: 'portfolio', label: 'Portfolio', icon: Briefcase },

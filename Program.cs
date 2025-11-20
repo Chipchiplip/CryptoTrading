@@ -182,6 +182,14 @@ builder.Services.AddHttpClient("AiRecommendationService", client =>
     client.Timeout = TimeSpan.FromSeconds(30);
 });
 builder.Services.AddScoped<CryptoTrading.Services.Bot.AiRecommendationService>();
+builder.Services.AddHttpClient("AiChatService", client =>
+{
+    var aiServiceUrl = builder.Configuration["AiService:BaseUrl"] ?? "http://localhost:8000";
+    client.BaseAddress = new Uri(aiServiceUrl);
+    client.Timeout = TimeSpan.FromSeconds(45);
+});
+builder.Services.AddSingleton<CryptoTrading.Services.Ai.IAiChatSessionStore, CryptoTrading.Services.Ai.InMemoryAiChatSessionStore>();
+builder.Services.AddScoped<CryptoTrading.Services.Ai.IAiTradingChatService, CryptoTrading.Services.Ai.AiTradingChatService>();
 
 // VNPay Service
 builder.Services.AddScoped<CryptoTrading.Services.Payment.IVnPayService, CryptoTrading.Services.Payment.VnPayService>();

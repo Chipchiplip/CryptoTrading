@@ -39,6 +39,7 @@ namespace CryptoTrading.Data
         public DbSet<TradingBotRuntimeSnapshot> TradingBotRuntimeSnapshots { get; set; }
         public DbSet<TradingBotOrder> TradingBotOrders { get; set; }
         public DbSet<TradingBotLog> TradingBotLogs { get; set; }
+        public DbSet<AiGeneratedBotProfile> AiGeneratedBotProfiles { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -358,6 +359,16 @@ namespace CryptoTrading.Data
                     .WithMany()
                     .HasForeignKey(e => e.StrategyDefinitionId)
                     .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            modelBuilder.Entity<AiGeneratedBotProfile>(entity =>
+            {
+                entity.ToTable("AiGeneratedBotProfiles");
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.Name).HasMaxLength(200);
+                entity.Property(e => e.RiskMode).HasMaxLength(20);
+                entity.Property(e => e.TimeHorizon).HasMaxLength(50);
+                entity.HasIndex(e => e.UserId);
             });
         }
     }
