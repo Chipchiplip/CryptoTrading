@@ -57,29 +57,7 @@ export function DashboardProvider({ children }: DashboardProviderProps) {
         console.error('[DashboardContext] Failed to fetch summary:', errorMsg);
         
         // Set default summary on error to prevent UI breakage
-        if (!summary) {
-          setSummary({
-            totalBalance: 0,
-            totalBalanceChange: 0,
-            totalBalanceChangePercent: 0,
-            todayPnl: 0,
-            todayPnlPercent: 0,
-            availableBalance: 0,
-            availableBalancePercent: 0,
-            openOrdersCount: 0,
-            openOrdersBuy: 0,
-            openOrdersSell: 0
-          });
-        }
-      }
-    } catch (e: any) {
-      const errorMsg = e.message || 'Network error';
-      setError(errorMsg);
-      console.error('[DashboardContext] Exception while fetching summary:', e);
-      
-      // Set default summary on error to prevent UI breakage
-      if (!summary) {
-        setSummary({
+        setSummary(prev => prev || {
           totalBalance: 0,
           totalBalanceChange: 0,
           totalBalanceChangePercent: 0,
@@ -92,25 +70,45 @@ export function DashboardProvider({ children }: DashboardProviderProps) {
           openOrdersSell: 0
         });
       }
+    } catch (e: any) {
+      const errorMsg = e.message || 'Network error';
+      setError(errorMsg);
+      console.error('[DashboardContext] Exception while fetching summary:', e);
+      
+      // Set default summary on error to prevent UI breakage
+      setSummary(prev => prev || {
+        totalBalance: 0,
+        totalBalanceChange: 0,
+        totalBalanceChangePercent: 0,
+        todayPnl: 0,
+        todayPnlPercent: 0,
+        availableBalance: 0,
+        availableBalancePercent: 0,
+        openOrdersCount: 0,
+        openOrdersBuy: 0,
+        openOrdersSell: 0
+      });
     } finally {
       setLoading(false);
       setIsFetching(false);
     }
-  }, [lastFetch, isFetching, summary]);
+  }, [lastFetch, isFetching]);
 
   // Initial fetch on mount
   useEffect(() => {
     fetchSummary(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Auto refetch interval
+  // Auto refetch interval - use ref to avoid recreating interval on every render
   useEffect(() => {
     const interval = setInterval(() => {
       fetchSummary(false);
     }, REFETCH_INTERVAL);
     
     return () => clearInterval(interval);
-  }, [fetchSummary]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const value: DashboardContextType = {
     summary,
