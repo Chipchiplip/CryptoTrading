@@ -192,6 +192,7 @@ builder.Services.AddHostedService<CryptoTrading.Services.RealtimeBroadcastServic
 builder.Services.AddHostedService<CryptoTrading.Services.OrderMatchingBackgroundService>();
 builder.Services.AddHostedService<CryptoTrading.Services.Bot.BotExecutionHostedService>();
 builder.Services.AddHostedService<CryptoTrading.Services.Bot.BotMonitorHostedService>();
+builder.Services.AddHostedService<CryptoTrading.Services.SubscriptionExpirationBackgroundService>();
 
 var app = builder.Build();
 

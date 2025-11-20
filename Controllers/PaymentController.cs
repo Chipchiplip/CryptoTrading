@@ -118,12 +118,13 @@ public class PaymentController : ControllerBase
     }
 
     /// <summary>
-    /// Create checkout session for subscription via VNPay
+    /// Create subscription by deducting from wallet
     /// </summary>
     [HttpPost("subscription/checkout")]
     [Authorize]
     public async Task<IActionResult> CreateSubscriptionCheckout([FromBody] CreateSubscriptionCheckoutDto dto)
     {
+        using var transaction = await _context.Database.BeginTransactionAsync();
         try
         {
             var userId = _currentUser.UserId;
@@ -134,87 +135,165 @@ public class PaymentController : ControllerBase
             if (dto.PlanType < 0 || dto.PlanType > 2)
                 return BadRequest(new { message = "Invalid plan type" });
 
-            // Free plan không cần thanh toán
-            if (dto.PlanType == 0)
+            // Lấy plan hiện tại của user
+            var currentPlanType = await _subscriptionService.GetUserPlanTypeAsync(userId.Value);
+            
+            // Nếu đang chọn cùng plan thì không làm gì
+            if (currentPlanType == dto.PlanType)
             {
-                var periodStart = DateTime.UtcNow;
-                var periodEnd = periodStart.AddMonths(1);
-                await _subscriptionService.CreateOrUpdateSubscriptionAsync(userId.Value, 0, periodStart, periodEnd);
-                return Ok(new { message = "Free plan activated", planType = 0 });
+                await transaction.RollbackAsync();
+                return BadRequest(new { message = "You are already on this plan" });
             }
 
-            // Lấy giá theo plan
-            var planPrices = new Dictionary<int, double>
+            // Lấy giá theo plan (VND)
+            var planPricesVnd = new Dictionary<int, decimal>
             {
-                { 1, 696000 },  // Pro: ~29 USD
-                { 2, 2376000 } // Premium: ~99 USD
+                { 0, 0m },        // Free
+                { 1, 696000m },  // Pro: ~29 USD
+                { 2, 2376000m }  // Premium: ~99 USD
             };
 
-            var amount = planPrices[dto.PlanType];
             var planNames = new Dictionary<int, string>
             {
+                { 0, "Free" },
                 { 1, "Pro" },
                 { 2, "Premium" }
             };
 
-            // Lấy thông tin user
-            var user = await _context.Users.FindAsync(userId.Value);
-            if (user == null)
-                return NotFound(new { message = "User not found" });
+            // Kiểm tra nếu là downgrade (từ plan cao xuống plan thấp)
+            bool isDowngrade = dto.PlanType < currentPlanType;
+            bool isUpgrade = dto.PlanType > currentPlanType;
+            bool requiresPayment = isUpgrade && dto.PlanType > 0;
 
-            // Tạo order ID unique
-            var orderId = $"SUB_{userId}_{DateTime.UtcNow.Ticks}";
+            // Tạo hoặc cập nhật subscription
+            var periodStart = DateTime.UtcNow;
+            var periodEnd = dto.PlanType == 0 
+                ? periodStart.AddYears(100) // Free plan doesn't expire
+                : periodStart.AddMonths(1);
+            
+            string? orderId = null;
+            PaymentHistory? paymentHistory = null;
 
-            // Tạo payment history record
-            var paymentHistory = new PaymentHistory
+            // Nếu cần thanh toán (upgrade)
+            if (requiresPayment)
             {
-                UserId = userId.Value,
-                Amount = (decimal)amount,
-                Currency = "VND",
-                Status = "pending",
-                VnpayOrderId = orderId,
-                PaymentMethod = "VNPay",
-                PlanType = dto.PlanType,
-                CreatedAtUtc = DateTime.UtcNow
-            };
+                // Chuyển đổi VND sang USD (tỷ giá 24000)
+                const decimal exchangeRate = 24000m;
+                var amountVnd = planPricesVnd[dto.PlanType];
+                var amountUsd = amountVnd / exchangeRate;
 
-            _context.PaymentHistories.Add(paymentHistory);
-            await _context.SaveChangesAsync();
+                // Kiểm tra số dư USD trong ví
+                var usdWallet = await GetOrCreateWalletAsync(userId.Value, "FIAT", "USD", null);
+                var availableBalance = await CalculateAvailableBalanceAsync(usdWallet.Id);
 
-            // Tạo payment information model
-            var paymentModel = new PaymentInformationModel
+                if (availableBalance < amountUsd)
+                {
+                    await transaction.RollbackAsync();
+                    return BadRequest(new 
+                    { 
+                        message = "Insufficient balance",
+                        required = amountUsd,
+                        available = availableBalance,
+                        currency = "USD"
+                    });
+                }
+
+                // Trừ tiền từ ví
+                var walletMovement = new WalletMovement
+                {
+                    WalletId = usdWallet.Id,
+                    RefType = "SUBSCRIPTION",
+                    RefId = null,
+                    Amount = -amountUsd, // Negative để trừ tiền
+                    Note = $"Subscription payment: {planNames[dto.PlanType]} plan - {amountVnd:N0} VND ({amountUsd:N2} USD)",
+                    CreatedAt = DateTime.UtcNow
+                };
+
+                _context.WalletMovements.Add(walletMovement);
+
+                // Tạo payment history record
+                orderId = $"SUB_{userId}_{DateTime.UtcNow.Ticks}";
+                paymentHistory = new PaymentHistory
+                {
+                    UserId = userId.Value,
+                    Amount = amountVnd,
+                    Currency = "VND",
+                    Status = "success",
+                    VnpayOrderId = orderId,
+                    PaymentMethod = "WALLET",
+                    PlanType = dto.PlanType,
+                    CreatedAtUtc = DateTime.UtcNow,
+                    UpdatedAtUtc = DateTime.UtcNow
+                };
+
+                _context.PaymentHistories.Add(paymentHistory);
+                await _context.SaveChangesAsync();
+            }
+
+            // Tạo hoặc cập nhật subscription
+            var subscription = await _subscriptionService.CreateOrUpdateSubscriptionAsync(
+                userId.Value,
+                dto.PlanType,
+                periodStart,
+                periodEnd,
+                orderId
+            );
+
+            // Cập nhật payment history với subscription ID nếu có
+            if (paymentHistory != null)
             {
-                OrderType = "subscription",
-                Amount = amount,
-                OrderDescription = $"Đăng ký gói {planNames[dto.PlanType]} - {amount:N0} VND/tháng",
-                Name = user.FullName ?? user.Email ?? "User",
-                UserId = userId.Value
-            };
+                paymentHistory.SubscriptionId = subscription.Id;
+                await _context.SaveChangesAsync();
+            }
 
-            // Tạo payment URL với subscription callback URL
-            var subscriptionCallbackUrl = _configuration["Vnpay:SubscriptionCallbackUrl"]
-                ?? _configuration["Vnpay:PaymentBackReturnUrl"]
-                ?? "http://localhost:5299/api/payment/subscription/vnpay/callback";
-            var paymentUrl = _vnPayService.CreatePaymentUrl(paymentModel, HttpContext, orderId, subscriptionCallbackUrl);
+            await transaction.CommitAsync();
+
+            var actionType = isDowngrade ? "downgraded" : (isUpgrade ? "upgraded" : "changed");
+            var message = isDowngrade 
+                ? $"Subscription downgraded to {planNames[dto.PlanType]} plan successfully"
+                : (isUpgrade 
+                    ? $"Subscription upgraded to {planNames[dto.PlanType]} plan successfully"
+                    : $"Subscription changed to {planNames[dto.PlanType]} plan successfully");
+
+            if (requiresPayment && paymentHistory != null)
+            {
+                _logger.LogInformation("Subscription {ActionType} successfully: UserId={UserId}, PlanType={PlanType}, AmountUSD={AmountUSD}",
+                    actionType, userId.Value, dto.PlanType, paymentHistory.Amount / 24000m);
+            }
+            else
+            {
+                _logger.LogInformation("Subscription {ActionType} successfully: UserId={UserId}, PlanType={PlanType} (no payment required)",
+                    actionType, userId.Value, dto.PlanType);
+            }
 
             return Ok(new
             {
-                paymentUrl,
-                orderId,
-                paymentId = paymentHistory.Id,
+                message = message,
                 planType = dto.PlanType,
-                amount
+                planName = planNames[dto.PlanType],
+                previousPlanType = currentPlanType,
+                previousPlanName = planNames[currentPlanType],
+                isDowngrade = isDowngrade,
+                isUpgrade = isUpgrade,
+                requiresPayment = requiresPayment,
+                amountVnd = paymentHistory?.Amount,
+                amountUsd = paymentHistory != null ? paymentHistory.Amount / 24000m : (decimal?)null,
+                subscriptionId = subscription.Id,
+                paymentId = paymentHistory?.Id,
+                periodStart = periodStart,
+                periodEnd = periodEnd
             });
         }
         catch (Exception ex)
         {
+            await transaction.RollbackAsync();
             _logger.LogError(ex, "Error creating subscription checkout: {Message}, StackTrace: {StackTrace}", ex.Message, ex.StackTrace);
             
             // Return more detailed error in development
-            var errorMessage = "Failed to create checkout session";
+            var errorMessage = "Failed to create subscription";
             if (_configuration.GetValue<string>("ASPNETCORE_ENVIRONMENT") == "Development")
             {
-                errorMessage = $"Failed to create checkout session: {ex.Message}";
+                errorMessage = $"Failed to create subscription: {ex.Message}";
             }
             
             return StatusCode(500, new { message = errorMessage });
@@ -922,6 +1001,24 @@ public class PaymentController : ControllerBase
         }
 
         return wallet;
+    }
+
+    /// <summary>
+    /// Calculates available balance considering movements and locked balance from order holds
+    /// </summary>
+    private async Task<decimal> CalculateAvailableBalanceAsync(ulong walletId)
+    {
+        // Get total balance from wallet movements
+        var totalBalance = await _context.WalletMovements
+            .Where(m => m.WalletId == walletId)
+            .SumAsync(m => (decimal?)m.Amount) ?? 0m;
+
+        // Get locked balance from active order holds
+        var lockedBalance = await _context.OrderHolds
+            .Where(h => h.WalletId == walletId && h.ReleasedAt == null)
+            .SumAsync(h => (decimal?)h.Amount) ?? 0m;
+
+        return totalBalance - lockedBalance;
     }
 
     private async Task<Session> RetrieveStripeSessionAsync(string sessionId)

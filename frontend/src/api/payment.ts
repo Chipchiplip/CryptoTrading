@@ -24,7 +24,14 @@ async function apiPost<T>(url: string, body: unknown): Promise<ApiResult<T>> {
       body: JSON.stringify(body),
     });
     const json = await res.json().catch(() => ({}));
-    if (!res.ok) return { ok: false, error: (json as any)?.message || `HTTP ${res.status}` };
+    if (!res.ok) {
+      // Return the full error object if it has additional fields (like required/available for insufficient balance)
+      const errorObj = json as any;
+      if (errorObj && typeof errorObj === 'object' && (errorObj.required !== undefined || errorObj.available !== undefined)) {
+        return { ok: false, error: JSON.stringify(errorObj) };
+      }
+      return { ok: false, error: errorObj?.message || `HTTP ${res.status}` };
+    }
     return { ok: true, data: json as T };
   } catch (e: any) {
     return { ok: false, error: e?.message || 'Network error' };
@@ -59,12 +66,19 @@ export interface CreateSubscriptionCheckoutRequest {
 }
 
 export interface CreateSubscriptionCheckoutResponse {
+  message?: string;
+  planType: number;
+  planName?: string;
+  amountVnd?: number;
+  amountUsd?: number;
+  subscriptionId?: number;
+  paymentId?: number;
+  periodStart?: string;
+  periodEnd?: string;
+  // Legacy fields for backward compatibility
   paymentUrl?: string;
   orderId?: string;
-  paymentId?: number;
-  planType: number;
   amount?: number;
-  message?: string;
 }
 
 export interface UserSubscription {

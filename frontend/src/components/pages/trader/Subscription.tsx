@@ -1,8 +1,16 @@
 import { useState, useEffect } from 'react';
-import { Check, Crown, Zap, Star, Loader2 } from 'lucide-react';
+import { Check, Crown, Zap, Star, Loader2, AlertTriangle } from 'lucide-react';
 import { Card } from '../../ui/card';
 import { Button } from '../../ui/button';
 import { Badge } from '../../ui/badge';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '../../ui/dialog';
 import { PaymentApi, type SubscriptionPlan, type BillingHistoryItem } from '../../../api/payment';
 
 const planIcons: Record<string, typeof Star> = {
@@ -19,6 +27,8 @@ export default function Subscription() {
   const [processing, setProcessing] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [billingHistory, setBillingHistory] = useState<BillingHistoryItem[]>([]);
+  const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
+  const [pendingPlanType, setPendingPlanType] = useState<number | null>(null);
 
   useEffect(() => {
     loadData();
@@ -89,6 +99,16 @@ export default function Subscription() {
   const handleUpgrade = async (planType: number) => {
     if (planType === currentPlanType) return;
 
+    // Show confirmation dialog for plan changes
+    setPendingPlanType(planType);
+    setConfirmDialogOpen(true);
+  };
+
+  const confirmPlanChange = async () => {
+    if (pendingPlanType === null) return;
+
+    const planType = pendingPlanType;
+    setConfirmDialogOpen(false);
     setProcessing(planType);
     setError(null);
 
@@ -96,30 +116,57 @@ export default function Subscription() {
       const res = await PaymentApi.createSubscriptionCheckout({ planType });
 
       if (!res.ok) {
-        setError(res.error);
+        // Try to parse error message - it might be a string or an object
+        let errorMessage = res.error;
+        try {
+          // If error is a string that looks like JSON, try to parse it
+          if (typeof res.error === 'string' && res.error.startsWith('{')) {
+            const errorData = JSON.parse(res.error);
+            if (errorData.required !== undefined && errorData.available !== undefined) {
+              errorMessage = `Insufficient balance. Required: $${Number(errorData.required).toFixed(2)}, Available: $${Number(errorData.available).toFixed(2)}`;
+            } else if (errorData.message) {
+              errorMessage = errorData.message;
+            }
+          } else if (typeof res.error === 'string' && res.error.includes('Insufficient')) {
+            errorMessage = res.error;
+          }
+        } catch {
+          // If parsing fails, use the original error
+          errorMessage = res.error;
+        }
+        setError(errorMessage);
         setProcessing(null);
         return;
       }
 
-      // Free plan doesn't need payment
+      // Success - reload subscription data
       if (res.data.message) {
         setError(null);
         await loadSubscription();
         setProcessing(null);
-        return;
-      }
-
-      // Redirect to VNPay
-      if (res.data.paymentUrl) {
-        window.location.href = res.data.paymentUrl;
+        // Show success message briefly
+        setTimeout(() => {
+          setError(null);
+        }, 3000);
       } else {
-        setError('Payment URL not received');
+        setError('Unexpected response from server');
         setProcessing(null);
       }
     } catch (e: any) {
-      setError(e?.message || 'Failed to create checkout');
+      setError(e?.message || 'Failed to create subscription');
       setProcessing(null);
     }
+  };
+
+  const getPlanName = (planType: number) => {
+    const planNames: Record<number, string> = { 0: 'Free', 1: 'Pro', 2: 'Premium' };
+    return planNames[planType] || 'Unknown';
+  };
+
+  const getPlanChangeType = (from: number, to: number) => {
+    if (to < from) return { type: 'downgrade', label: 'Downgrade' };
+    if (to > from) return { type: 'upgrade', label: 'Upgrade' };
+    return { type: 'change', label: 'Change' };
   };
 
   const formatDate = (dateString: string) => {
@@ -306,6 +353,55 @@ export default function Subscription() {
           </div>
         )}
       </Card>
+
+      {/* Confirmation Dialog */}
+      <Dialog open={confirmDialogOpen} onOpenChange={setConfirmDialogOpen}>
+        <DialogContent className="bg-gray-900 border-gray-800 text-white">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="w-5 h-5 text-yellow-500" />
+              Confirm Plan Change
+            </DialogTitle>
+            <DialogDescription className="text-gray-400">
+              {pendingPlanType !== null && (
+                <>
+                  You are about to {getPlanChangeType(currentPlanType, pendingPlanType).type} from{' '}
+                  <span className="font-semibold text-white">{getPlanName(currentPlanType)}</span> to{' '}
+                  <span className="font-semibold text-emerald-500">{getPlanName(pendingPlanType)}</span> plan.
+                  {pendingPlanType < currentPlanType && (
+                    <div className="mt-2 p-3 bg-blue-500/10 border border-blue-500/50 rounded text-blue-400 text-sm">
+                      <strong>Note:</strong> Downgrading to a lower plan is free and will take effect immediately.
+                    </div>
+                  )}
+                  {pendingPlanType > currentPlanType && (
+                    <div className="mt-2 p-3 bg-yellow-500/10 border border-yellow-500/50 rounded text-yellow-400 text-sm">
+                      <strong>Note:</strong> Upgrading will charge your wallet. Please ensure you have sufficient balance.
+                    </div>
+                  )}
+                </>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setConfirmDialogOpen(false);
+                setPendingPlanType(null);
+              }}
+              className="text-gray-400 hover:text-white"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={confirmPlanChange}
+              className="bg-emerald-500 text-black hover:bg-emerald-600"
+            >
+              Confirm
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

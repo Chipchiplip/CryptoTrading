@@ -33,6 +33,7 @@ namespace CryptoTrading.Data
         public DbSet<DepositTransaction> DepositTransactions { get; set; }
         public DbSet<Subscription> Subscriptions { get; set; }
         public DbSet<PaymentHistory> PaymentHistories { get; set; }
+        public DbSet<Notification> Notifications { get; set; }
 
         // ========== BOT TRADING ==========
         public DbSet<BotStrategyDefinition> BotStrategyDefinitions { get; set; }
@@ -409,6 +410,28 @@ namespace CryptoTrading.Data
                     .WithMany()
                     .HasForeignKey(e => e.SubscriptionId)
                     .OnDelete(DeleteBehavior.SetNull);
+            });
+
+            // ==========================
+            // NOTIFICATION CONFIG
+            // ==========================
+            modelBuilder.Entity<Notification>(entity =>
+            {
+                entity.ToTable("Notifications");
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.Id).ValueGeneratedOnAdd();
+                entity.HasIndex(e => new { e.UserId, e.CreatedAtUtc });
+                entity.HasIndex(e => new { e.UserId, e.IsRead });
+
+                entity.Property(e => e.Type).HasMaxLength(50).IsRequired();
+                entity.Property(e => e.Title).HasMaxLength(100).IsRequired();
+                entity.Property(e => e.Message).HasMaxLength(500).IsRequired();
+                entity.Property(e => e.Category).HasMaxLength(50);
+
+                entity.HasOne(e => e.User)
+                    .WithMany()
+                    .HasForeignKey(e => e.UserId)
+                    .OnDelete(DeleteBehavior.Cascade);
             });
         }
     }

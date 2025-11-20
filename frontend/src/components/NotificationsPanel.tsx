@@ -18,9 +18,10 @@ import {
   Order,
   PaginatedResponse,
 } from "../api/trading";
+import { NotificationApi, AppNotification as ApiNotification } from "../api/notification";
 
 type NotificationType = "success" | "error" | "warning" | "info";
-type NotificationCategory = "market" | "trade" | "news";
+type NotificationCategory = "market" | "trade" | "news" | "subscription";
 
 type ApiResult<T> =
   | { ok: true; data: T }
@@ -306,11 +307,12 @@ export default function NotificationsPanel({
     setLoading(true);
     setError(null);
     try {
-      const [marketRes, tradesRes, ordersRes, newsRes] = await Promise.all([
+      const [marketRes, tradesRes, ordersRes, newsRes, appNotificationsRes] = await Promise.all([
         MarketApi.getMarketStats(),
         TradingApi.getTrades({ pageSize: 5 }),
         TradingApi.getOrders({ status: ["FILLED"], pageSize: 5 }),
         fetchCryptoNews(),
+        NotificationApi.getNotifications(1, 50, "subscription"),
       ]);
 
       const next: Notification[] = [];
@@ -348,6 +350,22 @@ export default function NotificationsPanel({
             prev ??
             "Unable to load the latest successful trades.",
         );
+      }
+
+      // Add subscription notifications from API
+      if (appNotificationsRes.ok && appNotificationsRes.data) {
+        const subscriptionNotifications: Notification[] = appNotificationsRes.data.notifications.map((n: ApiNotification) => ({
+          id: `subscription-${n.id}`,
+          type: n.type as NotificationType,
+          category: "subscription" as NotificationCategory,
+          title: n.title,
+          message: n.message,
+          timestamp: new Date(n.createdAt),
+          isRead: n.isRead,
+          action: n.category === "subscription" ? "View Subscription" : undefined,
+          actionLink: n.category === "subscription" ? "subscription" : undefined,
+        }));
+        next.push(...subscriptionNotifications);
       }
 
       if (newsRes.ok && newsRes.data?.results?.length) {
@@ -391,7 +409,15 @@ export default function NotificationsPanel({
     setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
   };
 
-  const markNotificationAsRead = (id: string) => {
+  const markNotificationAsRead = async (id: string) => {
+    // Check if this is a subscription notification from API
+    if (id.startsWith("subscription-")) {
+      const notificationId = parseInt(id.replace("subscription-", ""));
+      if (!isNaN(notificationId)) {
+        await NotificationApi.markAsRead(notificationId);
+      }
+    }
+    
     setReadIds((prev) => {
       if (prev.has(id)) return prev;
       const next = new Set(prev);
@@ -531,7 +557,9 @@ export default function NotificationsPanel({
                                   ? "Market"
                                   : notification.category === "trade"
                                     ? "Trade"
-                                    : "News"}
+                                    : notification.category === "subscription"
+                                      ? "Subscription"
+                                      : "News"}
                               </Badge>
                             </div>
                           </div>
