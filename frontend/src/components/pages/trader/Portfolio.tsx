@@ -48,11 +48,11 @@ export default function Portfolio() {
 
       // Set portfolio summary
       setPortfolio({
-        totalValue: data.totalValue,
-        totalCost: data.totalCost,
-        unrealizedPnL: data.unrealizedPnL,
-        unrealizedPnLPercent: data.unrealizedPnLPercent,
-        realizedPnL: data.realizedPnL
+        totalValue: data.totalValue ?? 0,
+        totalCost: data.totalCost ?? 0,
+        unrealizedPnL: data.unrealizedPnL ?? 0,
+        unrealizedPnLPercent: data.unrealizedPnLPercent ?? 0,
+        realizedPnL: data.realizedPnL ?? 0,
       });
 
       // Set holdings

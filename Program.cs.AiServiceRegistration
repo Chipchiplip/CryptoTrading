@@ -1,0 +1,18 @@
+// Add this to Program.cs for AI service registration
+
+// Register HttpClient for AI Recommendation Service
+builder.Services.AddHttpClient("AiRecommendationService", client =>
+{
+    // In production, use environment variable or configuration
+    var aiServiceUrl = builder.Configuration["AiService:BaseUrl"] ?? "http://localhost:8000";
+    client.BaseAddress = new Uri(aiServiceUrl);
+    client.Timeout = TimeSpan.FromSeconds(30);
+});
+
+// Example configuration in appsettings.json:
+// {
+//   "AiService": {
+//     "BaseUrl": "http://ai-service:8000"  // Docker service name or URL
+//   }
+// }
+

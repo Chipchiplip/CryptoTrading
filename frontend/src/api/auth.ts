@@ -91,11 +91,20 @@ export interface UserProfileDto {
 }
 export interface UpdateProfileDto {
   fullName?: string;
-  email: string;
+  email?: string;
   avatarUrl?: string;
   bio?: string;
   phoneNumber?: string;
   timezone?: string;
+}
+export interface CloudflareDirectUploadRequestDto {
+  fileName?: string;
+}
+export interface CloudflareDirectUploadResponseDto {
+  uploadId: string;
+  uploadUrl: string;
+  publicUrl?: string;
+  publicUrlBase?: string;
 }
 export interface ChangePasswordDto {
   currentPassword: string;
@@ -152,6 +161,8 @@ export const AuthApi = {
   // Profile Management
   getProfile: () => authGetJson<UserProfileDto>('/api/auth/profile'),
   updateProfile: (dto: UpdateProfileDto) => authPutJson<UserProfileDto>('/api/auth/profile', dto),
+  requestAvatarUploadUrl: (fileName?: string) =>
+    authPostJson<CloudflareDirectUploadResponseDto>('/api/auth/avatar/upload-url', fileName ? { fileName } : {}),
   changePassword: (dto: ChangePasswordDto) => authPostJson<{ message: string }>('/api/auth/change-password', dto),
   getLoginActivity: () => authGetJson<LoginActivityDto[]>('/api/auth/activity'),
 

@@ -1,4 +1,5 @@
 using CryptoTrading.Data;
+using CryptoTrading.Infrastructure.Cloudflare;
 using CryptoTrading.Interfaces;
 using CryptoTrading.Models;
 using CryptoTrading.Repositories;
@@ -132,6 +133,8 @@ builder.Services.AddCors(options =>
 });
 
 // Infrastructure Services
+builder.Services.Configure<CloudflareImagesOptions>(builder.Configuration.GetSection("Cloudflare"));
+builder.Services.AddSingleton<ICloudflareImagesService, CloudflareImagesService>();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
 builder.Services.AddScoped<IEmailSender, EmailService>();
@@ -179,8 +182,28 @@ builder.Services.AddTransient<CryptoTrading.Services.Bot.Strategies.GridTradingS
 builder.Services.AddTransient<CryptoTrading.Services.Bot.Strategies.AggressiveForexStrategy>();
 builder.Services.AddTransient<CryptoTrading.Services.Bot.Strategies.MomentumScalpingStrategy>();
 
+// AI Recommendation Service
+builder.Services.AddHttpClient("AiRecommendationService", client =>
+{
+    var aiServiceUrl = builder.Configuration["AiService:BaseUrl"] ?? "http://localhost:8000";
+    client.BaseAddress = new Uri(aiServiceUrl);
+    client.Timeout = TimeSpan.FromSeconds(30);
+});
+builder.Services.AddScoped<CryptoTrading.Services.Bot.AiRecommendationService>();
+builder.Services.AddHttpClient("AiChatService", client =>
+{
+    var aiServiceUrl = builder.Configuration["AiService:BaseUrl"] ?? "http://localhost:8000";
+    client.BaseAddress = new Uri(aiServiceUrl);
+    client.Timeout = TimeSpan.FromSeconds(45);
+});
+builder.Services.AddSingleton<CryptoTrading.Services.Ai.IAiChatSessionStore, CryptoTrading.Services.Ai.InMemoryAiChatSessionStore>();
+builder.Services.AddScoped<CryptoTrading.Services.Ai.IAiTradingChatService, CryptoTrading.Services.Ai.AiTradingChatService>();
+
 // VNPay Service
 builder.Services.AddScoped<CryptoTrading.Services.Payment.IVnPayService, CryptoTrading.Services.Payment.VnPayService>();
+
+// Subscription Service
+builder.Services.AddScoped<ISubscriptionService, SubscriptionService>();
 
 // Background Services
 builder.Services.AddHostedService<CryptoSyncBackgroundService>();
@@ -188,6 +211,7 @@ builder.Services.AddHostedService<CryptoTrading.Services.RealtimeBroadcastServic
 builder.Services.AddHostedService<CryptoTrading.Services.OrderMatchingBackgroundService>();
 builder.Services.AddHostedService<CryptoTrading.Services.Bot.BotExecutionHostedService>();
 builder.Services.AddHostedService<CryptoTrading.Services.Bot.BotMonitorHostedService>();
+builder.Services.AddHostedService<CryptoTrading.Services.SubscriptionExpirationBackgroundService>();
 
 var app = builder.Build();
 
@@ -281,7 +305,7 @@ async Task SeedDatabase(IServiceProvider serviceProvider, ILogger logger)
     }
     
     // --- 2. Seed Default Levels ---
-    var defaultLevels = new List<string> { "Beginner" };
+    var defaultLevels = new List<string> { "Free", "Pro", "Premium" };
     var existingLevels = await context.Set<Level>().Select(l => l.Name).ToListAsync();
     var levelsToSeed = defaultLevels.Except(existingLevels, StringComparer.OrdinalIgnoreCase).ToList();
 

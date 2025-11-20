@@ -153,6 +153,96 @@ namespace CryptoTrading.Services.Bot
                 return new List<OhlcvData>();
             }
         }
+
+        public async Task<MarketDataForAi?> GetMarketDataAsync(string symbol, CancellationToken cancellationToken = default)
+        {
+            try
+            {
+                // Extract base asset from symbol (e.g., "BTCUSDT" -> "BTC")
+                var baseAsset = symbol.Replace("USDT", "").Replace("USD", "");
+
+                // Get current price
+                var price = await GetMidPriceAsync(baseAsset, "USDT", cancellationToken);
+                if (price <= 0)
+                {
+                    _logger.LogWarning("No price data available for {Symbol}", symbol);
+                    return null;
+                }
+
+                // Try to get cached data for trend/volume analysis
+                MarketDataForAi? marketData = null;
+                if (_cacheService.TryGetCryptoData(out var cachedData) && cachedData != null)
+                {
+                    var coin = cachedData.FirstOrDefault(c => 
+                        c.Symbol.Equals(baseAsset, StringComparison.OrdinalIgnoreCase));
+                    
+                    if (coin != null)
+                    {
+                        // Calculate trend from price change (more lenient thresholds)
+                        var trend1h = coin.PriceChangePercentage1h.HasValue
+                            ? (coin.PriceChangePercentage1h.Value > 0.5m
+                                ? "uptrend"
+                                : coin.PriceChangePercentage1h.Value < -0.5m
+                                    ? "downtrend"
+                                    : "neutral")
+                            : "neutral";
+                        
+                        // Use 24h as proxy for 4h trend (since we don't have 4h data)
+                        var trend4h = coin.PriceChangePercentage24h.HasValue
+                            ? (coin.PriceChangePercentage24h.Value > 1m
+                                ? "uptrend"
+                                : coin.PriceChangePercentage24h.Value < -1m
+                                    ? "downtrend"
+                                    : "neutral")
+                            : "neutral";
+
+                        // Estimate volatility from 24h change
+                        var volatility = coin.PriceChangePercentage24h.HasValue
+                            ? Math.Abs((double)coin.PriceChangePercentage24h.Value / 100)
+                            : 0.05; // Default 5%
+
+                        // Estimate support/resistance (simplified - use price * 0.95 and price * 1.05)
+                        var support = price * 0.95m;
+                        var resistance = price * 1.05m;
+
+                        marketData = new MarketDataForAi
+                        {
+                            CurrentPrice = price,
+                            Trend1h = trend1h,
+                            Trend4h = trend4h,
+                            VolumeChangePercent = 0, // TODO: Calculate from volume data
+                            Volatility = volatility,
+                            SupportLevel = support,
+                            ResistanceLevel = resistance,
+                            HasBadNews = false // TODO: Check news feed
+                        };
+                    }
+                }
+
+                // Fallback if no cached data
+                if (marketData == null)
+                {
+                    marketData = new MarketDataForAi
+                    {
+                        CurrentPrice = price,
+                        Trend1h = "neutral",
+                        Trend4h = "neutral",
+                        VolumeChangePercent = 0,
+                        Volatility = 0.05,
+                        SupportLevel = price * 0.95m,
+                        ResistanceLevel = price * 1.05m,
+                        HasBadNews = false
+                    };
+                }
+
+                return marketData;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to get market data for {Symbol}", symbol);
+                return null;
+            }
+        }
     }
 }
 

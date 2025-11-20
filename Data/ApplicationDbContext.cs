@@ -31,6 +31,9 @@ namespace CryptoTrading.Data
 
         // Payment
         public DbSet<DepositTransaction> DepositTransactions { get; set; }
+        public DbSet<Subscription> Subscriptions { get; set; }
+        public DbSet<PaymentHistory> PaymentHistories { get; set; }
+        public DbSet<Notification> Notifications { get; set; }
 
         // ========== BOT TRADING ==========
         public DbSet<BotStrategyDefinition> BotStrategyDefinitions { get; set; }
@@ -39,6 +42,7 @@ namespace CryptoTrading.Data
         public DbSet<TradingBotRuntimeSnapshot> TradingBotRuntimeSnapshots { get; set; }
         public DbSet<TradingBotOrder> TradingBotOrders { get; set; }
         public DbSet<TradingBotLog> TradingBotLogs { get; set; }
+        public DbSet<AiGeneratedBotProfile> AiGeneratedBotProfiles { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -64,7 +68,7 @@ namespace CryptoTrading.Data
                 entity.Property(e => e.AvatarUrl).HasMaxLength(500);
                 entity.Property(e => e.Bio).HasMaxLength(200);
                 entity.Property(e => e.Role).HasMaxLength(50).HasDefaultValue("User");
-                entity.Property(e => e.Level).HasMaxLength(50).HasDefaultValue("Beginner");
+                entity.Property(e => e.Level).HasMaxLength(50).HasDefaultValue("Free");
                 entity.Property(e => e.IsActive).HasDefaultValue(true);
 
                 entity.Property(e => e.EmailConfirmationToken).HasColumnType("LONGTEXT");
@@ -265,9 +269,42 @@ namespace CryptoTrading.Data
                 entity.Property(e => e.Id).ValueGeneratedOnAdd();
                 entity.HasIndex(e => new { e.UserId, e.CreatedAt });
                 entity.HasIndex(e => e.OrderId).IsUnique();
-                
+                entity.Property(e => e.OrderId)
+                      .IsRequired()
+                      .HasMaxLength(50);
+                entity.Property(e => e.Amount)
+                      .HasColumnType("decimal(18,2)");
+                  entity.Property(e => e.Currency)
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasDefaultValue("VND");
+                  entity.Property(e => e.Provider)
+                        .HasMaxLength(20)
+                        .HasDefaultValue("VNPAY");
+                  entity.Property(e => e.Status)
+                        .HasMaxLength(20)
+                        .HasDefaultValue("PENDING");
+                  entity.Property(e => e.VnpayTransactionId)
+                        .HasMaxLength(50);
+                  entity.Property(e => e.VnpayResponseCode)
+                        .HasMaxLength(10);
+                  entity.Property(e => e.VnpayMessage)
+                        .HasMaxLength(255);
+                  entity.Property(e => e.StripeSessionId)
+                        .HasMaxLength(128);
+                  entity.Property(e => e.StripePaymentIntentId)
+                        .HasMaxLength(128);
+                  entity.Property(e => e.PaymentMethod)
+                        .HasMaxLength(64);
+                entity.Property(e => e.CreatedAt)
+                      .HasDefaultValueSql("CURRENT_TIMESTAMP(6)");
 
+                entity.HasOne(e => e.User)
+                    .WithMany()
+                    .HasForeignKey(e => e.UserId)
+                    .OnDelete(DeleteBehavior.Cascade);
             });
+
             // ==========================
             // BOT STRATEGY DEFINITION CONFIG
             // ==========================
@@ -289,10 +326,123 @@ namespace CryptoTrading.Data
             {
                 entity.ToTable("TradingBots");
                 entity.HasKey(e => e.Id);
+                entity.Property(e => e.Id).ValueGeneratedOnAdd();
                 entity.HasIndex(e => new { e.UserId, e.Status });
                 entity.HasIndex(e => e.NextRunAt);
+                entity.Property(e => e.Name)
+                      .IsRequired()
+                      .HasMaxLength(200);
+                entity.Property(e => e.Status)
+                      .IsRequired()
+                      .HasMaxLength(50)
+                      .HasDefaultValue("Draft");
+                entity.Property(e => e.RiskProfile)
+                      .HasMaxLength(50);
+                entity.Property(e => e.BaseAsset)
+                      .IsRequired()
+                      .HasMaxLength(20);
+                entity.Property(e => e.QuoteAsset)
+                      .IsRequired()
+                      .HasMaxLength(20);
+                entity.Property(e => e.PositionSizing)
+                      .HasColumnType("JSON");
+                entity.Property(e => e.Parameters)
+                      .HasColumnType("JSON");
+                entity.Property(e => e.LastStatusReason)
+                      .HasMaxLength(1000);
+                entity.Property(e => e.CreatedAt)
+                      .HasDefaultValueSql("CURRENT_TIMESTAMP(6)");
 
+                entity.HasOne(e => e.User)
+                    .WithMany()
+                    .HasForeignKey(e => e.UserId)
+                    .OnDelete(DeleteBehavior.Cascade);
 
+                entity.HasOne(e => e.StrategyDefinition)
+                    .WithMany()
+                    .HasForeignKey(e => e.StrategyDefinitionId)
+                    .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            modelBuilder.Entity<AiGeneratedBotProfile>(entity =>
+            {
+                entity.ToTable("AiGeneratedBotProfiles");
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.Name).HasMaxLength(200);
+                entity.Property(e => e.RiskMode).HasMaxLength(20);
+                entity.Property(e => e.TimeHorizon).HasMaxLength(50);
+                entity.HasIndex(e => e.UserId);
+            });
+
+            // ==========================
+            // SUBSCRIPTION CONFIG
+            // ==========================
+            modelBuilder.Entity<Subscription>(entity =>
+            {
+                entity.ToTable("Subscriptions");
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.Id).ValueGeneratedOnAdd();
+                entity.HasIndex(e => e.UserId).IsUnique();
+                entity.HasIndex(e => new { e.UserId, e.Status });
+
+                entity.Property(e => e.Status).HasMaxLength(16).IsRequired();
+                entity.Property(e => e.VnpayTransactionId).HasMaxLength(128);
+
+                entity.HasOne(e => e.User)
+                    .WithMany()
+                    .HasForeignKey(e => e.UserId)
+                    .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            // ==========================
+            // PAYMENT HISTORY CONFIG
+            // ==========================
+            modelBuilder.Entity<PaymentHistory>(entity =>
+            {
+                entity.ToTable("PaymentHistories");
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.Id).ValueGeneratedOnAdd();
+                entity.HasIndex(e => new { e.UserId, e.CreatedAtUtc });
+                entity.HasIndex(e => e.VnpayOrderId);
+
+                entity.Property(e => e.Status).HasMaxLength(16).IsRequired();
+                entity.Property(e => e.Currency).HasMaxLength(3).HasDefaultValue("VND");
+                entity.Property(e => e.PaymentMethod).HasMaxLength(32);
+                entity.Property(e => e.VnpayTransactionId).HasMaxLength(128);
+                entity.Property(e => e.VnpayOrderId).HasMaxLength(128);
+                entity.Property(e => e.Amount).HasColumnType("decimal(18,2)");
+
+                entity.HasOne(e => e.User)
+                    .WithMany()
+                    .HasForeignKey(e => e.UserId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasOne(e => e.Subscription)
+                    .WithMany()
+                    .HasForeignKey(e => e.SubscriptionId)
+                    .OnDelete(DeleteBehavior.SetNull);
+            });
+
+            // ==========================
+            // NOTIFICATION CONFIG
+            // ==========================
+            modelBuilder.Entity<Notification>(entity =>
+            {
+                entity.ToTable("Notifications");
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.Id).ValueGeneratedOnAdd();
+                entity.HasIndex(e => new { e.UserId, e.CreatedAtUtc });
+                entity.HasIndex(e => new { e.UserId, e.IsRead });
+
+                entity.Property(e => e.Type).HasMaxLength(50).IsRequired();
+                entity.Property(e => e.Title).HasMaxLength(100).IsRequired();
+                entity.Property(e => e.Message).HasMaxLength(500).IsRequired();
+                entity.Property(e => e.Category).HasMaxLength(50);
+
+                entity.HasOne(e => e.User)
+                    .WithMany()
+                    .HasForeignKey(e => e.UserId)
+                    .OnDelete(DeleteBehavior.Cascade);
             });
         }
     }

@@ -78,6 +78,8 @@ namespace CryptoTrading.Services.Portfolio
                 
                 _logger.LogDebug("[PortfolioService] Loaded {Count} trades in {Elapsed}ms", allTrades.Count, stopwatch.ElapsedMilliseconds);
 
+                var (costStates, realizedPnL) = AnalyzeTrades(allTrades);
+
                 // Calculate holdings with cost basis
                 // Group by symbol to handle multiple wallets for same crypto
                 var holdingsBySymbol = new Dictionary<string, PortfolioHoldingDto>();
@@ -125,8 +127,12 @@ namespace CryptoTrading.Services.Portfolio
                         var cryptoData = marketData.FirstOrDefault(c => c.Symbol.Equals(symbol, StringComparison.OrdinalIgnoreCase));
                         var imageUrl = cryptoData?.Image ?? wallet.Cryptocurrency.IconUrl;
 
-                        // Use pre-calculated cost basis
+                        // Use pre-calculated cost basis from costBasisMap, fallback to costStates if needed
                         var avgPrice = costBasisMap.GetValueOrDefault(symbol, 0m);
+                        if (avgPrice == 0m && costStates.TryGetValue(symbol, out var costState) && costState.TotalQuantity > 0)
+                        {
+                            avgPrice = costState.TotalCost / costState.TotalQuantity;
+                        }
                         
                         holdingsBySymbol[symbol] = new PortfolioHoldingDto
                         {
@@ -174,11 +180,7 @@ namespace CryptoTrading.Services.Portfolio
                     holding.Allocation = totalValue > 0 ? (holding.Value / totalValue) * 100 : 0m;
                 }
 
-                // Calculate realized PnL
-                _logger.LogDebug("[PortfolioService] Calculating realized PnL...");
-                var realizedPnL = await CalculateRealizedPnLAsync(userId, cancellationToken);
-                _logger.LogDebug("[PortfolioService] Calculated realized PnL in {Elapsed}ms", stopwatch.ElapsedMilliseconds);
-
+                // Realized PnL is already calculated from AnalyzeTrades above
                 // Calculate unrealized PnL
                 var unrealizedPnL = totalValue - totalCost;
                 var unrealizedPnLPercent = totalCost > 0 ? (unrealizedPnL / totalCost) * 100 : 0m;
@@ -264,24 +266,8 @@ namespace CryptoTrading.Services.Portfolio
         {
             try
             {
-                // Get all filled SELL trades - optimized with AsNoTracking
-                var sellTrades = await _context.Trades
-                    .Where(t => t.Order.UserId == userId 
-                        && t.Order.Side == "SELL" 
-                        && t.Order.Status == "FILLED")
-                    .Include(t => t.Order)
-                    .Include(t => t.Cryptocurrency)
-                    .AsNoTracking()
-                    .OrderBy(t => t.CreatedAt)
-                    .ToListAsync(cancellationToken);
-
-                if (!sellTrades.Any())
-                {
-                    return 0m;
-                }
-
-                // Get all trades for this user to calculate cost basis in memory
-                var allUserTrades = await _context.Trades
+                // Get all filled trades - optimized with AsNoTracking
+                var trades = await _context.Trades
                     .Where(t => t.Order.UserId == userId && t.Order.Status == "FILLED")
                     .Include(t => t.Order)
                     .Include(t => t.Cryptocurrency)
@@ -289,36 +275,13 @@ namespace CryptoTrading.Services.Portfolio
                     .OrderBy(t => t.CreatedAt)
                     .ToListAsync(cancellationToken);
 
-                // Pre-calculate cost basis for all symbols/dates to avoid N+1 queries
-                var symbols = sellTrades
-                    .Select(t => t.Cryptocurrency.Symbol.ToUpper())
-                    .Distinct()
-                    .ToList();
-                
-                var costBasisMap = new Dictionary<(string Symbol, DateTime Date), decimal>();
-                foreach (var trade in sellTrades)
+                if (!trades.Any())
                 {
-                    cancellationToken.ThrowIfCancellationRequested();
-                    var key = (trade.Cryptocurrency.Symbol.ToUpper(), trade.CreatedAt.Date);
-                    if (!costBasisMap.ContainsKey(key))
-                    {
-                        // Use in-memory calculation instead of database query
-                        costBasisMap[key] = CalculateCostBasisInMemory(allUserTrades, trade.Cryptocurrency.Symbol.ToUpper(), trade.CreatedAt);
-                    }
+                    return 0m;
                 }
 
-                decimal realizedPnL = 0m;
-                foreach (var sellTrade in sellTrades)
-                {
-                    var symbol = sellTrade.Cryptocurrency.Symbol.ToUpper();
-                    var key = (symbol, sellTrade.CreatedAt.Date);
-                    var costBasis = costBasisMap.GetValueOrDefault(key, 0m);
-                    
-                    // Realized PnL = (Sell Price - Cost Basis) * Quantity - Fees
-                    var tradePnL = (sellTrade.PriceUsd - costBasis) * sellTrade.QuantityCoin - sellTrade.FeeUsd;
-                    realizedPnL += tradePnL;
-                }
-
+                // Use AnalyzeTrades to calculate realized PnL
+                var (_, realizedPnL) = AnalyzeTrades(trades);
                 return realizedPnL;
             }
             catch (Exception ex)
@@ -335,79 +298,134 @@ namespace CryptoTrading.Services.Portfolio
         {
             try
             {
-                // Get all BUY trades before this date - optimized with AsNoTracking
-                var buyTrades = await _context.Trades
+                var normalizedSymbol = symbol.ToUpperInvariant();
+
+                var trades = await _context.Trades
                     .Where(t => t.Order.UserId == userId
-                        && t.Cryptocurrency.Symbol.ToUpper() == symbol.ToUpper()
-                        && t.Order.Side == "BUY"
+                        && t.Order.Status == "FILLED"
                         && t.CreatedAt <= asOfDate
-                        && t.Order.Status == "FILLED")
+                        && t.Cryptocurrency.Symbol.ToUpper() == normalizedSymbol)
                     .Include(t => t.Order)
                     .Include(t => t.Cryptocurrency)
                     .AsNoTracking()
                     .OrderBy(t => t.CreatedAt)
                     .ToListAsync(cancellationToken);
 
-                // Get all SELL trades before this date to subtract from holdings - optimized
-                var sellTrades = await _context.Trades
-                    .Where(t => t.Order.UserId == userId
-                        && t.Cryptocurrency.Symbol.ToUpper() == symbol.ToUpper()
-                        && t.Order.Side == "SELL"
-                        && t.CreatedAt <= asOfDate
-                        && t.Order.Status == "FILLED")
-                    .Include(t => t.Order)
-                    .Include(t => t.Cryptocurrency)
-                    .AsNoTracking()
-                    .OrderBy(t => t.CreatedAt)
-                    .ToListAsync(cancellationToken);
-
-                // Calculate net holdings using FIFO
-                decimal totalCost = 0m;
-                decimal totalQuantity = 0m;
-                var fifoQueue = new Queue<(decimal Quantity, decimal CostPerUnit)>();
-
-                // Process BUY trades (add to FIFO queue)
-                foreach (var buyTrade in buyTrades)
+                if (trades.Count == 0)
                 {
-                    var costPerUnit = (buyTrade.PriceUsd * buyTrade.QuantityCoin + buyTrade.FeeUsd) / buyTrade.QuantityCoin;
-                    fifoQueue.Enqueue((buyTrade.QuantityCoin, costPerUnit));
-                    totalCost += buyTrade.PriceUsd * buyTrade.QuantityCoin + buyTrade.FeeUsd;
-                    totalQuantity += buyTrade.QuantityCoin;
+                    return 0m;
                 }
 
-                // Process SELL trades (remove from FIFO queue)
-                foreach (var sellTrade in sellTrades)
+                var (states, _) = AnalyzeTrades(trades);
+
+                if (states.TryGetValue(normalizedSymbol, out var state) && state.TotalQuantity > 0)
                 {
-                    var remainingToSell = sellTrade.QuantityCoin;
-                    while (remainingToSell > 0 && fifoQueue.Count > 0)
-                    {
-                        var (quantity, costPerUnit) = fifoQueue.Dequeue();
-                        if (quantity <= remainingToSell)
-                        {
-                            // Remove entire lot
-                            totalCost -= quantity * costPerUnit;
-                            totalQuantity -= quantity;
-                            remainingToSell -= quantity;
-                        }
-                        else
-                        {
-                            // Partial removal
-                            totalCost -= remainingToSell * costPerUnit;
-                            totalQuantity -= remainingToSell;
-                            fifoQueue.Enqueue((quantity - remainingToSell, costPerUnit));
-                            remainingToSell = 0;
-                        }
-                    }
+                    return state.TotalCost / state.TotalQuantity;
                 }
 
-                // Calculate weighted average cost basis
-                return totalQuantity > 0 ? totalCost / totalQuantity : 0m;
+                return 0m;
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error calculating cost basis for symbol {Symbol} at {Date}", symbol, asOfDate);
                 return 0m;
             }
+        }
+
+        private (Dictionary<string, CostBasisState> States, decimal RealizedPnL) AnalyzeTrades(IEnumerable<Trade> trades)
+        {
+            var states = new Dictionary<string, CostBasisState>(StringComparer.OrdinalIgnoreCase);
+            decimal realizedPnL = 0m;
+
+            var orderedTrades = trades is IList<Trade> list ? list : trades.OrderBy(t => t.CreatedAt).ToList();
+
+            foreach (var trade in orderedTrades)
+            {
+                if (trade.Order == null || trade.Cryptocurrency == null) continue;
+
+                var symbol = trade.Cryptocurrency.Symbol?.ToUpperInvariant();
+                if (string.IsNullOrEmpty(symbol)) continue;
+
+                if (!states.TryGetValue(symbol, out var state))
+                {
+                    state = new CostBasisState();
+                    states[symbol] = state;
+                }
+
+                var side = trade.Order.Side?.ToUpperInvariant();
+                if (side == "BUY")
+                {
+                    state.AddLot(trade.QuantityCoin, trade.PriceUsd, trade.FeeUsd);
+                }
+                else if (side == "SELL")
+                {
+                    var remaining = state.Consume(trade.QuantityCoin, trade.PriceUsd, ref realizedPnL);
+                    if (remaining > 0)
+                    {
+                        // Selling more than existing holdings – treat remainder as zero cost basis
+                        realizedPnL += trade.PriceUsd * remaining;
+                    }
+
+                    realizedPnL -= trade.FeeUsd;
+                }
+            }
+
+            return (states, realizedPnL);
+        }
+
+        private sealed class CostBasisState
+        {
+            private readonly Queue<CostBasisLot> _lots = new();
+
+            public decimal TotalQuantity { get; private set; }
+            public decimal TotalCost { get; private set; }
+
+            public void AddLot(decimal quantity, decimal priceUsd, decimal feeUsd)
+            {
+                if (quantity <= 0) return;
+                var totalCost = priceUsd * quantity + feeUsd;
+                var costPerUnit = totalCost / quantity;
+                _lots.Enqueue(new CostBasisLot(quantity, costPerUnit));
+                TotalQuantity += quantity;
+                TotalCost += totalCost;
+            }
+
+            public decimal Consume(decimal quantity, decimal sellPrice, ref decimal realizedPnL)
+            {
+                var remaining = quantity;
+                if (remaining <= 0) return 0m;
+
+                while (remaining > 0 && _lots.Count > 0)
+                {
+                    var lot = _lots.Peek();
+                    var qtyUsed = Math.Min(lot.Quantity, remaining);
+                    realizedPnL += (sellPrice - lot.CostPerUnit) * qtyUsed;
+
+                    lot.Quantity -= qtyUsed;
+                    TotalQuantity -= qtyUsed;
+                    TotalCost -= qtyUsed * lot.CostPerUnit;
+                    remaining -= qtyUsed;
+
+                    if (lot.Quantity <= 0.00000001m)
+                    {
+                        _lots.Dequeue();
+                    }
+                }
+
+                return remaining;
+            }
+        }
+
+        private sealed class CostBasisLot
+        {
+            public CostBasisLot(decimal quantity, decimal costPerUnit)
+            {
+                Quantity = quantity;
+                CostPerUnit = costPerUnit;
+            }
+
+            public decimal Quantity { get; set; }
+            public decimal CostPerUnit { get; }
         }
 
         /// <summary>

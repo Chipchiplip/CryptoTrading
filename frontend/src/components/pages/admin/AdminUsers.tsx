@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Users, Search, Edit2, Lock, Trash2, X, RefreshCw, BarChart3, ChevronLeft, ChevronRight } from 'lucide-react';
 import { adminApi, ApiResponse, PaginatedResponse, UserStatistics } from '../../../api/admin';
+import { PaymentApi, UserSubscription } from '../../../api/payment';
 
 // ========== INTERFACES ==========
 interface User {
@@ -15,6 +16,7 @@ interface User {
   isActive: boolean;
   createdAt?: string;
   lastLogin?: string;
+  subscription?: UserSubscription;
 }
 
 interface Role {
@@ -288,6 +290,9 @@ export default function AdminUsers() {
           setTotalPages(responseData.pagination.totalPages);
           setTotalItems(responseData.pagination.totalItems);
         }
+
+        // Load subscriptions for all users
+        await loadSubscriptionsForUsers(finalUsers);
       } else {
         showToast(`Lỗi tải users: ${usersResult.error}`, 'error');
         setUsers([]);
@@ -313,6 +318,50 @@ export default function AdminUsers() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const loadSubscriptionsForUsers = async (usersList: User[]) => {
+    const subscriptionPromises = usersList.map(async (user) => {
+      try {
+        const subResult = await adminApi.getUserSubscription(user.id);
+        if (subResult.ok && subResult.data.data) {
+          return { userId: user.id, subscription: subResult.data.data as UserSubscription };
+        }
+        // Default to Free plan if fetch fails
+        return { userId: user.id, subscription: { planType: 0, status: 'free', isActive: true, currentPeriodStart: new Date().toISOString(), currentPeriodEnd: new Date().toISOString() } as UserSubscription };
+      } catch (err) {
+        // Default to Free plan if fetch fails
+        return { userId: user.id, subscription: { planType: 0, status: 'free', isActive: true, currentPeriodStart: new Date().toISOString(), currentPeriodEnd: new Date().toISOString() } as UserSubscription };
+      }
+    });
+
+    const subscriptionResults = await Promise.all(subscriptionPromises);
+    
+    // Update users with subscription data
+    setUsers(prevUsers => 
+      prevUsers.map(user => {
+        const subData = subscriptionResults.find(s => s.userId === user.id);
+        return subData ? { ...user, subscription: subData.subscription } : user;
+      })
+    );
+  };
+
+  const getPlanName = (planType: number | undefined): string => {
+    const planNames: Record<number, string> = {
+      0: 'Free',
+      1: 'Pro',
+      2: 'Premium'
+    };
+    return planNames[planType ?? 0] || 'Free';
+  };
+
+  const getPlanVariant = (planType: number | undefined): string => {
+    const variants: Record<number, string> = {
+      0: 'default',
+      1: 'trader',
+      2: 'admin'
+    };
+    return variants[planType ?? 0] || 'default';
   };
 
   const loadStatistics = async () => {
@@ -518,7 +567,7 @@ export default function AdminUsers() {
                     <tr>
                       <th className="text-left px-4 py-3 text-sm font-medium">Người dùng</th>
                       <th className="text-left px-4 py-3 text-sm font-medium">Vai trò</th>
-                      <th className="text-left px-4 py-3 text-sm font-medium">Cấp độ</th>
+                      <th className="text-left px-4 py-3 text-sm font-medium">Subscription</th>
                       <th className="text-left px-4 py-3 text-sm font-medium">Trạng thái</th>
                       <th className="text-right px-4 py-3 text-sm font-medium">Hành động</th>
                     </tr>
@@ -541,7 +590,9 @@ export default function AdminUsers() {
                           <Badge variant={user.role?.toLowerCase()}>{user.role}</Badge>
                         </td>
                         <td className="px-4 py-3">
-                          <Badge variant="gold">Level {user.level}</Badge>
+                          <Badge variant={getPlanVariant(user.subscription?.planType)}>
+                            {getPlanName(user.subscription?.planType)}
+                          </Badge>
                         </td>
                         <td className="px-4 py-3">
                           <Badge variant={user.isActive ? 'active' : 'inactive'}>

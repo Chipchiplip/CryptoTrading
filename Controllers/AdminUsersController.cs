@@ -3,6 +3,7 @@ using CryptoTrading.Models.DTOs;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System.ComponentModel.DataAnnotations;
+using CryptoTrading.Services;
 
 namespace CryptoTrading.Controllers;
 
@@ -20,17 +21,20 @@ public class AdminUsersController : ControllerBase
 
     private readonly IRoleService _roleService;
     private readonly ILevelService _levelService;
+    private readonly ISubscriptionService _subscriptionService;
 
     public AdminUsersController(
         IUserService userService,
         ILogger<AdminUsersController> logger,
         IRoleService roleService, 
-        ILevelService levelService) 
+        ILevelService levelService,
+        ISubscriptionService subscriptionService) 
     {
         _userService = userService ?? throw new ArgumentNullException(nameof(userService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _roleService = roleService ?? throw new ArgumentNullException(nameof(roleService));  
         _levelService = levelService ?? throw new ArgumentNullException(nameof(levelService));
+        _subscriptionService = subscriptionService ?? throw new ArgumentNullException(nameof(subscriptionService));
     }
 
     /// <summary>
@@ -426,6 +430,59 @@ public class AdminUsersController : ControllerBase
         {
             _logger.LogError(ex, "Error fetching user statistics");
             return ApiResponse(null, "Failed to fetch user statistics", 500);
+        }
+    }
+
+    /// <summary>
+    /// Get user subscription by user ID (Admin only)
+    /// </summary>
+    /// <param name="id">User ID</param>
+    [HttpGet("{id:int}/subscription")]
+    [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> GetUserSubscription([FromRoute] int id)
+    {
+        if (id <= 0)
+        {
+            _logger.LogWarning("Invalid user ID requested for subscription: {Id}", id);
+            return ApiResponse(null, "Invalid user ID", 400);
+        }
+
+        try
+        {
+            _logger.LogInformation("Fetching subscription for user ID: {UserId}", id);
+
+            var subscription = await _subscriptionService.GetUserSubscriptionAsync(id);
+            var isActive = await _subscriptionService.IsSubscriptionActiveAsync(id);
+            var planType = await _subscriptionService.GetUserPlanTypeAsync(id);
+
+            if (subscription == null)
+            {
+                return ApiResponse(new
+                {
+                    planType = 0,
+                    status = "free",
+                    isActive = true,
+                    currentPeriodStart = DateTime.UtcNow,
+                    currentPeriodEnd = DateTime.UtcNow.AddYears(100) // Free plan không hết hạn
+                }, "Subscription fetched successfully");
+            }
+
+            return ApiResponse(new
+            {
+                planType = subscription.PlanType,
+                status = subscription.Status,
+                isActive = isActive && subscription.Status == "active",
+                currentPeriodStart = subscription.CurrentPeriodStartUtc,
+                currentPeriodEnd = subscription.CurrentPeriodEndUtc,
+                canceledAt = subscription.CanceledAtUtc
+            }, "Subscription fetched successfully");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error fetching subscription for user ID: {UserId}", id);
+            return ApiResponse(null, "Failed to fetch subscription", 500);
         }
     }
 }
