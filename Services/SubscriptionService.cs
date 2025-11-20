@@ -61,6 +61,7 @@ namespace CryptoTrading.Services
                 subscription.UpdatedAtUtc = DateTime.UtcNow;
             }
 
+            await ApplyUserLevelAsync(userId, planType);
             await _context.SaveChangesAsync();
             return subscription;
         }
@@ -77,6 +78,7 @@ namespace CryptoTrading.Services
             subscription.CanceledAtUtc = DateTime.UtcNow;
             subscription.UpdatedAtUtc = DateTime.UtcNow;
 
+            await ApplyUserLevelAsync(userId, 0);
             await _context.SaveChangesAsync();
             return true;
         }
@@ -87,20 +89,87 @@ namespace CryptoTrading.Services
                 .FirstOrDefaultAsync(s => s.UserId == userId && s.Status == "active");
 
             if (subscription == null)
+            {
+                await ApplyUserLevelAsync(userId, 0);
+                if (_context.ChangeTracker.HasChanges())
+                {
+                    await _context.SaveChangesAsync();
+                }
                 return false;
+            }
 
             // Kiểm tra xem subscription có còn hạn không
-            return subscription.CurrentPeriodEndUtc > DateTime.UtcNow;
+            if (subscription.CurrentPeriodEndUtc > DateTime.UtcNow)
+            {
+                return true;
+            }
+
+            subscription.Status = "expired";
+            subscription.UpdatedAtUtc = DateTime.UtcNow;
+            await ApplyUserLevelAsync(userId, 0);
+            await _context.SaveChangesAsync();
+            return false;
         }
 
         public async Task<int> GetUserPlanTypeAsync(int userId)
         {
             var subscription = await GetUserSubscriptionAsync(userId);
             
-            if (subscription == null || !await IsSubscriptionActiveAsync(userId))
-                return 0; // Free plan
+            if (subscription == null)
+            {
+                return await GetPlanTypeFromUserLevelAsync(userId);
+            }
+
+            if (!await IsSubscriptionActiveAsync(userId))
+            {
+                return await GetPlanTypeFromUserLevelAsync(userId);
+            }
             
             return subscription.PlanType;
+        }
+
+        private async Task ApplyUserLevelAsync(int userId, int planType)
+        {
+            var user = await _context.Users.FirstOrDefaultAsync(u => u.Id == userId);
+            if (user == null)
+            {
+                _logger.LogWarning("User {UserId} not found while applying subscription level", userId);
+                return;
+            }
+
+            var levelName = MapPlanTypeToLevel(planType);
+            if (!string.Equals(user.Level, levelName, StringComparison.OrdinalIgnoreCase))
+            {
+                user.Level = levelName;
+            }
+        }
+
+        private async Task<int> GetPlanTypeFromUserLevelAsync(int userId)
+        {
+            var user = await _context.Users.FirstOrDefaultAsync(u => u.Id == userId);
+            return MapLevelToPlanType(user?.Level);
+        }
+
+        private static string MapPlanTypeToLevel(int planType) => planType switch
+        {
+            2 => "Premium",
+            1 => "Pro",
+            _ => "Free"
+        };
+
+        private static int MapLevelToPlanType(string? level)
+        {
+            if (string.IsNullOrWhiteSpace(level))
+            {
+                return 0;
+            }
+
+            return level.Trim().ToLowerInvariant() switch
+            {
+                "pro" => 1,
+                "premium" => 2,
+                _ => 0
+            };
         }
     }
 }

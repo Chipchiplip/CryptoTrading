@@ -66,7 +66,7 @@ namespace CryptoTrading.Data
                 entity.Property(e => e.AvatarUrl).HasMaxLength(500);
                 entity.Property(e => e.Bio).HasMaxLength(200);
                 entity.Property(e => e.Role).HasMaxLength(50).HasDefaultValue("User");
-                entity.Property(e => e.Level).HasMaxLength(50).HasDefaultValue("Beginner");
+                entity.Property(e => e.Level).HasMaxLength(50).HasDefaultValue("Free");
                 entity.Property(e => e.IsActive).HasDefaultValue(true);
 
                 entity.Property(e => e.EmailConfirmationToken).HasColumnType("LONGTEXT");

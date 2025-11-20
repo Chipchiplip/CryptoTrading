@@ -208,8 +208,16 @@ public class PaymentController : ControllerBase
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error creating subscription checkout");
-            return StatusCode(500, new { message = "Failed to create checkout session" });
+            _logger.LogError(ex, "Error creating subscription checkout: {Message}, StackTrace: {StackTrace}", ex.Message, ex.StackTrace);
+            
+            // Return more detailed error in development
+            var errorMessage = "Failed to create checkout session";
+            if (_configuration.GetValue<string>("ASPNETCORE_ENVIRONMENT") == "Development")
+            {
+                errorMessage = $"Failed to create checkout session: {ex.Message}";
+            }
+            
+            return StatusCode(500, new { message = errorMessage });
         }
     }
 

@@ -39,7 +39,7 @@ namespace CryptoTrading.Models
         public string Role { get; set; } = "User"; 
 
         [StringLength(50)]
-        public string Level { get; set; } = "Beginner"; 
+        public string Level { get; set; } = "Free"; 
 
         public bool IsActive { get; set; } = true; 
 

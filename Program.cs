@@ -285,7 +285,7 @@ async Task SeedDatabase(IServiceProvider serviceProvider, ILogger logger)
     }
     
     // --- 2. Seed Default Levels ---
-    var defaultLevels = new List<string> { "Beginner" };
+    var defaultLevels = new List<string> { "Free", "Pro", "Premium" };
     var existingLevels = await context.Set<Level>().Select(l => l.Name).ToListAsync();
     var levelsToSeed = defaultLevels.Except(existingLevels, StringComparer.OrdinalIgnoreCase).ToList();
 
