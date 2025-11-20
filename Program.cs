@@ -11,6 +11,7 @@ using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using System.Text;
 using System;
+using System.Linq;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -83,7 +84,11 @@ builder.Services.AddSwaggerGen(c =>
 var mysqlConnectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
     options.UseMySql(mysqlConnectionString, new MySqlServerVersion(new Version(8, 0, 21)),
-        mySqlOptions => mySqlOptions.SchemaBehavior(Pomelo.EntityFrameworkCore.MySql.Infrastructure.MySqlSchemaBehavior.Ignore)));
+        mySqlOptions => 
+        {
+            mySqlOptions.SchemaBehavior(Pomelo.EntityFrameworkCore.MySql.Infrastructure.MySqlSchemaBehavior.Ignore);
+            mySqlOptions.CommandTimeout(30); // 30 second timeout for database queries
+        }));
 
 // JWT Settings
 builder.Services.Configure<JwtSettings>(builder.Configuration.GetSection("JwtSettings"));
@@ -144,6 +149,7 @@ builder.Services.AddHttpClient<ICoinGeckoService,
 {
     client.BaseAddress = new Uri("https://api.coingecko.com/api/v3/");
     client.DefaultRequestHeaders.Add("User-Agent", "CryptoTrading/1.0");
+    client.Timeout = TimeSpan.FromSeconds(10); // 10 second timeout for external API
 });
 // Cache service must be usable from singleton hosted services (e.g., typed HttpClient in background services),
 // so register it as a singleton to avoid "scoped service from root provider" errors.
@@ -194,12 +200,16 @@ builder.Services.AddScoped<CryptoTrading.Services.Ai.IAiTradingChatService, Cryp
 // VNPay Service
 builder.Services.AddScoped<CryptoTrading.Services.Payment.IVnPayService, CryptoTrading.Services.Payment.VnPayService>();
 
+// Subscription Service
+builder.Services.AddScoped<ISubscriptionService, SubscriptionService>();
+
 // Background Services
 builder.Services.AddHostedService<CryptoSyncBackgroundService>();
 builder.Services.AddHostedService<CryptoTrading.Services.RealtimeBroadcastService>();
 builder.Services.AddHostedService<CryptoTrading.Services.OrderMatchingBackgroundService>();
 builder.Services.AddHostedService<CryptoTrading.Services.Bot.BotExecutionHostedService>();
 builder.Services.AddHostedService<CryptoTrading.Services.Bot.BotMonitorHostedService>();
+builder.Services.AddHostedService<CryptoTrading.Services.SubscriptionExpirationBackgroundService>();
 
 var app = builder.Build();
 
@@ -218,7 +228,11 @@ if (app.Environment.IsDevelopment())
 app.UseMiddleware<CryptoTrading.Middleware.ErrorHandlingMiddleware>();
 
 app.UseCors("AllowFrontend");
-app.UseHttpsRedirection();
+// Skip HTTPS redirection in development when running HTTP only
+if (app.Environment.IsProduction() || app.Configuration["ASPNETCORE_URLS"]?.Contains("https") == true)
+{
+    app.UseHttpsRedirection();
+}
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
@@ -289,7 +303,7 @@ async Task SeedDatabase(IServiceProvider serviceProvider, ILogger logger)
     }
     
     // --- 2. Seed Default Levels ---
-    var defaultLevels = new List<string> { "Beginner" };
+    var defaultLevels = new List<string> { "Free", "Pro", "Premium" };
     var existingLevels = await context.Set<Level>().Select(l => l.Name).ToListAsync();
     var levelsToSeed = defaultLevels.Except(existingLevels, StringComparer.OrdinalIgnoreCase).ToList();
 
@@ -355,13 +369,35 @@ using (var scope = app.Services.CreateScope())
 
     try
     {
-        logger.LogInformation("Applying database migrations...");
-        db.Database.Migrate();
+        logger.LogInformation("Checking database migrations...");
+        
+        // Check if there are pending migrations without applying them
+        var pendingMigrations = await db.Database.GetPendingMigrationsAsync();
+        if (pendingMigrations.Any())
+        {
+            logger.LogWarning("There are {Count} pending migrations. Please run 'dotnet ef database update' manually.", pendingMigrations.Count());
+            logger.LogWarning("Pending migrations: {Migrations}", string.Join(", ", pendingMigrations));
+        }
+        else
+        {
+            logger.LogInformation("Database is up to date with all migrations.");
+        }
+        
+        // Only apply migrations if explicitly enabled via environment variable
+        if (Environment.GetEnvironmentVariable("AUTO_APPLY_MIGRATIONS") == "true")
+        {
+            logger.LogInformation("Auto-applying migrations (AUTO_APPLY_MIGRATIONS=true)...");
+            await db.Database.MigrateAsync();
+            logger.LogInformation("Migrations applied successfully.");
+        }
+        
         await SeedDatabase(services, logger);
     }
     catch (Exception ex)
     {
-        logger.LogError(ex, "An error occurred while migrating or seeding the database.");
+        logger.LogError(ex, "An error occurred while checking migrations or seeding the database.");
+        // Don't crash the application - continue running even if migration check fails
+        logger.LogWarning("Application will continue running. Please check database connection and migrations manually.");
     }
 }
 

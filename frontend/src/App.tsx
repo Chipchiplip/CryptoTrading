@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react';
 import { BrowserRouter, Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 import { getAccessToken, getUserInfo } from './api/http';
+import { DashboardProvider } from './contexts/DashboardContext';
 import GuestLayout from './components/GuestLayout';
 import TraderLayout from './components/TraderLayout';
 import Home from './components/pages/guest/Home';
@@ -159,11 +160,13 @@ function TraderPage({ current, children }: { current: string; children: React.Re
     
 
     return (
-        <div className="dark min-h-screen bg-black">
-            <TraderLayout currentPage={current} onNavigate={onNavigate}>
-                {childrenWithNavigate}
-            </TraderLayout>
-        </div>
+        <DashboardProvider>
+            <div className="dark min-h-screen bg-black">
+                <TraderLayout currentPage={current} onNavigate={onNavigate}>
+                    {childrenWithNavigate}
+                </TraderLayout>
+            </div>
+        </DashboardProvider>
     );
 }
 

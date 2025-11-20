@@ -13,13 +13,16 @@ public class PortfolioController : ControllerBase
 {
     private readonly IWatchlistService _watchlistService;
     private readonly IPortfolioService _portfolioService;
+    private readonly ILogger<PortfolioController> _logger;
 
     public PortfolioController(
         IWatchlistService watchlistService,
-        IPortfolioService portfolioService)
+        IPortfolioService portfolioService,
+        ILogger<PortfolioController> logger)
     {
         _watchlistService = watchlistService;
         _portfolioService = portfolioService;
+        _logger = logger;
     }
 
     private int GetUserId() 
@@ -301,17 +304,45 @@ public class PortfolioController : ControllerBase
     /// Get portfolio overview including holdings, PnL, and NAV history
     /// </summary>
     [HttpGet("overview")]
-    public async Task<IActionResult> GetPortfolioOverview()
+    public async Task<IActionResult> GetPortfolioOverview(CancellationToken cancellationToken)
     {
+        _logger.LogInformation("[PortfolioController] GET /api/portfolio/overview - Request received");
+        
         try
         {
+            _logger.LogDebug("[PortfolioController] Extracting userId from token...");
             var userId = GetUserId();
-            var overview = await _portfolioService.GetPortfolioOverviewAsync(userId);
+            _logger.LogInformation("[PortfolioController] Processing portfolio overview for userId={UserId}", userId);
+            
+            var overview = await _portfolioService.GetPortfolioOverviewAsync(userId, cancellationToken);
+            
+            _logger.LogInformation("[PortfolioController] Successfully retrieved portfolio overview for userId={UserId}", userId);
             return Ok(overview);
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            _logger.LogWarning("[PortfolioController] Unauthorized access: {Message}", ex.Message);
+            return Unauthorized(new { message = ex.Message });
         }
         catch (Exception ex)
         {
-            return BadRequest(new { message = ex.Message });
+            // Log full exception details for debugging
+            _logger.LogError(ex, "[PortfolioController] Error in GetPortfolioOverview");
+            _logger.LogError("[PortfolioController] Exception type: {Type}", ex.GetType().Name);
+            _logger.LogError("[PortfolioController] Message: {Message}", ex.Message);
+            _logger.LogError("[PortfolioController] Stack trace: {StackTrace}", ex.StackTrace);
+            
+            if (ex.InnerException != null)
+            {
+                _logger.LogError("[PortfolioController] Inner exception: {InnerMessage}", ex.InnerException.Message);
+            }
+            
+            // Return error response instead of letting connection close
+            return StatusCode(500, new { 
+                message = "An error occurred while processing your request. Please try again later.",
+                error = ex.Message,
+                type = ex.GetType().Name
+            });
         }
     }
 

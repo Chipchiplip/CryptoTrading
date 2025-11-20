@@ -64,18 +64,19 @@ export function setAccessToken(
   refreshToken = newRefreshToken || null;
 
   try {
-    if (token && user) {
+    if (token) {
       localStorage.setItem(TOKEN_STORAGE_KEY, token);
       if (newRefreshToken) {
         localStorage.setItem(REFRESH_TOKEN_STORAGE_KEY, newRefreshToken);
       }
-      localStorage.setItem(USER_INFO_KEY, JSON.stringify(user));
-      console.log('[http] Access token and user info set');
+      if (user) {
+        localStorage.setItem(USER_INFO_KEY, JSON.stringify(user));
+      }
+      console.log('[http] Access token saved (user optional)');
     } else {
       localStorage.removeItem(TOKEN_STORAGE_KEY);
       localStorage.removeItem(REFRESH_TOKEN_STORAGE_KEY);
       localStorage.removeItem(USER_INFO_KEY);
-      console.log('[http] Access token and user info cleared');
     }
   } catch (e) {
     console.warn('[http] Failed to save token/user to storage:', e);
@@ -105,7 +106,7 @@ export function getRefreshToken(): string | null {
   return refreshToken;
 }
 
-async function refreshAuthToken(): Promise<boolean> {
+export async function refreshAuthToken(): Promise<boolean> {
   const currentRefreshToken = getRefreshToken();
   if (!currentRefreshToken) return false;
 
@@ -183,17 +184,29 @@ export async function authFetch(input: RequestInfo | URL, init?: RequestInit) {
   console.log('[http] Fetching:', url, { method: init?.method || 'GET', hasAuth: !!token });
 
   try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000);
+    // Use provided signal if available, otherwise create new one with default timeout
+    let controller: AbortController;
+    let timeoutId: NodeJS.Timeout | null = null;
+    
+    if (init?.signal) {
+      // Use provided signal (e.g., from apiGetWithLongTimeout)
+      controller = new AbortController();
+      // Don't create timeout if signal is already provided
+    } else {
+      controller = new AbortController();
+      timeoutId = setTimeout(() => controller.abort(), 10000); // 10 seconds default
+    }
 
     const res = await fetch(input, {
       ...init,
       headers,
       credentials: 'include',
-      signal: controller.signal,
+      signal: init?.signal || controller.signal,
     });
 
-    clearTimeout(timeoutId);
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
     console.log('[http] Response:', url, { status: res.status, statusText: res.statusText });
 
     if (res.status === 401) {

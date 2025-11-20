@@ -1,15 +1,15 @@
 import { useState, useEffect } from 'react';
-import { TrendingUp, TrendingDown, ArrowUpRight, ArrowDownRight, DollarSign, Wallet, Activity, Clock, Loader2 } from 'lucide-react';
+import { TrendingUp, ArrowUpRight, ArrowDownRight, DollarSign, Wallet, Activity, Clock, Loader2 } from 'lucide-react';
 import { Card } from '../../ui/card';
 import { Button } from '../../ui/button';
-import { Badge } from '../../ui/badge';
 import { Alert, AlertDescription } from '../../ui/alert';
 import { AreaChart, Area, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { DashboardApi, DashboardSummary, NavHistory, PnlHistory } from '../../../services/dashboard';
+import { DashboardApi, NavHistory, PnlHistory } from '../../../services/dashboard';
 import { TradingApi } from '../../../api/trading';
+import { useDashboardSummary } from '../../../contexts/DashboardContext';
 
 interface TraderDashboardProps {
-  onNavigate?: (page: string) => void;
+  onNavigate?: (page: string, orderId?: string) => void;
 }
 
 interface Holding {
@@ -21,7 +21,9 @@ interface Holding {
 }
 
 export default function TraderDashboard({ onNavigate }: TraderDashboardProps) {
-  const [summary, setSummary] = useState<DashboardSummary | null>(null);
+  // ✅ Use shared dashboard context instead of direct API calls
+  const { summary, error: summaryError } = useDashboardSummary();
+  
   const [navHistory, setNavHistory] = useState<NavHistory | null>(null);
   const [pnlHistory, setPnlHistory] = useState<PnlHistory | null>(null);
   const [holdings, setHoldings] = useState<Holding[]>([]);
@@ -33,70 +35,45 @@ export default function TraderDashboard({ onNavigate }: TraderDashboardProps) {
     setError(null);
     
     try {
-      console.log('[Dashboard] Fetching dashboard data...');
+      console.log('[Dashboard] Fetching dashboard data (summary from context)...');
       
-      // Add timeout to requests
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 8000); // 8 second timeout
-      
-      // Fetch all dashboard data in parallel with timeout
-      const [summaryRes, navRes, pnlRes, holdingsRes, ordersRes] = await Promise.all([
-        DashboardApi.getSummary().catch(() => ({ ok: false, error: 'Network error', data: null })),
+      // Fetch other dashboard data in parallel (summary comes from context)
+      const [navRes, pnlRes, holdingsRes, ordersRes] = await Promise.all([
         DashboardApi.getNavHistory().catch(() => ({ ok: false, error: 'Network error', data: null })),
         DashboardApi.getPnlHistory('hourly').catch(() => ({ ok: false, error: 'Network error', data: null })),
         TradingApi.getHoldings().catch(() => ({ ok: false, error: 'Network error', data: [] })),
         TradingApi.getOrders({ page: 1, pageSize: 5 }).catch(() => ({ ok: false, error: 'Network error', data: { data: [] } }))
       ]);
       
-      clearTimeout(timeoutId);
-      
       // Handle errors gracefully - show error but don't block the UI completely
-      if (!summaryRes.ok && !navRes.ok && !pnlRes.ok) {
-        console.warn('[Dashboard] All API calls failed - backend may be unavailable');
-        setError(summaryRes.error || navRes.error || pnlRes.error || 'Backend service unavailable. Please ensure the backend server is running.');
+      if (!navRes.ok && !pnlRes.ok && summaryError) {
+        console.warn('[Dashboard] Multiple API calls failed - backend may be unavailable');
+        const navError = !navRes.ok ? (navRes as any).error : '';
+        const pnlError = !pnlRes.ok ? (pnlRes as any).error : '';
+        setError(summaryError || navError || pnlError || 'Backend service unavailable. Please ensure the backend server is running.');
         setLoading(false);
         return;
-      }
-      
-      // Set data for successful calls, use defaults for failed ones
-      if (summaryRes.ok) {
-        setSummary(summaryRes.data);
-      } else {
-        console.warn('[Dashboard] Summary failed:', summaryRes.error);
-        // Set default summary if API fails
-        setSummary({
-          totalBalance: 0,
-          totalBalanceChange: 0,
-          totalBalanceChangePercent: 0,
-          todayPnl: 0,
-          todayPnlPercent: 0,
-          availableBalance: 0,
-          availableBalancePercent: 0,
-          openOrdersCount: 0,
-          openOrdersBuy: 0,
-          openOrdersSell: 0
-        });
       }
       
       if (navRes.ok) {
         setNavHistory(navRes.data);
       } else {
-        console.warn('[Dashboard] NAV history failed:', navRes.error);
-        setNavHistory({ data: [] });
+        console.warn('[Dashboard] NAV history failed:', !navRes.ok ? (navRes as any).error : 'Unknown error');
+        setNavHistory({ from: '', to: '', data: [] });
       }
       
       if (pnlRes.ok) {
         setPnlHistory(pnlRes.data);
       } else {
-        console.warn('[Dashboard] PnL history failed:', pnlRes.error);
-        setPnlHistory({ data: [] });
+        console.warn('[Dashboard] PnL history failed:', !pnlRes.ok ? (pnlRes as any).error : 'Unknown error');
+        setPnlHistory({ granularity: 'hourly', date: '', data: [] });
       }
       
       // Set holdings data
       if (holdingsRes.ok) {
         setHoldings(holdingsRes.data);
       } else {
-        console.warn('[Dashboard] Holdings failed:', holdingsRes.error);
+        console.warn('[Dashboard] Holdings failed:', !holdingsRes.ok ? (holdingsRes as any).error : 'Unknown error');
         setHoldings([]);
       }
       
@@ -104,11 +81,17 @@ export default function TraderDashboard({ onNavigate }: TraderDashboardProps) {
       if (ordersRes.ok && ordersRes.data) {
         setRecentOrders(ordersRes.data.data || []);
       } else {
-        console.warn('[Dashboard] Recent orders failed:', ordersRes.error);
+        console.warn('[Dashboard] Recent orders failed:', !ordersRes.ok ? (ordersRes as any).error : 'Unknown error');
         setRecentOrders([]);
       }
       
-      console.log('[Dashboard] Data loaded:', { summary: summaryRes.data, nav: navRes.data, pnl: pnlRes.data, holdings: holdingsRes.data, orders: ordersRes.data });
+      console.log('[Dashboard] Data loaded:', { 
+        summary, 
+        nav: navRes.ok ? navRes.data : null, 
+        pnl: pnlRes.ok ? pnlRes.data : null, 
+        holdings: holdingsRes.ok ? holdingsRes.data : null, 
+        orders: ordersRes.ok ? ordersRes.data : null 
+      });
     } catch (e: any) {
       console.error('[Dashboard] Fetch error:', e);
       if (e.name === 'AbortError') {
@@ -161,10 +144,6 @@ export default function TraderDashboard({ onNavigate }: TraderDashboardProps) {
     );
   }
 
-  // Show error banner but still render dashboard with default/empty data
-  // This allows users to see the UI even when backend is unavailable
-  const hasData = summary && navHistory && pnlHistory;
-  
   // Use default data if API failed but we still want to show the UI
   const displaySummary = summary || {
     totalBalance: 0,

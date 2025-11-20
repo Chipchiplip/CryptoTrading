@@ -1,26 +1,10 @@
 import { useState, useEffect } from 'react';
-import { TrendingUp, TrendingDown, DollarSign, PieChart as PieChartIcon, Loader2, AlertCircle } from 'lucide-react';
+import { TrendingUp, TrendingDown, DollarSign, Loader2, AlertCircle } from 'lucide-react';
 import { Card } from '../../ui/card';
 import { Badge } from '../../ui/badge';
 import { Alert, AlertDescription } from '../../ui/alert';
 import { PieChart, Pie, Cell, ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip } from 'recharts';
-
-interface Holding {
-  symbol: string;
-  name: string;
-  amount: number;
-  avgPrice: number;
-  currentPrice: number;
-  value: number;
-  pnl: number;
-  pnlPercent: number;
-  allocation: number;
-  cost: number;
-  image?: string | null;
-}
-
 import { PortfolioApi, PortfolioHolding } from '../../../api/portfolio';
-import { CoinIcon } from '../../ui/CoinIcon';
 
 export default function Portfolio() {
   const [holdings, setHoldings] = useState<PortfolioHolding[]>([]);
@@ -45,14 +29,24 @@ export default function Portfolio() {
       setLoading(true);
       setError(null);
 
+      console.log('[Portfolio] Fetching portfolio overview...');
+      // Fetch portfolio overview from unified API
       const overviewRes = await PortfolioApi.getPortfolioOverview();
 
-      if (!overviewRes.ok || !overviewRes.data) {
-        throw new Error(overviewRes.error || 'Failed to load portfolio overview');
+      // Check if API call was successful
+      if (!overviewRes.ok) {
+        console.error('[Portfolio] API call failed:', overviewRes.error);
+        throw new Error(overviewRes.error || 'Failed to load portfolio data');
       }
 
       const data = overviewRes.data;
+      console.log('[Portfolio] Data received:', {
+        totalValue: data.totalValue,
+        holdingsCount: data.holdings?.length || 0,
+        navHistoryCount: data.navHistory?.length || 0
+      });
 
+      // Set portfolio summary
       setPortfolio({
         totalValue: data.totalValue ?? 0,
         totalCost: data.totalCost ?? 0,
@@ -61,31 +55,71 @@ export default function Portfolio() {
         realizedPnL: data.realizedPnL ?? 0,
       });
 
-      setHoldings(data.holdings ?? []);
+      // Set holdings
+      setHoldings(data.holdings || []);
+      console.log('[Portfolio] Holdings set:', data.holdings?.length || 0);
 
-      const navData = Array.isArray(data.navHistory)
-        ? data.navHistory.map(item => ({
-            date: new Date(item.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-            value: item.value,
-          }))
-        : [];
-      setPerformanceData(navData);
+      // Process NAV history for performance chart
+      if (data.navHistory && data.navHistory.length > 0) {
+        console.log('[Portfolio] Processing NAV history:', data.navHistory.length, 'items');
+        const navData = data.navHistory.map(item => {
+          try {
+            // Handle both ISO string and Date object
+            const dateValue = typeof item.date === 'string' ? item.date : item.date;
+            const parsedDate = new Date(dateValue);
+            
+            if (isNaN(parsedDate.getTime())) {
+              console.warn('[Portfolio] Invalid date:', item.date);
+              return null;
+            }
+            
+            return {
+              date: parsedDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+              value: item.value
+            };
+          } catch (e) {
+            console.error('[Portfolio] Error parsing date:', item.date, e);
+            return null;
+          }
+        }).filter(item => item !== null) as Array<{ date: string; value: number }>;
+        
+        console.log('[Portfolio] Processed NAV data:', navData.length, 'items');
+        setPerformanceData(navData);
+      } else {
+        console.warn('[Portfolio] No NAV history data');
+        setPerformanceData([]);
+      }
+      
+      console.log('[Portfolio] Data processing complete:', {
+        portfolio: portfolio,
+        holdingsCount: holdings.length,
+        performanceDataCount: performanceData.length
+      });
     } catch (err: any) {
-      console.error('Error fetching portfolio data:', err);
+      console.error('[Portfolio] Error fetching portfolio data:', err);
       setError(err.message || 'Failed to load portfolio data');
       
-      // Set empty data on error to prevent blank screen
-      setHoldings([]);
-      setPerformanceData([]);
-      setPortfolio({
-        totalValue: 0,
-        totalCost: 0,
-        unrealizedPnL: 0,
-        unrealizedPnLPercent: 0,
-        realizedPnL: 0
-      });
+      // Don't clear data completely - keep existing data if available
+      // This allows partial data to still be displayed
+      if (holdings.length === 0) {
+        setHoldings([]);
+      }
+      if (performanceData.length === 0) {
+        setPerformanceData([]);
+      }
+      // Only reset portfolio if we don't have any data
+      if (portfolio.totalValue === 0) {
+        setPortfolio({
+          totalValue: 0,
+          totalCost: 0,
+          unrealizedPnL: 0,
+          unrealizedPnLPercent: 0,
+          realizedPnL: 0
+        });
+      }
     } finally {
       setLoading(false);
+      console.log('[Portfolio] Loading complete');
     }
   };
 
@@ -97,7 +131,8 @@ export default function Portfolio() {
 
   const COLORS = ['#22c55e', '#3b82f6', '#f59e0b', '#6b7280', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6'];
 
-  if (loading) {
+  // Show loading only on initial load, not on refresh
+  if (loading && holdings.length === 0 && portfolio.totalValue === 0) {
     return (
       <div className="p-4 lg:p-8">
         <div className="flex items-center justify-center h-96">
@@ -208,7 +243,7 @@ export default function Portfolio() {
                 paddingAngle={2}
                 dataKey="value"
               >
-                {allocationData.map((entry, index) => (
+                {allocationData.map((_, index) => (
                   <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                 ))}
               </Pie>

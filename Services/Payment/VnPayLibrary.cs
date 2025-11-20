@@ -119,7 +119,7 @@ namespace CryptoTrading.Services.Payment
             var signData = querystring;
             if (signData.Length > 0)
             {
-                signData = signData.Remove(data.Length - 1, 1);
+                signData = signData.Remove(signData.Length - 1, 1);
             }
 
             var vnpSecureHash = HmacSha512(vnpHashSecret, signData);

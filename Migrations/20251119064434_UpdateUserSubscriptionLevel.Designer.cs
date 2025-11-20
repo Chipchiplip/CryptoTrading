@@ -4,6 +4,7 @@ using CryptoTrading.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace CryptoTrading.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20251119064434_UpdateUserSubscriptionLevel")]
+    partial class UpdateUserSubscriptionLevel
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -366,54 +369,6 @@ namespace CryptoTrading.Migrations
                     b.HasIndex("CollectedAtUtc");
 
                     b.ToTable("MarketStats", (string)null);
-                });
-
-            modelBuilder.Entity("CryptoTrading.Models.Notification", b =>
-                {
-                    b.Property<ulong>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("BIGINT UNSIGNED");
-
-                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<ulong>("Id"));
-
-                    b.Property<string>("Category")
-                        .HasMaxLength(50)
-                        .HasColumnType("varchar(50)");
-
-                    b.Property<DateTime>("CreatedAtUtc")
-                        .HasColumnType("datetime(6)");
-
-                    b.Property<bool>("IsRead")
-                        .HasColumnType("tinyint(1)");
-
-                    b.Property<string>("Message")
-                        .IsRequired()
-                        .HasMaxLength(500)
-                        .HasColumnType("varchar(500)");
-
-                    b.Property<DateTime?>("ReadAtUtc")
-                        .HasColumnType("datetime(6)");
-
-                    b.Property<string>("Title")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("varchar(100)");
-
-                    b.Property<string>("Type")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("varchar(50)");
-
-                    b.Property<int>("UserId")
-                        .HasColumnType("int");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("UserId", "CreatedAtUtc");
-
-                    b.HasIndex("UserId", "IsRead");
-
-                    b.ToTable("Notifications", (string)null);
                 });
 
             modelBuilder.Entity("CryptoTrading.Models.Order", b =>
@@ -1099,17 +1054,6 @@ namespace CryptoTrading.Migrations
                 });
 
             modelBuilder.Entity("CryptoTrading.Models.LoginActivity", b =>
-                {
-                    b.HasOne("CryptoTrading.Models.User", "User")
-                        .WithMany()
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("User");
-                });
-
-            modelBuilder.Entity("CryptoTrading.Models.Notification", b =>
                 {
                     b.HasOne("CryptoTrading.Models.User", "User")
                         .WithMany()
