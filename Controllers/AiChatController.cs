@@ -1,6 +1,8 @@
 using CryptoTrading.Data;
 using CryptoTrading.Models.DTOs;
 using CryptoTrading.Services.Ai;
+using CryptoTrading.Attributes;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace CryptoTrading.Controllers;
@@ -10,6 +12,7 @@ namespace CryptoTrading.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/ai/chat")]
+[Authorize]
 public class AiChatController : ControllerBase
 {
     private readonly IAiTradingChatService _chatService;
@@ -21,8 +24,10 @@ public class AiChatController : ControllerBase
 
     /// <summary>
     /// Sends a user message to the AI agent and returns the response.
+    /// Requires Pro or Premium subscription.
     /// </summary>
     [HttpPost]
+    [RequireProOrPremium]
     public async Task<ActionResult<AiChatResponseDto>> ChatAsync(
         [FromBody] AiChatMessageRequest request,
         CancellationToken ct = default)
@@ -36,7 +41,12 @@ public class AiChatController : ControllerBase
         return Ok(response);
     }
 
+    /// <summary>
+    /// Apply a bot suggestion from AI chat.
+    /// Requires Pro or Premium subscription.
+    /// </summary>
     [HttpPost("bot-suggestions/{id:guid}/apply")]
+    [RequireProOrPremium]
     public async Task<ActionResult<TradingBotDetailDto>> ApplySuggestion(
         Guid id,
         [FromQuery] int userId,

@@ -1,9 +1,12 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using CryptoTrading.Data;
 using CryptoTrading.Models;
 using CryptoTrading.Services.Bot;
 using CryptoTrading.Interfaces.Bot;
+using CryptoTrading.Interfaces;
+using CryptoTrading.Attributes;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -14,6 +17,7 @@ namespace CryptoTrading.Controllers
     /// </summary>
     [ApiController]
     [Route("api/ai/recommendations")]
+    [Authorize]
     public class AiRecommendationsController : ControllerBase
     {
         private readonly HttpClient _aiHttpClient;
@@ -21,39 +25,50 @@ namespace CryptoTrading.Controllers
         private readonly AiRecommendationService _aiService;
         private readonly IRiskManager _riskManager;
         private readonly ILogger<AiRecommendationsController> _logger;
+        private readonly ICurrentUser _currentUser;
 
         public AiRecommendationsController(
             IHttpClientFactory httpClientFactory,
             ApplicationDbContext db,
             AiRecommendationService aiService,
             IRiskManager riskManager,
-            ILogger<AiRecommendationsController> logger)
+            ILogger<AiRecommendationsController> logger,
+            ICurrentUser currentUser)
         {
             _aiHttpClient = httpClientFactory.CreateClient("AiRecommendationService");
             _db = db;
             _aiService = aiService;
             _riskManager = riskManager;
             _logger = logger;
+            _currentUser = currentUser;
         }
 
         /// <summary>
         /// Request AI trading recommendation
+        /// Requires Pro or Premium subscription.
         /// </summary>
         [HttpPost]
+        [RequireProOrPremium]
         public async Task<ActionResult<AiRecommendationDto>> CreateRecommendation(
             [FromBody] CreateAiRecommendationRequest request,
             CancellationToken ct = default)
         {
             try
             {
-                var userId = request.UserId; // TODO: Get from JWT token in production
+                // Get userId from JWT token
+                var userId = _currentUser.UserId;
+                if (userId == null)
+                {
+                    return Unauthorized(new { message = "User not authenticated" });
+                }
+
                 var botId = request.BotId;
 
-                _logger.LogInformation("Requesting AI recommendation for UserId={UserId}, BotId={BotId}", userId, botId);
+                _logger.LogInformation("Requesting AI recommendation for UserId={UserId}, BotId={BotId}", userId.Value, botId);
 
                 // 1. Build trading plan & market snapshot from bot settings
-                var tradingPlan = await _aiService.BuildTradingPlanAsync(userId, botId, ct);
-                var snapshot = await _aiService.BuildMarketSnapshotAsync(userId, botId, null, ct);
+                var tradingPlan = await _aiService.BuildTradingPlanAsync(userId.Value, botId, ct);
+                var snapshot = await _aiService.BuildMarketSnapshotAsync(userId.Value, botId, null, ct);
 
                 // 2. Convert trading plan and snapshot to snake_case format for Python API
                 var tradingPlanJson = JsonSerializer.Serialize(tradingPlan, new JsonSerializerOptions
@@ -73,7 +88,7 @@ namespace CryptoTrading.Controllers
                 // 3. Call Python AI service
                 var aiRequest = new AiRecommendationRequest
                 {
-                    UserId = userId,
+                    UserId = userId.Value,
                     BotId = null, // Python service expects int?, but we have Guid? - send null for now
                     TradingPlanId = tradingPlan.Id,
                     TradingPlan = tradingPlanObj,
@@ -120,8 +135,10 @@ namespace CryptoTrading.Controllers
 
         /// <summary>
         /// Apply recommendation to bot configuration
+        /// Requires Pro or Premium subscription.
         /// </summary>
         [HttpPost("{id}/apply-to-bot")]
+        [RequireProOrPremium]
         public async Task<IActionResult> ApplyToBot(
             string id,
             [FromBody] ApplyAiToBotRequest request,
@@ -188,8 +205,10 @@ namespace CryptoTrading.Controllers
 
         /// <summary>
         /// Place order based on AI recommendation
+        /// Requires Pro or Premium subscription.
         /// </summary>
         [HttpPost("{id}/place-order")]
+        [RequireProOrPremium]
         public async Task<IActionResult> PlaceOrder(
             string id,
             [FromBody] PlaceAiOrderRequest request,
@@ -197,6 +216,13 @@ namespace CryptoTrading.Controllers
         {
             try
             {
+                // Get userId from JWT token
+                var userId = _currentUser.UserId;
+                if (userId == null)
+                {
+                    return Unauthorized(new { message = "User not authenticated" });
+                }
+
                 // 1. Load recommendation
                 var rec = await _db.Set<AiTradingRecommendation>()
                     .FirstOrDefaultAsync(x => x.RecommendationId == id, ct);
@@ -213,7 +239,7 @@ namespace CryptoTrading.Controllers
 
                 // 2. Risk validation
                 // TODO: Implement IRiskService.ValidateAiOrderAsync()
-                var riskResult = await ValidateAiOrderAsync(rec, request.UserId, ct);
+                var riskResult = await ValidateAiOrderAsync(rec, userId.Value, ct);
 
                 // Log risk audit
                 var auditLog = new AiRiskAuditLog
@@ -304,7 +330,7 @@ namespace CryptoTrading.Controllers
 
     public class CreateAiRecommendationRequest
     {
-        public int UserId { get; set; }
+        // UserId is now extracted from JWT token, no longer needed in request
         public Guid? BotId { get; set; }
     }
 
@@ -361,7 +387,7 @@ namespace CryptoTrading.Controllers
 
     public class PlaceAiOrderRequest
     {
-        public int UserId { get; set; }
+        // UserId is now extracted from JWT token, no longer needed in request
     }
 
     public class TradingPlanDto
