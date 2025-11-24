@@ -47,17 +47,17 @@ D:\FPT\Intern\Project\
 ═══════════════════════════════════════════════════════════════════
 
 📦 NuGet Packages Installed:
-  ✅ Microsoft.EntityFrameworkCore.SqlServer (9.0.10)
+  ✅ Pomelo.EntityFrameworkCore.MySql (9.0.0)
   ✅ Microsoft.EntityFrameworkCore.Tools (9.0.10)
   ✅ StackExchange.Redis (2.9.32)
   ✅ Microsoft.AspNetCore.Authentication.JwtBearer (9.0.10)
   ✅ Swashbuckle.AspNetCore (9.0.6)
   ✅ Hangfire.AspNetCore (1.8.21)
-  ✅ Hangfire.SqlServer (1.8.21)
+  ✅ Hangfire.Storage.MySql (2.0.4)
 
 ═══════════════════════════════════════════════════════════════════
 
-🗄️ Database Schema (SQL Server):
+🗄️ Database Schema (MySQL):
   ├── auth (Authentication)
   │   ├── Users
   │   ├── RefreshTokens
@@ -93,7 +93,7 @@ D:\FPT\Intern\Project\
 ═══════════════════════════════════════════════════════════════════
 
 🐳 Docker Services:
-  ├── ctw-sqlserver (SQL Server 2022)      → port 1433
+  ├── ctw-mysql (MySQL 8.0)                 → port 3306
   ├── ctw-redis (Redis 7)                   → port 6379
   └── ctw-redis-commander (Redis UI)        → port 8081
 

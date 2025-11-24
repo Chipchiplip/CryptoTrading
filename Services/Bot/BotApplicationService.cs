@@ -6,6 +6,9 @@ using CryptoTrading.Services.Trading;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using System.Text.Json;
+using Microsoft.Extensions.DependencyInjection;
+using System.Threading;
+using System.Collections.Generic;
 
 namespace CryptoTrading.Services.Bot
 {
@@ -18,17 +21,20 @@ namespace CryptoTrading.Services.Bot
         private readonly IStrategyRegistry _strategyRegistry;
         private readonly ITradingService _tradingService;
         private readonly ILogger<BotApplicationService> _logger;
+        private readonly IServiceProvider _serviceProvider;
 
         public BotApplicationService(
             ApplicationDbContext context,
             IStrategyRegistry strategyRegistry,
             ITradingService tradingService,
-            ILogger<BotApplicationService> logger)
+            ILogger<BotApplicationService> logger,
+            IServiceProvider serviceProvider)
         {
             _context = context;
             _strategyRegistry = strategyRegistry;
             _tradingService = tradingService;
             _logger = logger;
+            _serviceProvider = serviceProvider;
         }
 
         public async Task<TradingBotDetailDto> CreateAsync(int userId, CreateBotRequest request)
@@ -406,11 +412,93 @@ namespace CryptoTrading.Services.Bot
             };
         }
 
-        public Task<SimulationResultDto> SimulateAsync(int userId, Guid botId, SimulationRequest request)
+        public async Task<SimulationResultDto> SimulateAsync(int userId, Guid botId, SimulationRequest request)
         {
-            // TODO: Implement simulation/backtesting
-            _logger.LogWarning("Simulation not yet implemented");
-            throw new NotImplementedException("Simulation feature coming soon");
+            var bot = await _context.TradingBots
+                .Include(b => b.StrategyDefinition)
+                .FirstOrDefaultAsync(b => b.Id == botId && b.UserId == userId);
+
+            if (bot == null)
+            {
+                throw new KeyNotFoundException("Bot not found");
+            }
+
+            if (bot.StrategyDefinition == null)
+            {
+                throw new InvalidOperationException("Bot strategy definition not loaded");
+            }
+
+            var strategy = _strategyRegistry.GetStrategy(bot.StrategyDefinition.StrategyKey);
+            if (strategy == null)
+            {
+                throw new InvalidOperationException("Strategy implementation not registered");
+            }
+
+            var parameterValues = !string.IsNullOrEmpty(bot.Parameters)
+                ? JsonSerializer.Deserialize<Dictionary<string, object>>(bot.Parameters) ?? new Dictionary<string, object>()
+                : new Dictionary<string, object>();
+
+            if (request.Parameters != null)
+            {
+                foreach (var entry in request.Parameters)
+                {
+                    parameterValues[entry.Key] = entry.Value;
+                }
+            }
+
+            var simulationRequest = new SimulationRequest
+            {
+                StrategyDefinitionId = bot.StrategyDefinitionId,
+                Parameters = parameterValues,
+                StartDate = request.StartDate,
+                EndDate = request.EndDate,
+                InitialCapital = request.InitialCapital > 0
+                    ? request.InitialCapital
+                    : parameterValues.TryGetValue("capitalAllocation", out var cap) && decimal.TryParse(cap?.ToString(), out var capValue)
+                        ? capValue
+                        : 10000m
+            };
+
+            using var scope = _serviceProvider.CreateScope();
+            var marketData = scope.ServiceProvider.GetRequiredService<IMarketDataProvider>();
+            var portfolioService = scope.ServiceProvider.GetRequiredService<IPortfolioService>();
+            var riskManager = scope.ServiceProvider.GetRequiredService<IRiskManager>();
+            var loggerFactory = scope.ServiceProvider.GetRequiredService<ILoggerFactory>();
+
+            object? cachedState = null;
+
+            var botContext = new BotContext
+            {
+                BotId = bot.Id,
+                UserId = bot.UserId,
+                BaseAsset = bot.BaseAsset,
+                QuoteAsset = string.IsNullOrWhiteSpace(bot.QuoteAsset) ? "USD" : bot.QuoteAsset,
+                AllowedCapital = simulationRequest.InitialCapital,
+                TradingService = new BotTradingServiceWrapper(_tradingService, bot.UserId, bot.Id),
+                MarketData = marketData,
+                PortfolioService = portfolioService,
+                RiskManager = riskManager,
+                Logger = new BotLogger(_context, bot.Id, loggerFactory.CreateLogger<BotLogger>()),
+                EventCollector = new EventCollector(),
+                LoadStateAsyncFunc = (type, ct) => Task.FromResult(cachedState),
+                SaveStateAsyncFunc = (state, ct) =>
+                {
+                    cachedState = state;
+                    return Task.CompletedTask;
+                }
+            };
+
+            var simulationParameters = new BotParameters { Values = parameterValues };
+            botContext.AllowedCapital = Math.Max(simulationRequest.InitialCapital, simulationParameters.GetValue("capitalAllocation", simulationRequest.InitialCapital));
+
+            var result = await strategy.SimulateAsync(botContext, simulationRequest, CancellationToken.None);
+
+            if (!result.Success || result.Result == null)
+            {
+                throw new InvalidOperationException(result.ErrorMessage ?? "Simulation failed");
+            }
+
+            return result.Result;
         }
 
         private async Task<TradingBotDetailDto> MapToBotDetailDto(TradingBot bot, BotStrategyDefinition strategy)

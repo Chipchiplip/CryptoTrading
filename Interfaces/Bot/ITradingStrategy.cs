@@ -1,4 +1,5 @@
 using CryptoTrading.Models.DTOs;
+using System.Text.Json;
 
 namespace CryptoTrading.Interfaces.Bot
 {
@@ -107,6 +108,34 @@ namespace CryptoTrading.Interfaces.Bot
                 if (value is T typedValue)
                     return typedValue;
                 
+                if (value is JsonElement jsonElement)
+                {
+                    try
+                    {
+                        object? parsed = jsonElement.ValueKind switch
+                        {
+                            JsonValueKind.Number when typeof(T) == typeof(int) => jsonElement.TryGetInt32(out var intVal) ? intVal : defaultValue,
+                            JsonValueKind.Number when typeof(T) == typeof(long) => jsonElement.TryGetInt64(out var longVal) ? longVal : defaultValue,
+                            JsonValueKind.Number when typeof(T) == typeof(decimal) => jsonElement.TryGetDecimal(out var decVal) ? decVal : defaultValue,
+                            JsonValueKind.Number when typeof(T) == typeof(double) => jsonElement.TryGetDouble(out var dblVal) ? dblVal : defaultValue,
+                            JsonValueKind.Number when typeof(T) == typeof(float) => jsonElement.TryGetSingle(out var floatVal) ? floatVal : defaultValue,
+                            JsonValueKind.String => jsonElement.GetString(),
+                            JsonValueKind.True when typeof(T) == typeof(bool) => true,
+                            JsonValueKind.False when typeof(T) == typeof(bool) => false,
+                            _ => jsonElement.Deserialize<T>()
+                        };
+
+                        if (parsed is T parsedValue)
+                        {
+                            return parsedValue;
+                        }
+                    }
+                    catch
+                    {
+                        // Ignore and fall back to default conversion
+                    }
+                }
+
                 try
                 {
                     return (T)Convert.ChangeType(value, typeof(T));

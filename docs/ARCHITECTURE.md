@@ -392,7 +392,7 @@ services:
 
 ### Production (Azure/AWS)
 - **API**: App Service / EC2 + Auto Scaling
-- **Database**: Azure SQL / RDS SQL Server
+- **Database**: Azure Database for MySQL / RDS MySQL / Aiven Cloud MySQL
 - **Cache**: Azure Redis / ElastiCache
 - **Storage**: Azure Blob / S3 (for backups)
 - **CDN**: Azure CDN / CloudFront (for frontend)
