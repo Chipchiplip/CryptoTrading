@@ -13,7 +13,7 @@ namespace CryptoTrading.Models
         public int UserId { get; set; }
         
         [Required]
-        public int PlanType { get; set; } // 0 = Free, 1 = Plus, 2 = Pro
+        public int PlanType { get; set; } // 0 = Free, 2 = Premium
         
         [Required]
         [MaxLength(16)]

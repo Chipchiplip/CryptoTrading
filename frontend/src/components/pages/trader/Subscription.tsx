@@ -15,8 +15,6 @@ import { PaymentApi, type SubscriptionPlan, type BillingHistoryItem } from '../.
 
 const planIcons: Record<string, typeof Star> = {
   Free: Star,
-  Plus: Zap,
-  Pro: Zap,
   Premium: Crown,
 };
 
@@ -29,6 +27,8 @@ export default function Subscription() {
   const [billingHistory, setBillingHistory] = useState<BillingHistoryItem[]>([]);
   const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
   const [pendingPlanType, setPendingPlanType] = useState<number | null>(null);
+  const [insufficientBalanceDialogOpen, setInsufficientBalanceDialogOpen] = useState(false);
+  const [insufficientBalanceError, setInsufficientBalanceError] = useState<{ required: number; available: number } | null>(null);
 
   useEffect(() => {
     loadData();
@@ -118,23 +118,37 @@ export default function Subscription() {
       if (!res.ok) {
         // Try to parse error message - it might be a string or an object
         let errorMessage = res.error;
+        let hasInsufficientBalance = false;
+        let balanceError: { required: number; available: number } | null = null;
+        
         try {
           // If error is a string that looks like JSON, try to parse it
           if (typeof res.error === 'string' && res.error.startsWith('{')) {
             const errorData = JSON.parse(res.error);
             if (errorData.required !== undefined && errorData.available !== undefined) {
-              errorMessage = `Insufficient balance. Required: $${Number(errorData.required).toFixed(2)}, Available: $${Number(errorData.available).toFixed(2)}`;
+              hasInsufficientBalance = true;
+              balanceError = {
+                required: Number(errorData.required),
+                available: Number(errorData.available)
+              };
             } else if (errorData.message) {
               errorMessage = errorData.message;
             }
           } else if (typeof res.error === 'string' && res.error.includes('Insufficient')) {
-            errorMessage = res.error;
+            hasInsufficientBalance = true;
           }
         } catch {
           // If parsing fails, use the original error
           errorMessage = res.error;
         }
-        setError(errorMessage);
+        
+        // Show modal dialog for insufficient balance, otherwise show regular error
+        if (hasInsufficientBalance && balanceError) {
+          setInsufficientBalanceError(balanceError);
+          setInsufficientBalanceDialogOpen(true);
+        } else {
+          setError(errorMessage);
+        }
         setProcessing(null);
         return;
       }
@@ -159,7 +173,7 @@ export default function Subscription() {
   };
 
   const getPlanName = (planType: number) => {
-    const planNames: Record<number, string> = { 0: 'Free', 1: 'Pro', 2: 'Premium' };
+    const planNames: Record<number, string> = { 0: 'Free', 2: 'Premium' };
     return planNames[planType] || 'Unknown';
   };
 
@@ -215,18 +229,18 @@ export default function Subscription() {
         <p className="text-gray-400">Upgrade to unlock more features and better rates</p>
       </div>
 
-      {error && (
+      {error && !insufficientBalanceDialogOpen && (
         <div className="mb-6 p-4 bg-red-500/10 border border-red-500/50 rounded-lg text-red-400">
           {error}
         </div>
       )}
 
       {/* Plans */}
-      <div className="grid md:grid-cols-3 gap-6 mb-12">
+      <div className="grid md:grid-cols-2 gap-6 mb-12 max-w-4xl mx-auto">
         {plans.map((plan) => {
           const Icon = planIcons[plan.name] || Star;
           const isCurrent = plan.id === currentPlanType;
-          const isPopular = plan.id === 1; // Plus/Pro plan
+          const isPopular = plan.id === 2; // Premium plan
           const isProcessing = processing === plan.id;
 
           return (
@@ -398,6 +412,73 @@ export default function Subscription() {
               className="bg-emerald-500 text-black hover:bg-emerald-600"
             >
               Confirm
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Insufficient Balance Dialog */}
+      <Dialog open={insufficientBalanceDialogOpen} onOpenChange={setInsufficientBalanceDialogOpen}>
+        <DialogContent className="bg-gray-900 border-gray-800 text-white">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="w-5 h-5 text-red-500" />
+              Insufficient Balance
+            </DialogTitle>
+            <DialogDescription className="text-gray-400">
+              {insufficientBalanceError && (
+                <div className="mt-4 space-y-3">
+                  <p className="text-white">
+                    You don't have enough balance to upgrade to this plan.
+                  </p>
+                  <div className="p-4 bg-red-500/10 border border-red-500/50 rounded-lg space-y-2">
+                    <div className="flex justify-between items-center">
+                      <span className="text-gray-400">Required:</span>
+                      <span className="text-white font-semibold">
+                        ${insufficientBalanceError.required.toFixed(2)}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-gray-400">Available:</span>
+                      <span className="text-red-400 font-semibold">
+                        ${insufficientBalanceError.available.toFixed(2)}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center pt-2 border-t border-red-500/30">
+                      <span className="text-gray-400">Shortfall:</span>
+                      <span className="text-red-400 font-semibold">
+                        ${(insufficientBalanceError.required - insufficientBalanceError.available).toFixed(2)}
+                      </span>
+                    </div>
+                  </div>
+                  <p className="text-sm text-gray-400 mt-4">
+                    Please deposit more funds to your wallet before upgrading.
+                  </p>
+                </div>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setInsufficientBalanceDialogOpen(false);
+                setInsufficientBalanceError(null);
+              }}
+              className="text-gray-400 hover:text-white"
+            >
+              Close
+            </Button>
+            <Button
+              onClick={() => {
+                setInsufficientBalanceDialogOpen(false);
+                setInsufficientBalanceError(null);
+                // Navigate to deposit page if needed
+                window.location.href = '/deposit';
+              }}
+              className="bg-emerald-500 text-black hover:bg-emerald-600"
+            >
+              Go to Deposit
             </Button>
           </DialogFooter>
         </DialogContent>

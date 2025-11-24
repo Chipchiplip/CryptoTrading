@@ -80,14 +80,12 @@ namespace CryptoTrading.Services
                 // Plan prices in VND
                 var planPricesVnd = new Dictionary<int, decimal>
                 {
-                    { 1, 696000m },  // Pro: ~29 USD
                     { 2, 2376000m } // Premium: ~99 USD
                 };
 
                 var planNames = new Dictionary<int, string>
                 {
                     { 0, "Free" },
-                    { 1, "Pro" },
                     { 2, "Premium" }
                 };
 

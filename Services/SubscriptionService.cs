@@ -153,7 +153,6 @@ namespace CryptoTrading.Services
         private static string MapPlanTypeToLevel(int planType) => planType switch
         {
             2 => "Premium",
-            1 => "Pro",
             _ => "Free"
         };
 
@@ -166,7 +165,6 @@ namespace CryptoTrading.Services
 
             return level.Trim().ToLowerInvariant() switch
             {
-                "pro" => 1,
                 "premium" => 2,
                 _ => 0
             };

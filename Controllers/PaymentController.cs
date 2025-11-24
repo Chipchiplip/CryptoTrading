@@ -79,23 +79,6 @@ public class PaymentController : ControllerBase
             },
             new
             {
-                id = 1,
-                name = "Pro",
-                price = 29m,
-                priceVnd = 696000, // ~29 USD * 24000
-                period = "month",
-                features = new[]
-                {
-                    "All Free features",
-                    "Unlimited trades",
-                    "Priority support",
-                    "Reduced fees (0.1%)",
-                    "Advanced charts",
-                    "API access"
-                }
-            },
-            new
-            {
                 id = 2,
                 name = "Premium",
                 price = 99m,
@@ -103,13 +86,16 @@ public class PaymentController : ControllerBase
                 period = "month",
                 features = new[]
                 {
-                    "All Pro features",
+                    "All Free features",
+                    "Unlimited trades",
                     "24/7 dedicated support",
                     "Lowest fees (0.05%)",
                     "Advanced analytics",
                     "Custom trading bots",
                     "Priority withdrawals",
-                    "Personal account manager"
+                    "Personal account manager",
+                    "Advanced charts",
+                    "API access"
                 }
             }
         };
@@ -131,9 +117,9 @@ public class PaymentController : ControllerBase
             if (userId == null)
                 return Unauthorized();
 
-            // Validate plan type
-            if (dto.PlanType < 0 || dto.PlanType > 2)
-                return BadRequest(new { message = "Invalid plan type" });
+            // Validate plan type (only 0 = Free, 2 = Premium)
+            if (dto.PlanType != 0 && dto.PlanType != 2)
+                return BadRequest(new { message = "Invalid plan type. Only Free (0) and Premium (2) plans are available." });
 
             // Lấy plan hiện tại của user
             var currentPlanType = await _subscriptionService.GetUserPlanTypeAsync(userId.Value);
@@ -149,14 +135,12 @@ public class PaymentController : ControllerBase
             var planPricesVnd = new Dictionary<int, decimal>
             {
                 { 0, 0m },        // Free
-                { 1, 696000m },  // Pro: ~29 USD
-                { 2, 2376000m }  // Premium: ~99 USD
+                { 2, 2376000m }   // Premium: ~99 USD
             };
 
             var planNames = new Dictionary<int, string>
             {
                 { 0, "Free" },
-                { 1, "Pro" },
                 { 2, "Premium" }
             };
 
@@ -394,7 +378,6 @@ public class PaymentController : ControllerBase
             var planNames = new Dictionary<int, string>
             {
                 { 0, "Free" },
-                { 1, "Pro" },
                 { 2, "Premium" }
             };
 
@@ -467,7 +450,7 @@ public class PaymentController : ControllerBase
                     paymentHistory.UpdatedAtUtc = DateTime.UtcNow;
 
                     // Lấy plan type từ payment history
-                    int planType = paymentHistory.PlanType ?? 1; // Default Pro nếu không có
+                    int planType = paymentHistory.PlanType ?? 2; // Default Premium nếu không có
 
                     // Tạo hoặc cập nhật subscription
                     var periodStart = DateTime.UtcNow;
