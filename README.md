@@ -31,7 +31,7 @@ Crypto Trading Platform API được xây dựng với ASP.NET Core 9.0, theo c�
 ## 🛠️ Technologies
 
 - **Framework**: ASP.NET Core 9.0
-- **Database**: SQL Server + Entity Framework Core
+- **Database**: MySQL + Entity Framework Core (Pomelo)
 - **Authentication**: JWT Bearer Token
 - **Real-time**: SignalR
 - **Caching**: Redis
@@ -43,7 +43,7 @@ Crypto Trading Platform API được xây dựng với ASP.NET Core 9.0, theo c�
 ### Prerequisites
 
 - .NET 9.0 SDK
-- SQL Server (LocalDB hoặc Docker)
+- MySQL (Aiven Cloud hoặc Docker)
 - Redis (optional, for caching)
 
 ### 1. Clone & Setup
@@ -55,19 +55,19 @@ cd CryptoTrading
 
 ### 2. Database Setup
 
-**Option A: LocalDB (Windows)**
+**Option A: Aiven Cloud MySQL (Recommended)**
 ```bash
-# Connection string đã được cấu hình sẵn trong appsettings.json
+# Connection string đã được cấu hình sẵn trong appsettings.Development.json
 dotnet ef database update
 ```
 
-**Option B: Docker**
+**Option B: Docker MySQL**
 ```bash
-# Start SQL Server & Redis
+# Start MySQL & Redis
 docker-compose up -d
 
 # Update connection string in appsettings.json:
-"DefaultConnection": "Server=localhost,1433;Database=CryptoTradingDb;User Id=sa;Password=YourStrong@Passw0rd;TrustServerCertificate=true"
+"DefaultConnection": "Server=localhost;Port=3306;Database=crypto_trading;User ID=root;Password=YourStrong@Passw0rd;SslMode=None;"
 ```
 
 ### 3. Run Application
@@ -117,7 +117,7 @@ API sẽ chạy tại:
 ```json
 {
   "ConnectionStrings": {
-    "DefaultConnection": "Server=(localdb)\\mssqllocaldb;Database=CryptoTradingDb;Trusted_Connection=true"
+    "DefaultConnection": "Server=your-mysql-host;Port=20158;Database=crypto_trading;User ID=avnadmin;Password=your-password;SslMode=Required;"
   },
   "Jwt": {
     "SecretKey": "your-secret-key-here",
@@ -213,7 +213,7 @@ docker run -p 8080:80 cryptotrading-api
 - **API Documentation**: Available at `/swagger` when running
 - **Getting Started**: [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md)
 - **Task Assignments**: [docs/TASK_ASSIGNMENTS.md](docs/TASK_ASSIGNMENTS.md)
-- **Project Setup**: [docs/INITIAL_SETUP_SUMMARY.md](docs/INITIAL_SETUP_SUMMARY.md)
+- **Documentation Index**: [docs/README.md](docs/README.md)
 - **SignalR Hubs**:
   - Market Hub: `/hubs/market` - Real-time price updates
   - Trading Hub: `/hubs/trading` - Real-time trading updates

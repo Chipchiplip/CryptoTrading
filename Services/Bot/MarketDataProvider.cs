@@ -1,6 +1,9 @@
+using System;
+using System.Collections.Generic;
 using CryptoTrading.Interfaces.Bot;
 using CryptoTrading.Services;
 using Microsoft.Extensions.Logging;
+using System.Linq;
 
 namespace CryptoTrading.Services.Bot
 {
@@ -56,17 +59,189 @@ namespace CryptoTrading.Services.Bot
             }
         }
 
-        public Task<List<OhlcvData>> GetOhlcvAsync(
-            string baseAsset, 
-            string quoteAsset, 
-            DateTime startDate, 
-            DateTime endDate, 
-            string interval = "1h", 
+        public async Task<List<OhlcvData>> GetOhlcvAsync(
+            string baseAsset,
+            string quoteAsset,
+            DateTime startDate,
+            DateTime endDate,
+            string interval = "1h",
             CancellationToken cancellationToken = default)
         {
-            // TODO: Implement OHLCV data retrieval for backtesting
-            _logger.LogWarning("OHLCV data retrieval not yet implemented");
-            return Task.FromResult(new List<OhlcvData>());
+            if (endDate <= startDate)
+            {
+                return new List<OhlcvData>();
+            }
+
+            try
+            {
+                var marketData = await _coinGeckoService.GetMarketDataAsync();
+                var coin = marketData.FirstOrDefault(c =>
+                    c.Symbol.Equals(baseAsset, StringComparison.OrdinalIgnoreCase) ||
+                    c.Id.Equals(baseAsset, StringComparison.OrdinalIgnoreCase));
+
+                if (coin == null)
+                {
+                    _logger.LogWarning("Unable to find coin data for asset {Asset}", baseAsset);
+                    return new List<OhlcvData>();
+                }
+
+                var totalDays = Math.Max(1, (int)Math.Ceiling((endDate - startDate).TotalDays));
+                var priceHistory = await _coinGeckoService.GetPriceHistoryAsync(coin.Id ?? coin.Symbol, totalDays);
+
+                if (priceHistory == null || priceHistory.Count == 0)
+                {
+                    _logger.LogWarning("No price history returned for {Asset}", baseAsset);
+                    return new List<OhlcvData>();
+                }
+
+                var filtered = priceHistory
+                    .Where(p => p.Timestamp >= startDate && p.Timestamp <= endDate)
+                    .OrderBy(p => p.Timestamp)
+                    .ToList();
+
+                if (filtered.Count == 0)
+                {
+                    filtered = priceHistory.OrderBy(p => p.Timestamp).ToList();
+                }
+
+                var intervalSpan = interval.ToLower() switch
+                {
+                    "1m" => TimeSpan.FromMinutes(1),
+                    "5m" => TimeSpan.FromMinutes(5),
+                    "15m" => TimeSpan.FromMinutes(15),
+                    "30m" => TimeSpan.FromMinutes(30),
+                    "1h" => TimeSpan.FromHours(1),
+                    "4h" => TimeSpan.FromHours(4),
+                    "1d" => TimeSpan.FromDays(1),
+                    _ => TimeSpan.FromHours(1)
+                };
+
+                var grouped = filtered
+                    .GroupBy(p =>
+                    {
+                        var ts = DateTime.SpecifyKind(p.Timestamp, DateTimeKind.Utc);
+                        var ticks = ts.Ticks - (ts.Ticks % intervalSpan.Ticks);
+                        return new DateTime(ticks, DateTimeKind.Utc);
+                    })
+                    .OrderBy(g => g.Key);
+
+                var candles = new List<OhlcvData>();
+                foreach (var group in grouped)
+                {
+                    var ordered = group.OrderBy(p => p.Timestamp).ToList();
+                    var open = ordered.First().Price;
+                    var close = ordered.Last().Price;
+                    var high = ordered.Max(p => p.Price);
+                    var low = ordered.Min(p => p.Price);
+
+                    candles.Add(new OhlcvData
+                    {
+                        Timestamp = group.Key,
+                        Open = open,
+                        High = high,
+                        Low = low,
+                        Close = close,
+                        Volume = 0
+                    });
+                }
+
+                return candles;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to retrieve OHLCV data for {Asset}/{Quote}", baseAsset, quoteAsset);
+                return new List<OhlcvData>();
+            }
+        }
+
+        public async Task<MarketDataForAi?> GetMarketDataAsync(string symbol, CancellationToken cancellationToken = default)
+        {
+            try
+            {
+                // Extract base asset from symbol (e.g., "BTCUSDT" -> "BTC")
+                var baseAsset = symbol.Replace("USDT", "").Replace("USD", "");
+
+                // Get current price
+                var price = await GetMidPriceAsync(baseAsset, "USDT", cancellationToken);
+                if (price <= 0)
+                {
+                    _logger.LogWarning("No price data available for {Symbol}", symbol);
+                    return null;
+                }
+
+                // Try to get cached data for trend/volume analysis
+                MarketDataForAi? marketData = null;
+                if (_cacheService.TryGetCryptoData(out var cachedData) && cachedData != null)
+                {
+                    var coin = cachedData.FirstOrDefault(c => 
+                        c.Symbol.Equals(baseAsset, StringComparison.OrdinalIgnoreCase));
+                    
+                    if (coin != null)
+                    {
+                        // Calculate trend from price change (more lenient thresholds)
+                        var trend1h = coin.PriceChangePercentage1h.HasValue
+                            ? (coin.PriceChangePercentage1h.Value > 0.5m
+                                ? "uptrend"
+                                : coin.PriceChangePercentage1h.Value < -0.5m
+                                    ? "downtrend"
+                                    : "neutral")
+                            : "neutral";
+                        
+                        // Use 24h as proxy for 4h trend (since we don't have 4h data)
+                        var trend4h = coin.PriceChangePercentage24h.HasValue
+                            ? (coin.PriceChangePercentage24h.Value > 1m
+                                ? "uptrend"
+                                : coin.PriceChangePercentage24h.Value < -1m
+                                    ? "downtrend"
+                                    : "neutral")
+                            : "neutral";
+
+                        // Estimate volatility from 24h change
+                        var volatility = coin.PriceChangePercentage24h.HasValue
+                            ? Math.Abs((double)coin.PriceChangePercentage24h.Value / 100)
+                            : 0.05; // Default 5%
+
+                        // Estimate support/resistance (simplified - use price * 0.95 and price * 1.05)
+                        var support = price * 0.95m;
+                        var resistance = price * 1.05m;
+
+                        marketData = new MarketDataForAi
+                        {
+                            CurrentPrice = price,
+                            Trend1h = trend1h,
+                            Trend4h = trend4h,
+                            VolumeChangePercent = 0, // TODO: Calculate from volume data
+                            Volatility = volatility,
+                            SupportLevel = support,
+                            ResistanceLevel = resistance,
+                            HasBadNews = false // TODO: Check news feed
+                        };
+                    }
+                }
+
+                // Fallback if no cached data
+                if (marketData == null)
+                {
+                    marketData = new MarketDataForAi
+                    {
+                        CurrentPrice = price,
+                        Trend1h = "neutral",
+                        Trend4h = "neutral",
+                        VolumeChangePercent = 0,
+                        Volatility = 0.05,
+                        SupportLevel = price * 0.95m,
+                        ResistanceLevel = price * 1.05m,
+                        HasBadNews = false
+                    };
+                }
+
+                return marketData;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to get market data for {Symbol}", symbol);
+                return null;
+            }
         }
     }
 }

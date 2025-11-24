@@ -140,10 +140,29 @@ export const DashboardApi = {
       return { ok: true, data: generateMockNavHistory(fromDate) };
     }
     
-    // Use UTC date to avoid timezone issues
-    const today = new Date();
-    const fromDate = from || new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate() - 29)).toISOString().split('T')[0];
-    return apiGet<NavHistory>(`/api/trading/dashboard/nav?from=${fromDate}`);
+    // Validate and format date parameter
+    let fromDate: string;
+    if (from) {
+      // Validate date format (YYYY-MM-DD)
+      const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+      if (!dateRegex.test(from)) {
+        return { ok: false, error: `Invalid date format. Expected YYYY-MM-DD, received: ${from}` };
+      }
+      
+      // Validate that it's a valid date
+      const parsedDate = new Date(from + 'T00:00:00Z');
+      if (isNaN(parsedDate.getTime())) {
+        return { ok: false, error: `Invalid date value: ${from}` };
+      }
+      
+      fromDate = from;
+    } else {
+      // Use UTC date to avoid timezone issues
+      const today = new Date();
+      fromDate = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate() - 29)).toISOString().split('T')[0];
+    }
+    
+    return apiGet<NavHistory>(`/api/trading/dashboard/nav?from=${encodeURIComponent(fromDate)}`);
   },
 
   /**
@@ -160,10 +179,34 @@ export const DashboardApi = {
       return { ok: true, data: generateMockPnlHistory(granularity, targetDate) };
     }
     
-    // Use UTC date to avoid timezone issues
-    const today = new Date();
-    const targetDate = date || new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate())).toISOString().split('T')[0];
-    return apiGet<PnlHistory>(`/api/trading/dashboard/pnl?granularity=${granularity}&date=${targetDate}`);
+    // Validate granularity
+    if (granularity !== 'hourly' && granularity !== 'daily' && granularity !== 'weekly') {
+      return { ok: false, error: `Invalid granularity. Expected: hourly, daily, or weekly, received: ${granularity}` };
+    }
+    
+    // Validate and format date parameter
+    let targetDate: string;
+    if (date) {
+      // Validate date format (YYYY-MM-DD)
+      const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+      if (!dateRegex.test(date)) {
+        return { ok: false, error: `Invalid date format. Expected YYYY-MM-DD, received: ${date}` };
+      }
+      
+      // Validate that it's a valid date
+      const parsedDate = new Date(date + 'T00:00:00Z');
+      if (isNaN(parsedDate.getTime())) {
+        return { ok: false, error: `Invalid date value: ${date}` };
+      }
+      
+      targetDate = date;
+    } else {
+      // Use UTC date to avoid timezone issues
+      const today = new Date();
+      targetDate = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate())).toISOString().split('T')[0];
+    }
+    
+    return apiGet<PnlHistory>(`/api/trading/dashboard/pnl?granularity=${encodeURIComponent(granularity)}&date=${encodeURIComponent(targetDate)}`);
   },
 };
 

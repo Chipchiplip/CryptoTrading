@@ -391,6 +391,29 @@ export const adminApi = {
       return { ok: false, error: e?.message || 'Failed to delete level' };
     }
   },
+
+  getUserSubscription: async (userId: number): Promise<ApiResult<ApiResponse<{
+    planType: number;
+    status: string;
+    isActive: boolean;
+    currentPeriodStart: string;
+    currentPeriodEnd: string;
+    canceledAt?: string;
+  }>>> => {
+    try {
+      validateId(userId, 'User');
+      return apiGet<ApiResponse<{
+        planType: number;
+        status: string;
+        isActive: boolean;
+        currentPeriodStart: string;
+        currentPeriodEnd: string;
+        canceledAt?: string;
+      }>>(`${API_BASE}/users/${userId}/subscription`);
+    } catch (e: any) {
+      return { ok: false, error: e?.message || 'Failed to fetch user subscription' };
+    }
+  },
 };
 
 export const adminUtils = {

@@ -3,7 +3,7 @@
 **Project**: CryptoTrading API  
 **Team Size**: 5 Members  
 **Development Approach**: Fullstack (Each member handles complete features)  
-**Updated**: October 17, 2025
+**Updated**: November 12, 2025
 
 ---
 
@@ -275,7 +275,8 @@ dotnet run
 ```csharp
 // Enable database context in Program.cs:
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
-    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
+    options.UseMySql(builder.Configuration.GetConnectionString("DefaultConnection"), 
+        ServerVersion.AutoDetect(builder.Configuration.GetConnectionString("DefaultConnection"))));
 ```
 
 ### **Step 6: Add Authentication (if needed)**

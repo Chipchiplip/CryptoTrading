@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react';
 import { BrowserRouter, Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 import { getAccessToken, getUserInfo } from './api/http';
+import { DashboardProvider } from './contexts/DashboardContext';
 import GuestLayout from './components/GuestLayout';
 import TraderLayout from './components/TraderLayout';
 import Home from './components/pages/guest/Home';
@@ -26,6 +27,8 @@ import Settings from './components/pages/trader/Settings';
 import OrderDetail from './components/pages/trader/OrderDetail';
 import Market from './components/pages/trader/Market';
 import ChartTest from './components/pages/test/ChartTest';
+import AiTradingChat from './components/pages/trader/AiTradingChat';
+import TraderBots from './components/pages/trader/Bots';
 
 import AdminLayout from './components/AdminLayout';
 import AdminUsers from './components/pages/admin/AdminUsers';
@@ -56,6 +59,8 @@ const traderPathMap: Record<string, string> = {
     'subscription': '/subscription',
     'settings': '/settings',
     'market': '/market',
+    'ai-chat': '/ai-chat',
+    'bots': '/bots',
 };
 
 const adminPathMap: Record<string, string> = {
@@ -155,11 +160,13 @@ function TraderPage({ current, children }: { current: string; children: React.Re
     
 
     return (
-        <div className="dark min-h-screen bg-black">
-            <TraderLayout currentPage={current} onNavigate={onNavigate}>
-                {childrenWithNavigate}
-            </TraderLayout>
-        </div>
+        <DashboardProvider>
+            <div className="dark min-h-screen bg-black">
+                <TraderLayout currentPage={current} onNavigate={onNavigate}>
+                    {childrenWithNavigate}
+                </TraderLayout>
+            </div>
+        </DashboardProvider>
     );
 }
 
@@ -220,6 +227,8 @@ export default function App() {
                 <Route path="/subscription" element={<ProtectedRoute><TraderPage current="subscription"><Subscription /></TraderPage></ProtectedRoute>} />
                 <Route path="/settings" element={<ProtectedRoute><TraderPage current="settings"><Settings /></TraderPage></ProtectedRoute>} />
                 <Route path="/market" element={<ProtectedRoute><TraderPage current="market"><Market /></TraderPage></ProtectedRoute>} />
+                <Route path="/ai-chat" element={<ProtectedRoute><TraderPage current="ai-chat"><AiTradingChat /></TraderPage></ProtectedRoute>} />
+                <Route path="/bots" element={<ProtectedRoute><TraderPage current="bots"><TraderBots /></TraderPage></ProtectedRoute>} />
                 
                 {/* ========== Admin Protected Routes (Cần đăng nhập & Role Admin) ========== */}
                 <Route path="/admin/users" element={<ProtectedRoute adminOnly={true}><AdminPage current="admin-users"><AdminUsers /></AdminPage></ProtectedRoute>} />

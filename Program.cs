@@ -11,6 +11,7 @@ using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using System.Text;
 using System;
+using System.Linq;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -83,7 +84,11 @@ builder.Services.AddSwaggerGen(c =>
 var mysqlConnectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
     options.UseMySql(mysqlConnectionString, new MySqlServerVersion(new Version(8, 0, 21)),
-        mySqlOptions => mySqlOptions.SchemaBehavior(Pomelo.EntityFrameworkCore.MySql.Infrastructure.MySqlSchemaBehavior.Ignore)));
+        mySqlOptions => 
+        {
+            mySqlOptions.SchemaBehavior(Pomelo.EntityFrameworkCore.MySql.Infrastructure.MySqlSchemaBehavior.Ignore);
+            mySqlOptions.CommandTimeout(30); // 30 second timeout for database queries
+        }));
 
 // JWT Settings
 builder.Services.Configure<JwtSettings>(builder.Configuration.GetSection("JwtSettings"));
@@ -144,6 +149,7 @@ builder.Services.AddHttpClient<ICoinGeckoService,
 {
     client.BaseAddress = new Uri("https://api.coingecko.com/api/v3/");
     client.DefaultRequestHeaders.Add("User-Agent", "CryptoTrading/1.0");
+    client.Timeout = TimeSpan.FromSeconds(10); // 10 second timeout for external API
 });
 // Cache service must be usable from singleton hosted services (e.g., typed HttpClient in background services),
 // so register it as a singleton to avoid "scoped service from root provider" errors.
@@ -173,9 +179,31 @@ builder.Services.AddSingleton<CryptoTrading.Services.Bot.BotSignalRDispatcher>()
 
 // Bot Strategies
 builder.Services.AddTransient<CryptoTrading.Services.Bot.Strategies.GridTradingStrategy>();
+builder.Services.AddTransient<CryptoTrading.Services.Bot.Strategies.AggressiveForexStrategy>();
+builder.Services.AddTransient<CryptoTrading.Services.Bot.Strategies.MomentumScalpingStrategy>();
+
+// AI Recommendation Service
+builder.Services.AddHttpClient("AiRecommendationService", client =>
+{
+    var aiServiceUrl = builder.Configuration["AiService:BaseUrl"] ?? "http://localhost:8000";
+    client.BaseAddress = new Uri(aiServiceUrl);
+    client.Timeout = TimeSpan.FromSeconds(30);
+});
+builder.Services.AddScoped<CryptoTrading.Services.Bot.AiRecommendationService>();
+builder.Services.AddHttpClient("AiChatService", client =>
+{
+    var aiServiceUrl = builder.Configuration["AiService:BaseUrl"] ?? "http://localhost:8000";
+    client.BaseAddress = new Uri(aiServiceUrl);
+    client.Timeout = TimeSpan.FromSeconds(45);
+});
+builder.Services.AddSingleton<CryptoTrading.Services.Ai.IAiChatSessionStore, CryptoTrading.Services.Ai.InMemoryAiChatSessionStore>();
+builder.Services.AddScoped<CryptoTrading.Services.Ai.IAiTradingChatService, CryptoTrading.Services.Ai.AiTradingChatService>();
 
 // VNPay Service
 builder.Services.AddScoped<CryptoTrading.Services.Payment.IVnPayService, CryptoTrading.Services.Payment.VnPayService>();
+
+// Subscription Service
+builder.Services.AddScoped<ISubscriptionService, SubscriptionService>();
 
 // Background Services
 builder.Services.AddHostedService<CryptoSyncBackgroundService>();
@@ -183,6 +211,7 @@ builder.Services.AddHostedService<CryptoTrading.Services.RealtimeBroadcastServic
 builder.Services.AddHostedService<CryptoTrading.Services.OrderMatchingBackgroundService>();
 builder.Services.AddHostedService<CryptoTrading.Services.Bot.BotExecutionHostedService>();
 builder.Services.AddHostedService<CryptoTrading.Services.Bot.BotMonitorHostedService>();
+builder.Services.AddHostedService<CryptoTrading.Services.SubscriptionExpirationBackgroundService>();
 
 var app = builder.Build();
 
@@ -201,7 +230,11 @@ if (app.Environment.IsDevelopment())
 app.UseMiddleware<CryptoTrading.Middleware.ErrorHandlingMiddleware>();
 
 app.UseCors("AllowFrontend");
-app.UseHttpsRedirection();
+// Skip HTTPS redirection in development when running HTTP only
+if (app.Environment.IsProduction() || app.Configuration["ASPNETCORE_URLS"]?.Contains("https") == true)
+{
+    app.UseHttpsRedirection();
+}
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
@@ -272,7 +305,7 @@ async Task SeedDatabase(IServiceProvider serviceProvider, ILogger logger)
     }
     
     // --- 2. Seed Default Levels ---
-    var defaultLevels = new List<string> { "Beginner" };
+    var defaultLevels = new List<string> { "Free", "Pro", "Premium" };
     var existingLevels = await context.Set<Level>().Select(l => l.Name).ToListAsync();
     var levelsToSeed = defaultLevels.Except(existingLevels, StringComparer.OrdinalIgnoreCase).ToList();
 
@@ -293,37 +326,50 @@ async Task SeedDatabase(IServiceProvider serviceProvider, ILogger logger)
     }
 
     // --- 3. Seed Built-in Bot Strategies ---
+    var strategiesToSeed = new List<CryptoTrading.Interfaces.Bot.ITradingStrategy>();
+    var newStrategiesAdded = false;
+
+    // Grid Trading Strategy
     var gridStrategy = scope.ServiceProvider.GetRequiredService<CryptoTrading.Services.Bot.Strategies.GridTradingStrategy>();
-    var existingStrategy = await context.BotStrategyDefinitions
-        .FirstOrDefaultAsync(s => s.StrategyKey == gridStrategy.Key);
-    
-    if (existingStrategy == null)
+    strategiesToSeed.Add(gridStrategy);
+
+    // Aggressive Forex Strategy
+    var aggressiveStrategy = scope.ServiceProvider.GetRequiredService<CryptoTrading.Services.Bot.Strategies.AggressiveForexStrategy>();
+    strategiesToSeed.Add(aggressiveStrategy);
+
+    // Momentum Scalping Strategy
+    var momentumStrategy = scope.ServiceProvider.GetRequiredService<CryptoTrading.Services.Bot.Strategies.MomentumScalpingStrategy>();
+    strategiesToSeed.Add(momentumStrategy);
+
+    foreach (var strategy in strategiesToSeed)
     {
-        logger.LogInformation("Seeding built-in strategy: {StrategyKey}", gridStrategy.Key);
-        var strategyDef = new CryptoTrading.Models.BotStrategyDefinition
-        {
-            Id = Guid.NewGuid(),
-            StrategyKey = gridStrategy.Key,
-            Version = gridStrategy.Metadata.Version,
-            DisplayName = gridStrategy.Metadata.DisplayName,
-            Description = gridStrategy.Metadata.Description,
-            ParametersSchema = gridStrategy.Metadata.ParametersSchemaJson,
-            MaxConcurrency = gridStrategy.Metadata.MaxConcurrency,
-            IsActive = true,
-            CreatedAt = DateTime.UtcNow
-        };
-        await context.BotStrategyDefinitions.AddAsync(strategyDef);
+        var existingStrategy = await context.BotStrategyDefinitions
+            .FirstOrDefaultAsync(s => s.StrategyKey == strategy.Key);
         
-        // Register strategy in registry
-        strategyRegistry.RegisterStrategy(gridStrategy);
-    }
-    else
-    {
-        // Make sure strategy is registered
-        strategyRegistry.RegisterStrategy(gridStrategy);
+        if (existingStrategy == null)
+        {
+            logger.LogInformation("Seeding built-in strategy: {StrategyKey}", strategy.Key);
+            var strategyDef = new CryptoTrading.Models.BotStrategyDefinition
+            {
+                Id = Guid.NewGuid(),
+                StrategyKey = strategy.Key,
+                Version = strategy.Metadata.Version,
+                DisplayName = strategy.Metadata.DisplayName,
+                Description = strategy.Metadata.Description,
+                ParametersSchema = strategy.Metadata.ParametersSchemaJson,
+                MaxConcurrency = strategy.Metadata.MaxConcurrency,
+                IsActive = true,
+                CreatedAt = DateTime.UtcNow
+            };
+            await context.BotStrategyDefinitions.AddAsync(strategyDef);
+            newStrategiesAdded = true;
+        }
+        
+        // Register strategy in registry (always)
+        strategyRegistry.RegisterStrategy(strategy);
     }
 
-    if (rolesToSeed.Any() || levelsToSeed.Any() || existingStrategy == null)
+    if (rolesToSeed.Any() || levelsToSeed.Any() || newStrategiesAdded)
     {
         await context.SaveChangesAsync();
         logger.LogInformation("Default data seeding complete");
@@ -338,13 +384,35 @@ using (var scope = app.Services.CreateScope())
 
     try
     {
-        logger.LogInformation("Applying database migrations...");
-        db.Database.Migrate();
+        logger.LogInformation("Checking database migrations...");
+        
+        // Check if there are pending migrations without applying them
+        var pendingMigrations = await db.Database.GetPendingMigrationsAsync();
+        if (pendingMigrations.Any())
+        {
+            logger.LogWarning("There are {Count} pending migrations. Please run 'dotnet ef database update' manually.", pendingMigrations.Count());
+            logger.LogWarning("Pending migrations: {Migrations}", string.Join(", ", pendingMigrations));
+        }
+        else
+        {
+            logger.LogInformation("Database is up to date with all migrations.");
+        }
+        
+        // Only apply migrations if explicitly enabled via environment variable
+        if (Environment.GetEnvironmentVariable("AUTO_APPLY_MIGRATIONS") == "true")
+        {
+            logger.LogInformation("Auto-applying migrations (AUTO_APPLY_MIGRATIONS=true)...");
+            await db.Database.MigrateAsync();
+            logger.LogInformation("Migrations applied successfully.");
+        }
+        
         await SeedDatabase(services, logger);
     }
     catch (Exception ex)
     {
-        logger.LogError(ex, "An error occurred while migrating or seeding the database.");
+        logger.LogError(ex, "An error occurred while checking migrations or seeding the database.");
+        // Don't crash the application - continue running even if migration check fails
+        logger.LogWarning("Application will continue running. Please check database connection and migrations manually.");
     }
 }
 

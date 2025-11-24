@@ -83,7 +83,7 @@ namespace CryptoTrading.Services.Auth
                     EmailConfirmationTokenExpiry = _dateTimeProvider.UtcNow.AddHours(24),
 
                     Role = "User",
-                    Level = "Beginner",
+                    Level = "Free",
                     IsActive = true
                     // ==============================
                 };
@@ -442,7 +442,7 @@ namespace CryptoTrading.Services.Auth
                     EmailConfirmed = true,
                     CreatedAt = _dateTimeProvider.UtcNow,
                     Role = "User",
-                    Level = "Beginner",
+                    Level = "Free",
                     IsActive = true
                 };
                 await _unitOfWork.Users.AddAsync(user);

@@ -1,0 +1,37 @@
+// ============================================
+// Complete AI Service Registration for Program.cs
+// ============================================
+
+// Add these to your Program.cs or Startup.cs
+
+// 1. Register HttpClient for AI Recommendation Service
+builder.Services.AddHttpClient("AiRecommendationService", client =>
+{
+    // In production, use environment variable or configuration
+    var aiServiceUrl = builder.Configuration["AiService:BaseUrl"] ?? "http://localhost:8000";
+    client.BaseAddress = new Uri(aiServiceUrl);
+    client.Timeout = TimeSpan.FromSeconds(30);
+});
+
+// 2. Register AiRecommendationService (if not already registered)
+builder.Services.AddScoped<CryptoTrading.Services.Bot.AiRecommendationService>();
+
+// 3. Ensure all required services are registered:
+// - IPortfolioService (PortfolioService)
+// - IMarketDataProvider (MarketDataProvider)
+// - IRiskManager (RiskManager)
+// These should already be registered in your existing Bot service registration
+
+// Example configuration in appsettings.json:
+// {
+//   "AiService": {
+//     "BaseUrl": "http://ai-service:8000"  // Docker service name or URL
+//   }
+// }
+
+// 4. Update ApplicationDbContext to include AI tables (if using DbSet):
+// In ApplicationDbContext.cs, add:
+// public DbSet<AiTradingRecommendation> AiTradingRecommendations { get; set; }
+// public DbSet<AiBotProfile> AiBotProfiles { get; set; }
+// public DbSet<AiRiskAuditLog> AiRiskAuditLogs { get; set; }
+

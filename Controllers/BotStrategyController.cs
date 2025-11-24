@@ -148,7 +148,7 @@ namespace CryptoTrading.Controllers
         [ProducesResponseType(typeof(object), 202)]
         [ProducesResponseType(typeof(object), 400)]
         [ProducesResponseType(typeof(object), 500)]
-        public async Task<ActionResult> UploadPlugin(IFormFile file, [FromHeader(Name = "X-Strategy-Key")] string strategyKey)
+        public ActionResult UploadPlugin(IFormFile file, [FromHeader(Name = "X-Strategy-Key")] string strategyKey)
         {
             try
             {

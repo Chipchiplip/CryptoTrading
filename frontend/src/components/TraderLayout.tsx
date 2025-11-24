@@ -1,13 +1,13 @@
 import { useState, useEffect, useRef } from 'react';
-import { 
-  LayoutDashboard, 
-  Star, 
-  TrendingUp, 
-  ListOrdered, 
-  History, 
-  Briefcase, 
-  Wallet, 
-  ArrowDownToLine, 
+import {
+  LayoutDashboard,
+  Star,
+  TrendingUp,
+  ListOrdered,
+  History,
+  Briefcase,
+  Wallet,
+  ArrowDownToLine,
   ArrowUpFromLine,
   CreditCard,
   Settings,
@@ -19,15 +19,15 @@ import {
   BarChart3,
   LogOut,
   User,
-  Loader2
+  Loader2,
+  Bot,
+  Cpu
 } from 'lucide-react';
 import { Input } from './ui/input';
 import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar';
-import { Badge } from './ui/badge';
-import { Button } from './ui/button';
 import { setAccessToken } from '../api/http';
 import { useNavigate } from 'react-router-dom';
-import { DashboardApi, DashboardSummary } from '../services/dashboard';
+import { useDashboardSummary } from '../contexts/DashboardContext';
 import NotificationsPanel from './NotificationsPanel';
 import { AuthApi, UserProfileDto } from '../api/auth';
 
@@ -41,11 +41,12 @@ export default function TraderLayout({ children, currentPage, onNavigate }: Trad
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
-  const [dashboardSummary, setDashboardSummary] = useState<DashboardSummary | null>(null);
-  const [balanceLoading, setBalanceLoading] = useState(true);
   const [userProfile, setUserProfile] = useState<UserProfileDto | null>(null);
   const userMenuRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
+  
+  // ✅ Use shared dashboard context instead of direct API calls
+  const { summary: dashboardSummary, loading: balanceLoading } = useDashboardSummary();
 
   // ✅ Close dropdown when clicking outside
   useEffect(() => {
@@ -63,40 +64,6 @@ export default function TraderLayout({ children, currentPage, onNavigate }: Trad
       document.removeEventListener('mousedown', handleClickOutside);
     };
   }, [userMenuOpen]);
-
-  // ✅ Fetch dashboard summary for sidebar balance
-  useEffect(() => {
-    const fetchBalance = async () => {
-      try {
-        setBalanceLoading(true);
-        console.log('[TraderLayout] Fetching dashboard summary for sidebar balance...');
-        const result = await DashboardApi.getSummary();
-        console.log('[TraderLayout] API result:', { ok: result.ok, hasData: !!result.data, error: result.ok ? null : result.error });
-        if (result.ok && result.data) {
-          console.log('[TraderLayout] Dashboard summary loaded:', {
-            totalBalance: result.data.totalBalance,
-            totalBalanceChange: result.data.totalBalanceChange,
-            totalBalanceChangePercent: result.data.totalBalanceChangePercent
-          });
-          setDashboardSummary(result.data);
-        } else {
-          console.error('[TraderLayout] Failed to fetch dashboard summary:', result.error);
-          // Set to null to show error state
-          setDashboardSummary(null);
-        }
-      } catch (error) {
-        console.error('[TraderLayout] Exception while fetching dashboard summary:', error);
-        setDashboardSummary(null);
-      } finally {
-        setBalanceLoading(false);
-      }
-    };
-
-    fetchBalance();
-    // Refresh balance every 30 seconds
-    const interval = setInterval(fetchBalance, 30000);
-    return () => clearInterval(interval);
-  }, []);
 
   // Load profile data so header/avatar reflects stored avatarUrl
   useEffect(() => {
@@ -160,7 +127,7 @@ export default function TraderLayout({ children, currentPage, onNavigate }: Trad
 
   // ✅ Handle logout
   const handleLogout = () => {
-    setAccessToken(null);
+    setAccessToken(null, null);
     setUserMenuOpen(false);
     navigate('/login');
   };
@@ -183,6 +150,8 @@ export default function TraderLayout({ children, currentPage, onNavigate }: Trad
     { id: 'watchlist', label: 'Watchlist', icon: Star },
     { id: 'market', label: 'Market', icon: BarChart3 },
     { id: 'trade', label: 'Trade', icon: TrendingUp },
+    { id: 'ai-chat', label: 'AI Chat', icon: Bot },
+    { id: 'bots', label: 'Bots', icon: Cpu },
     { id: 'orders', label: 'Orders', icon: ListOrdered },
     { id: 'trades-history', label: 'Trades', icon: History },
     { id: 'portfolio', label: 'Portfolio', icon: Briefcase },

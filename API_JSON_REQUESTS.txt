@@ -71,7 +71,7 @@ BASE URL: http://localhost:5299
 # Response sẽ có dạng:
 # [
 #   {
-#     "id": "abc-123-def-456",  <-- Đây là Strategy ID
+#     "id": "a1a11bc3-415d-4a5b-9da4-2e3afac22be5",
 #     "strategyKey": "grid-basic",
 #     "displayName": "Grid Trading",
 #     ...
@@ -124,25 +124,63 @@ BASE URL: http://localhost:5299
 }
 
 ============================================
-8. POST /api/bots/{id}/simulate - Simulate bot
+8. POST /api/bots/{id}/simulate - Simulate bot (✅ ĐÃ HOẠT ĐỘNG)
 ============================================
-# Strategy ID: a1a11bc3-415d-4a5b-9da4-2e3afac22be5 (Grid Trading)
-# Hoặc lấy từ bot hiện tại: GET /api/bots/{id} -> strategyDefinitionId
+# ✅ SIMULATION ĐÃ ĐƯỢC TRIỂN KHAI HOÀN CHỈNH!
+# Thay {id} bằng Bot ID thực tế (ví dụ: c00bc7de-1be8-4f4b-9c20-32cde2170a1c)
+
+# Ví dụ test với bot hiện tại:
+POST /api/bots/c00bc7de-1be8-4f4b-9c20-32cde2170a1c/simulate
+
 {
   "strategyDefinitionId": "a1a11bc3-415d-4a5b-9da4-2e3afac22be5",
   "parameters": {
-    "gridLevels": 10,
-    "lowerBound": 50000,
-    "upperBound": 60000,
+    "gridLevels": 20,
+    "lowerBound": 104000,
+    "upperBound": 108000,
     "orderSize": 0.01,
-    "capitalAllocation": 10000,
+    "capitalAllocation": 15000,
     "rebalanceMode": "balanced",
     "refreshIntervalSeconds": 60
   },
-  "startDate": "2024-01-01T00:00:00Z",
-  "endDate": "2024-01-31T23:59:59Z",
-  "initialCapital": 10000
+  "startDate": "2025-10-01T00:00:00Z",
+  "endDate": "2025-11-01T00:00:00Z",
+  "initialCapital": 15000
 }
+
+# Response mẫu (khi thành công):
+# {
+#   "finalCapital": 15234.56,
+#   "totalReturn": 234.56,
+#   "returnPercentage": 1.56,
+#   "totalTrades": 45,
+#   "winningTrades": 28,
+#   "losingTrades": 17,
+#   "winRate": 62.22,
+#   "maxDrawdown": 156.78,
+#   "sharpeRatio": 0.85,
+#   "trades": [
+#     {
+#       "timestamp": "2025-10-05T10:30:00Z",
+#       "side": "SELL",
+#       "price": 104500.00,
+#       "quantity": 0.01,
+#       "pnl": 5.00
+#     }
+#   ],
+#   "equityCurve": [
+#     {
+#       "timestamp": "2025-10-01T00:00:00Z",
+#       "equity": 15000.00
+#     }
+#   ]
+# }
+
+# Lỗi có thể gặp:
+# 400 Bad Request: "Initial capital must be greater than zero"
+# 400 Bad Request: "Start date must be earlier than end date"  
+# 400 Bad Request: "No market data available for the requested range"
+# 404 Not Found: "Bot not found"
 
 ============================================
 HƯỚNG DẪN LẤY STRATEGY ID:
@@ -152,17 +190,41 @@ Bước 2: Gọi GET /api/bot-strategies với header Authorization: Bearer {tok
 Bước 3: Từ response, copy field "id" của strategy đầu tiên
 Bước 4: Thay "PASTE_STRATEGY_ID_HERE" bằng ID vừa copy
 
-Ví dụ response (BẠN ĐÃ LẤY ĐƯỢC):
+✅ Response mới (SAU KHI THÊM 2 STRATEGIES):
 [
   {
-    "id": "a1a11bc3-415d-4a5b-9da4-2e3afac22be5",  ← Strategy ID này
-    "strategyKey": "grid-basic",
+    "id": "a1a11bc3-415d-4a5b-9da4-2e3afac22be5",  ← Grid Trading
+    "key": "grid-basic",
+    "version": "1.0.0",
     "displayName": "Grid Trading",
-    "description": "..."
+    "description": "Basic grid trading strategy with configurable levels",
+    "isActive": true,
+    "isBuiltIn": true
+  },
+  {
+    "id": "new-guid-aggressive",  ← Aggressive Forex
+    "key": "aggressive-forex", 
+    "version": "1.0.0",
+    "displayName": "Aggressive Forex Style",
+    "description": "High-risk strategy with EMA + Martingale + Pyramiding",
+    "isActive": true,
+    "isBuiltIn": true
+  },
+  {
+    "id": "new-guid-momentum",  ← Momentum Scalping
+    "key": "momentum-scalping",
+    "version": "1.0.0", 
+    "displayName": "Momentum Scalping",
+    "description": "Detects 3% spikes, buys 100 USDT, 6% TP / 3% SL",
+    "isActive": true,
+    "isBuiltIn": true
   }
 ]
 
-✅ Strategy ID của bạn: a1a11bc3-415d-4a5b-9da4-2e3afac22be5
+🎯 BẠN CÓ 3 STRATEGY IDs ĐỂ CHỌN:
+- Grid Trading: a1a11bc3-415d-4a5b-9da4-2e3afac22be5
+- Aggressive Forex: [ID mới sau khi restart]
+- Momentum Scalping: [ID mới sau khi restart]
 
 ============================================
 LƯU Ý QUAN TRỌNG:
@@ -194,4 +256,327 @@ CÁC API KHÔNG CẦN BODY:
 - GET /api/bots/{id}/orders?page=1&pageSize=10
 - POST /api/bots/{id}/nudge
 - DELETE /api/bots/{id}
+
+============================================
+HƯỚNG DẪN TEST BOT CÓ HOẠT ĐỘNG CHƯA
+============================================
+
+BOT CỦA BẠN HIỆN TẠI:
+- Bot ID: f2b606a6-5f80-4615-be7e-b3ccfa8ba720
+- Status: "Draft" ← CHƯA HOẠT ĐỘNG
+- nextRunAt: null ← Chưa có lịch chạy
+- runtime: null ← Chưa có dữ liệu runtime
+
+✅ BOT ĐÃ ĐƯỢC TẠO THÀNH CÔNG NHƯNG CHƯA HOẠT ĐỘNG!
+
+============================================
+BƯỚC 1: START BOT ĐỂ BOT BẮT ĐẦU HOẠT ĐỘNG
+============================================
+
+⚠️ QUAN TRỌNG: Phân biệt Strategy ID và Bot ID
+- Strategy ID: a1a11bc3-415d-4a5b-9da4-2e3afac22be5 (dùng để TẠO bot)
+- Bot ID: f2b606a6-5f80-4615-be7e-b3ccfa8ba720 (dùng để START/STOP/UPDATE bot)
+
+Nếu bạn KHÔNG NHỚ Bot ID, làm theo:
+1. GET /api/bots → Lấy danh sách tất cả bots của bạn
+2. Tìm bot có name = "Test Bot 2024" (hoặc tên bạn đã đặt)
+3. Copy field "id" từ response → Đó là Bot ID
+
+POST /api/bots/f2b606a6-5f80-4615-be7e-b3ccfa8ba720/start
+# ⚠️ THAY f2b606a6-5f80-4615-be7e-b3ccfa8ba720 bằng Bot ID thực tế của bạn!
+
+Body:
+{
+  "mode": "live"
+}
+
+# Response (202 Accepted):
+# {
+#   "operationId": "f2b606a6-5f80-4615-be7e-b3ccfa8ba720",
+#   "message": "Bot starting"
+# }
+
+# Sau khi start:
+# - Status sẽ chuyển từ "Draft" → "Starting" → "Running"
+# - nextRunAt sẽ được set (thường là ngay lập tức hoặc sau vài giây)
+# - Bot sẽ bắt đầu chạy theo executionIntervalSeconds (60 giây)
+
+============================================
+BƯỚC 2: KIỂM TRA TRẠNG THÁI BOT
+============================================
+GET /api/bots/f2b606a6-5f80-4615-be7e-b3ccfa8ba720
+
+# Kiểm tra các field quan trọng:
+# ✅ status: "Running" (hoặc "Starting") → Bot đang hoạt động
+# ✅ nextRunAt: có giá trị (không null) → Bot có lịch chạy
+# ✅ runtime: có dữ liệu → Bot đã chạy ít nhất 1 lần
+# ✅ updatedAt: có giá trị → Bot đã được cập nhật
+
+# Ví dụ response khi bot ĐANG CHẠY:
+# {
+#   "id": "f2b606a6-5f80-4615-be7e-b3ccfa8ba720",
+#   "status": "Running",  ← ĐANG CHẠY
+#   "nextRunAt": "2025-11-10T12:15:00Z",  ← Có lịch chạy tiếp theo
+#   "runtime": {  ← Có dữ liệu runtime
+#     "nextRunAt": "2025-11-10T12:15:00Z",
+#     "openPositions": 0,
+#     "totalOrders": 5,
+#     "filledOrders": 3,
+#     "lastExecutionAt": "2025-11-10T12:14:00Z"  ← Đã chạy
+#   },
+#   ...
+# }
+
+============================================
+BƯỚC 3: XEM LOGS CỦA BOT
+============================================
+GET /api/bots/f2b606a6-5f80-4615-be7e-b3ccfa8ba720/logs?page=1&pageSize=20
+
+# Nếu bot ĐANG HOẠT ĐỘNG, bạn sẽ thấy:
+# - Logs với level "Info", "Debug", "Warning"
+# - Messages về việc bot đang chạy strategy
+# - Messages về việc đặt orders
+# - Timestamps gần đây (trong vài phút)
+
+# Ví dụ logs khi bot HOẠT ĐỘNG:
+# {
+#   "data": [
+#     {
+#       "level": "Info",
+#       "message": "Bot execution started",
+#       "createdAt": "2025-11-10T12:14:00Z"
+#     },
+#     {
+#       "level": "Info",
+#       "message": "Strategy executed successfully",
+#       "createdAt": "2025-11-10T12:14:01Z"
+#     },
+#     {
+#       "level": "Info",
+#       "category": "order",
+#       "message": "Placed order: BUY 0.01 BTC/USDT @ 50000",
+#       "createdAt": "2025-11-10T12:14:02Z"
+#     }
+#   ]
+# }
+
+# Nếu KHÔNG có logs hoặc logs cũ → Bot chưa chạy
+
+============================================
+BƯỚC 4: XEM ORDERS CỦA BOT
+============================================
+GET /api/bots/f2b606a6-5f80-4615-be7e-b3ccfa8ba720/orders?page=1&pageSize=20
+
+# Nếu bot ĐANG HOẠT ĐỘNG và đặt orders:
+# - Sẽ có danh sách orders do bot tạo
+# - Orders có intent (ví dụ: "grid_buy", "grid_sell")
+# - Orders có botId = f2b606a6-5f80-4615-be7e-b3ccfa8ba720
+
+# Nếu KHÔNG có orders → Bot chưa đặt order nào (có thể đang chờ điều kiện)
+
+============================================
+BƯỚC 5: NUDGE BOT (BUỘC CHẠY NGAY)
+============================================
+POST /api/bots/f2b606a6-5f80-4615-be7e-b3ccfa8ba720/nudge
+
+# API này buộc bot chạy ngay lập tức (không cần đợi nextRunAt)
+# Dùng để test nhanh xem bot có hoạt động không
+
+# Response (202 Accepted):
+# {
+#   "message": "Bot execution triggered"
+# }
+
+# Sau đó kiểm tra lại:
+# 1. GET /api/bots/{id} → xem runtime có cập nhật không
+# 2. GET /api/bots/{id}/logs → xem có logs mới không
+# 3. GET /api/bots/{id}/orders → xem có orders mới không
+
+============================================
+CÁC TRẠNG THÁI BOT VÀ Ý NGHĨA:
+============================================
+- "Draft": Bot mới tạo, chưa start → CHƯA HOẠT ĐỘNG
+- "Starting": Bot đang khởi động → SẮP HOẠT ĐỘNG
+- "Running": Bot đang chạy → ĐANG HOẠT ĐỘNG ✅
+- "Stopped": Bot đã dừng → KHÔNG HOẠT ĐỘNG
+- "Error": Bot gặp lỗi → KHÔNG HOẠT ĐỘNG ❌
+
+============================================
+CHECKLIST KIỂM TRA BOT HOẠT ĐỘNG:
+============================================
+✅ Bot status = "Running" hoặc "Starting"
+✅ nextRunAt có giá trị (không null)
+✅ runtime có dữ liệu (không null)
+✅ Có logs mới trong vài phút gần đây
+✅ updatedAt được cập nhật gần đây
+✅ (Tùy chọn) Có orders do bot tạo ra
+
+Nếu TẤT CẢ các điều kiện trên đều đúng → Bot ĐANG HOẠT ĐỘNG ✅
+
+Nếu THIẾU bất kỳ điều kiện nào → Bot CHƯA HOẠT ĐỘNG hoặc GẶP LỖI
+
+============================================
+KIỂM TRA LOGS TRONG CONSOLE/TERMINAL:
+============================================
+Nếu bạn đang chạy backend (dotnet run), kiểm tra console output:
+
+# Logs khi bot START:
+# "Bot f2b606a6-5f80-4615-be7e-b3ccfa8ba720 starting"
+
+# Logs khi bot EXECUTE:
+# "Queued bot f2b606a6-5f80-4615-be7e-b3ccfa8ba720 for execution"
+# "Executing bot f2b606a6-5f80-4615-be7e-b3ccfa8ba720 with strategy grid-basic"
+# "Bot f2b606a6-5f80-4615-be7e-b3ccfa8ba720 executed successfully, next run at ..."
+
+# Nếu có lỗi:
+# "Error executing bot f2b606a6-5f80-4615-be7e-b3ccfa8ba720: ..."
+
+============================================
+TROUBLESHOOTING:
+============================================
+
+1. Bot status vẫn là "Draft" sau khi start:
+   → Kiểm tra xem BotExecutionHostedService có đang chạy không
+   → Kiểm tra logs trong console có lỗi gì không
+
+2. Bot status là "Error":
+   → Kiểm tra lastStatusReason trong response GET /api/bots/{id}
+   → Kiểm tra logs để xem lỗi chi tiết
+
+3. Bot không tạo orders:
+   → Có thể strategy đang chờ điều kiện thị trường
+   → Kiểm tra parameters có hợp lệ không
+   → Kiểm tra balance trong wallet có đủ không
+
+4. Bot chạy nhưng không có logs:
+   → Đợi vài giây rồi kiểm tra lại (logs có thể delay)
+   → Kiểm tra xem BotLogger có hoạt động không
+
+5. nextRunAt đã qua nhưng bot không chạy:
+   → Kiểm tra BotExecutionHostedService có đang chạy không
+   → Kiểm tra database connection
+   → Thử nudge bot để chạy ngay
+
+============================================
+QUY TRÌNH TEST HOÀN CHỈNH:
+============================================
+1. ✅ Tạo bot (POST /api/bots) → Status: "Draft"
+2. ✅ Start bot (POST /api/bots/{id}/start) → Status: "Starting"
+3. ⏳ Đợi 5-10 giây
+4. ✅ Kiểm tra status (GET /api/bots/{id}) → Status: "Running"
+5. ✅ Kiểm tra logs (GET /api/bots/{id}/logs) → Có logs mới
+6. ✅ Kiểm tra orders (GET /api/bots/{id}/orders) → (Có thể có orders)
+7. ✅ Đợi executionIntervalSeconds (60 giây) → Bot sẽ chạy lại tự động
+8. ✅ Kiểm tra lại status và logs → Bot vẫn đang chạy
+
+Nếu tất cả các bước trên đều OK → Bot HOẠT ĐỘNG TỐT ✅
+
+============================================
+10. SIMULATION REQUESTS TỐI ƯU CHO 15K USD
+============================================
+# ✅ Các JSON requests đã được tối ưu cho tài khoản 15,000 USD
+
+# ============================================
+# 1. GRID TRADING STRATEGY (Tối ưu)
+# ============================================
+POST /api/bots/{id}/simulate
+
+{
+  "strategyDefinitionId": "a1a11bc3-415d-4a5b-9da4-2e3afac22be5",
+  "parameters": {
+    "gridLevels": 20,
+    "lowerBound": 100000,
+    "upperBound": 110000,
+    "orderSize": 0.05,
+    "capitalAllocation": 15000,
+    "rebalanceMode": "balanced",
+    "refreshIntervalSeconds": 60
+  },
+  "startDate": "2024-11-10T00:00:00Z",
+  "endDate": "2025-11-10T00:00:00Z",
+  "initialCapital": 15000
+}
+
+# ============================================
+# 2. MOMENTUM SCALPING STRATEGY (Tối ưu - KHUYẾN NGHỊ)
+# ============================================
+POST /api/bots/{id}/simulate
+
+{
+  "strategyDefinitionId": "bee7815c-4385-4da7-bd7f-1e3bbf665dc7",
+  "parameters": {
+    "positionSizeUSDT": 1500,
+    "takeProfitPercent": 8,
+    "stopLossPercent": 3,
+    "spikeThresholdPercent": 2.5,
+    "detectionWindowMinutes": 5,
+    "maxConcurrentPositions": 8,
+    "cooldownMinutes": 5,
+    "maxDailyLoss": 3000,
+    "minVolume24h": 1000000,
+    "excludeStablecoins": true
+  },
+  "startDate": "2024-11-10T00:00:00Z",
+  "endDate": "2025-11-10T00:00:00Z",
+  "initialCapital": 15000
+}
+
+# Kết quả dự kiến: ~500-1000 USD/tháng với 15-20 lệnh
+
+# ============================================
+# 3. AGGRESSIVE FOREX STRATEGY (High Risk!)
+# ============================================
+POST /api/bots/{id}/simulate
+
+{
+  "strategyDefinitionId": "d167bc41-d5aa-4cfe-b66d-d4dc496db3f0",
+  "parameters": {
+    "initialLot": 0.02,
+    "capitalAllocation": 15000,
+    "cutLossUSD": 3000,
+    "emaPeriod": 200,
+    "emaShift": 5,
+    "martingaleEnabled": true,
+    "martingaleMultiplier": 1.1,
+    "martingaleDistancePercent": 4.0,
+    "maxMartingaleOrders": 5,
+    "pyramidEnabled": true,
+    "pyramidTriggerPercent": 3.0,
+    "pyramidLotMultiplier": 1.0,
+    "maxPyramidOrders": 5,
+    "rsiPeriod": 5,
+    "rsiOverbought": 80,
+    "rsiOversold": 20,
+    "trailingEnabled": true,
+    "trailingTriggerPercent": 10.0,
+    "trailingDistancePercent": 10.0,
+    "executionIntervalSeconds": 60
+  },
+  "startDate": "2024-11-10T00:00:00Z",
+  "endDate": "2025-11-10T00:00:00Z",
+  "initialCapital": 15000
+}
+
+# ⚠️ CẢNH BÁO: Strategy này RỦI RO CAO!
+# - Có thể mất 3000 USD nếu hit cut loss
+# - Martingale có thể nhân đôi lỗ nhanh
+# - Chỉ dùng nếu chấp nhận rủi ro cao
+
+# ============================================
+# SO SÁNH 3 STRATEGIES:
+# ============================================
+# 1. Grid Trading:
+#    - Risk: Moderate
+#    - Phù hợp: Thị trường sideway
+#    - Lợi nhuận: Ổn định nhưng thấp
+#
+# 2. Momentum Scalping: ⭐ KHUYẾN NGHỊ
+#    - Risk: Moderate
+#    - Phù hợp: Thị trường volatile
+#    - Lợi nhuận: 500-1000 USD/tháng
+#
+# 3. Aggressive Forex:
+#    - Risk: HIGH ⚠️
+#    - Phù hợp: Trader có kinh nghiệm
+#    - Lợi nhuận: Có thể cao nhưng rủi ro lớn
 
