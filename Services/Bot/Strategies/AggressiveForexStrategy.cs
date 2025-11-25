@@ -67,6 +67,8 @@ namespace CryptoTrading.Services.Bot.Strategies
             BotParameters parameters,
             CancellationToken cancellationToken = default)
         {
+            await Task.CompletedTask;
+            
             // Basic validation
             var initialLot = parameters.GetValue("initialLot", 0.01m);
             var capitalAllocation = parameters.GetValue("capitalAllocation", 10000m);
@@ -355,6 +357,8 @@ namespace CryptoTrading.Services.Bot.Strategies
 
         private async Task<decimal> CalculateEMAAsync(BotContext context, AggressiveForexRuntimeState state, decimal currentPrice, BotParameters parameters)
         {
+            await Task.CompletedTask;
+            
             var period = parameters.GetValue("emaPeriod", 200);
             
             if (state.PriceHistory.Count < period)
@@ -382,6 +386,8 @@ namespace CryptoTrading.Services.Bot.Strategies
 
         private async Task<decimal> CalculateRSIAsync(BotContext context, AggressiveForexRuntimeState state, decimal currentPrice, BotParameters parameters)
         {
+            await Task.CompletedTask;
+            
             var period = parameters.GetValue("rsiPeriod", 5);
             return CalculateRSI(state.PriceHistory, period);
         }
@@ -451,6 +457,8 @@ namespace CryptoTrading.Services.Bot.Strategies
 
         private async Task OpenInitialPosition(BotContext context, AggressiveForexRuntimeState state, decimal currentPrice, TrendDirection trend, decimal lot)
         {
+            await Task.CompletedTask;
+            
             var quantity = trend == TrendDirection.Up ? lot : -lot;
             
             var position = new Position
@@ -481,6 +489,8 @@ namespace CryptoTrading.Services.Bot.Strategies
 
         private async Task AddPyramidPosition(BotContext context, AggressiveForexRuntimeState state, decimal currentPrice, TrendDirection trend, BotParameters parameters)
         {
+            await Task.CompletedTask;
+            
             var pyramidLotMultiplier = parameters.GetValue("pyramidLotMultiplier", 1.0m);
             var lastPosition = state.Positions.LastOrDefault();
             var newLot = Math.Abs(lastPosition?.Quantity ?? 0.01m) * pyramidLotMultiplier;
@@ -516,6 +526,8 @@ namespace CryptoTrading.Services.Bot.Strategies
 
         private async Task AddMartingalePosition(BotContext context, AggressiveForexRuntimeState state, decimal currentPrice, BotParameters parameters)
         {
+            await Task.CompletedTask;
+            
             var martingaleMultiplier = parameters.GetValue("martingaleMultiplier", 1.1m);
             var lastPosition = state.Positions.LastOrDefault();
             var newLot = Math.Abs(lastPosition?.Quantity ?? 0.01m) * martingaleMultiplier;
@@ -579,10 +591,16 @@ namespace CryptoTrading.Services.Bot.Strategies
             {
                 await CloseAllPositions(context, state, currentPrice, "Trailing Stop Triggered");
             }
+            else
+            {
+                await Task.CompletedTask;
+            }
         }
 
         private async Task CloseAllPositions(BotContext context, AggressiveForexRuntimeState state, decimal currentPrice, string reason)
         {
+            await Task.CompletedTask;
+            
             foreach (var position in state.Positions.ToList())
             {
                 var pnl = (currentPrice - position.EntryPrice) * position.Quantity;

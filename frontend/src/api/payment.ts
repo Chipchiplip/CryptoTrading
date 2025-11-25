@@ -6,7 +6,12 @@ async function apiGet<T>(url: string): Promise<ApiResult<T>> {
   try {
     const res = await authFetch(url, {
       method: 'GET',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0'
+      },
     });
     const json = await res.json().catch(() => ({}));
     if (!res.ok) return { ok: false, error: (json as any)?.message || `HTTP ${res.status}` };

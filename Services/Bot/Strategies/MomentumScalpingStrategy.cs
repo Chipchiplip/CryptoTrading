@@ -56,6 +56,8 @@ namespace CryptoTrading.Services.Bot.Strategies
             BotParameters parameters,
             CancellationToken cancellationToken = default)
         {
+            await Task.CompletedTask;
+            
             // Basic validation
             var positionSize = parameters.GetValue("positionSizeUSDT", 100m);
             var takeProfitPercent = parameters.GetValue("takeProfitPercent", 6.0m);
@@ -438,6 +440,8 @@ namespace CryptoTrading.Services.Bot.Strategies
 
         private async Task ExecuteMomentumTradesAsync(BotContext context, MomentumScalpingRuntimeState state, List<MomentumOpportunity> opportunities, BotParameters parameters)
         {
+            await Task.CompletedTask;
+            
             var positionSize = parameters.GetValue("positionSizeUSDT", 100m);
             var maxPositions = parameters.GetValue("maxConcurrentPositions", 10);
             var takeProfitPercent = parameters.GetValue("takeProfitPercent", 6.0m) / 100m;
