@@ -5,38 +5,39 @@ import {
   CheckCircle2,
   Info,
   CreditCard,
-  Sparkles,
   Shield,
-  Headphones,
-  ArrowRight,
+  TrendingUp,
+  Clock,
+  Wallet,
+  ArrowLeft,
 } from 'lucide-react';
-import { Card } from '../../ui/card';
+
 import { Button } from '../../ui/button';
 import { Input } from '../../ui/input';
 import { Label } from '../../ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../ui/select';
 import { Alert, AlertDescription } from '../../ui/alert';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../ui/tabs';
 import { Badge } from '../../ui/badge';
 import { PaymentApi } from '../../../api/payment';
 import { TradingApi } from '../../../api/trading';
 
 export default function Deposit() {
   const [selectedCurrency, setSelectedCurrency] = useState('BTC');
-  const [amount, setAmount] = useState('');
+  const [amount, setAmount] = useState('5000');
   const [vndAmount, setVndAmount] = useState('');
-  const [uploadedFile, setUploadedFile] = useState<string | null>(null);
+
   const [copied, setCopied] = useState(false);
   const [loading, setLoading] = useState(false);
   const [stripeLoading, setStripeLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
-  const [selectedFiatMethod, setSelectedFiatMethod] = useState<'vnpay' | 'stripe'>('vnpay');
-  const [stripeAmount, setStripeAmount] = useState('');
+  const [selectedMethod, setSelectedMethod] = useState<'vnpay' | 'stripe' | 'crypto'>('stripe');
+  const [currentBalance, setCurrentBalance] = useState(0);
+  const [depositMode, setDepositMode] = useState<'fiat' | 'crypto'>('fiat');
 
   const depositAddress = '1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa';
   const STRIPE_MAX_AMOUNT = 999999.99;
-  const formattedStripeMax = STRIPE_MAX_AMOUNT.toLocaleString('en-US', { maximumFractionDigits: 2 });
+
 
   const cryptoCurrencies = [
     { symbol: 'BTC', name: 'Bitcoin', network: 'Bitcoin', minDeposit: 0.0001, fee: 0 },
@@ -44,35 +45,29 @@ export default function Deposit() {
     { symbol: 'USDT', name: 'Tether', network: 'Ethereum (ERC20)', minDeposit: 10, fee: 0 },
   ];
 
-  const fiatMethods = [
-    { id: 'vnpay', method: 'VNPay', currency: 'VND', fee: '0%', processing: 'Instant', icon: Upload },
-    { id: 'stripe', method: 'Stripe (Card)', currency: 'USD', fee: '2.9% + $0.30', processing: 'Instant', icon: CreditCard },
-  ] as const;
+  // Fetch current balance
+  useEffect(() => {
+    const fetchBalance = async () => {
+      try {
+        const result = await TradingApi.getBalances();
+        if (result.ok && result.data) {
+          setCurrentBalance(result.data.availableBalance || 0);
+        }
+      } catch (err) {
+        console.error('Failed to fetch balance:', err);
+      }
+    };
+    fetchBalance();
 
-  const instructionSteps = [
-    'Select the cryptocurrency or fiat method you prefer.',
-    'Copy the deposit address or launch the payment gateway.',
-    'Send funds from your secure wallet/payment account.',
-    'Wait for network confirmations or processor approval.',
-    'Track status in Recent Deposits — funds auto-credit.',
-  ];
+    // Listen for balance update events
+    const handleBalanceUpdate = () => {
+      fetchBalance();
+    };
+    window.addEventListener('balanceUpdated', handleBalanceUpdate);
+    return () => window.removeEventListener('balanceUpdated', handleBalanceUpdate);
+  }, []);
 
-  const quickHighlights = [
-    {
-      title: 'Security First',
-      description:
-        'Cold-storage custody, 2FA enforcement và giám sát giao dịch liên tục giúp nạp tiền an toàn.',
-      icon: Shield,
-    },
-    {
-      title: '1:1 Support',
-      description:
-        'Nhóm concierge 24/7 sẵn sàng hỗ trợ các khoản nạp lớn hoặc yêu cầu xác nhận thủ công.',
-      icon: Headphones,
-    },
-  ];
-
-      // Handle redirect parameters from payment providers
+  // Handle redirect parameters from payment providers
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const status = params.get('status');
@@ -103,16 +98,22 @@ export default function Deposit() {
         }
 
         const confirmResult = await PaymentApi.confirmStripeDeposit(sessionId);
-        if (!confirmResult.ok || !confirmResult.data) {
-          setError(confirmResult.error || 'Unable to finalize Stripe deposit.');
+        if (!confirmResult.ok) {
+          setError('Unable to finalize Stripe deposit.');
+          resetUrl();
+          return;
+        }
+
+        if (!confirmResult.data) {
+          setError('Deposit confirmed but no data returned.');
           resetUrl();
           return;
         }
 
         const currency = (sessionResult.data.sessionCurrency || 'usd').toUpperCase();
         const credited = confirmResult.data.creditedAmount;
-        const formattedAmount = credited.toFixed(2);
-        setSuccess(`Stripe deposit credited: ${currency === 'USD' ? '$' : ''}${formattedAmount} ${currency}`);
+        const formattedAmount = credited.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        setSuccess(`✅ Nạp tiền thành công! ${currency === 'USD' ? '$' : ''}${formattedAmount} ${currency} đã được cộng vào tài khoản của bạn.`);
         refreshBalances();
         resetUrl();
       })();
@@ -120,7 +121,8 @@ export default function Deposit() {
     }
 
     if (status === 'success') {
-      setSuccess(`Deposit successful${amountParam ? ` - Amount: ${amountParam} VND` : ''}`);
+      const formattedVndAmount = amountParam ? parseFloat(amountParam).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 }) : '';
+      setSuccess(`✅ Nạp tiền thành công! ${formattedVndAmount ? `₫${formattedVndAmount} VND` : 'Số tiền'} đã được cộng vào tài khoản của bạn.`);
       refreshBalances();
       resetUrl();
     } else if (status === 'failed') {
@@ -131,30 +133,15 @@ export default function Deposit() {
       resetUrl();
     }
   }, []);
-  const recentDeposits = [
-    { id: 'DEP-001', currency: 'BTC', amount: 0.05, status: 'Completed', time: '2025-01-14 10:15' },
-    { id: 'DEP-002', currency: 'USDT', amount: 1000, status: 'Processing', time: '2025-01-13 16:45' },
-  ];
-
-  const handleCopy = () => {
-    navigator.clipboard.writeText(depositAddress);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      setUploadedFile(file.name);
-    }
-  };
 
   // Xử lý VNPay deposit
   const handleVnpayDeposit = async () => {
     setError('');
     setSuccess('');
 
-    if (!vndAmount || parseFloat(vndAmount) < 10000) {
+    const depositAmount = selectedMethod === 'vnpay' ? parseFloat(vndAmount) : parseFloat(amount);
+
+    if (selectedMethod === 'vnpay' && (!vndAmount || depositAmount < 10000)) {
       setError('Minimum amount is 10,000 VND');
       return;
     }
@@ -162,7 +149,7 @@ export default function Deposit() {
     setLoading(true);
     try {
       const result = await PaymentApi.createVnpayDeposit({
-        amount: parseFloat(vndAmount),
+        amount: depositAmount,
       });
 
       if (!result.ok) {
@@ -180,13 +167,14 @@ export default function Deposit() {
       setLoading(false);
     }
   };
+
   const handleStripeDeposit = async () => {
     setError('');
     setSuccess('');
 
-    const parsedAmount = parseFloat(stripeAmount);
+    const parsedAmount = parseFloat(amount);
 
-    if (!stripeAmount || parsedAmount < 1) {
+    if (!amount || parsedAmount < 1) {
       setError('Stripe deposit requires at least $1');
       return;
     }
@@ -221,66 +209,262 @@ export default function Deposit() {
     }
   };
 
+  const handleCopy = () => {
+    navigator.clipboard.writeText(depositAddress);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+
+
   const currentCurrency = cryptoCurrencies.find(c => c.symbol === selectedCurrency) || cryptoCurrencies[0];
 
+  // Calculate deposit amount (no processing fee)
+  const depositAmount = selectedMethod === 'vnpay'
+    ? parseFloat(vndAmount) || 0
+    : parseFloat(amount) || 0;
+  const totalAmount = depositAmount;
+
+  const quickAmounts = [100, 500, 1000];
+
+  const handleConfirmDeposit = () => {
+    if (selectedMethod === 'stripe') {
+      handleStripeDeposit();
+    } else if (selectedMethod === 'vnpay') {
+      handleVnpayDeposit();
+    }
+  };
+
   return (
-    <div className="p-4 lg:p-8 space-y-6 bg-slate-950/40">
-      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
-        <div>
-          <p className="text-xs tracking-[0.35em] text-emerald-400 uppercase">Funding Desk</p>
-          <h1 className="text-3xl font-semibold text-white mt-2">Deposit Funds</h1>
-          <p className="text-gray-400 mt-1">Top up your trading balance via secure cryptocurrency rails or instant fiat gateways.</p>
-        </div>
-        <div className="grid sm:grid-cols-3 gap-4 w-full lg:w-auto">
-          {[
-            { label: 'Fiat Methods', value: 'VNPay & Stripe', caption: 'Instant settlement' },
-            { label: 'Network Fees', value: '0.0% - 0.3%', caption: 'Exchange subsidized' },
-            { label: 'Support', value: '24/7 Desk', caption: 'Priority concierge' },
-          ].map((tile) => (
-            <div key={tile.label} className="rounded-xl bg-gray-900/60 border border-gray-800 px-4 py-3">
-              <p className="text-[11px] uppercase tracking-wide text-gray-500">{tile.label}</p>
-              <p className="text-lg font-semibold text-white">{tile.value}</p>
-              <p className="text-xs text-gray-500">{tile.caption}</p>
+    <div className="min-h-screen bg-black text-white p-4 md:p-8">
+      {/* Header */}
+      <div className="max-w-7xl mx-auto mb-8">
+        <div className="flex items-center justify-between">
+          <div>
+            <button className="flex items-center gap-2 text-gray-400 hover:text-white mb-4">
+              <ArrowLeft className="w-4 h-4" />
+              <span className="text-sm">Back</span>
+            </button>
+            <h1 className="text-3xl md:text-4xl font-bold mb-2">Deposit Funds</h1>
+            <p className="text-gray-400">Add funds to your trading account</p>
+          </div>
+          <div className="flex items-center gap-3 bg-gray-900/50 border border-emerald-500/30 rounded-2xl px-6 py-4">
+            <Wallet className="w-5 h-5 text-emerald-400" />
+            <div>
+              <p className="text-xs text-gray-400">Available Balance</p>
+              <p className="text-2xl font-bold text-emerald-400">${currentBalance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
             </div>
-          ))}
+          </div>
         </div>
       </div>
 
+      {/* Error/Success Messages */}
       {(error || success) && (
-        <Alert className={`${error ? 'border-red-500/60 bg-red-500/5 text-red-300' : 'border-emerald-500/60 bg-emerald-500/5 text-emerald-300'} transition-colors duration-200`}>
-          <AlertDescription>{error || success}</AlertDescription>
-        </Alert>
+        <div className="max-w-7xl mx-auto mb-6">
+          <Alert className={`${error ? 'border-red-500/60 bg-red-500/10 text-red-300' : 'border-emerald-500/60 bg-emerald-500/10 text-emerald-300'}`}>
+            <AlertDescription>{error || success}</AlertDescription>
+          </Alert>
+        </div>
       )}
 
-      <div className="grid xl:grid-cols-3 gap-6">
-        <div className="space-y-6 xl:col-span-2">
-          <Card className="bg-gray-900/80 border-gray-800 shadow-2xl shadow-emerald-500/5">
-            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 border-b border-gray-800 pb-5 mb-6">
+      {/* Main Content */}
+      <div className="max-w-7xl mx-auto grid lg:grid-cols-3 gap-6">
+        {/* Left Column - Payment Selection */}
+        <div className="lg:col-span-2 space-y-6">
+          {/* Mode Selection */}
+          <div className="flex gap-3">
+            <button
+              onClick={() => setDepositMode('fiat')}
+              className={`flex-1 py-3 px-4 rounded-xl font-medium transition-all ${depositMode === 'fiat'
+                ? 'bg-emerald-500 text-black'
+                : 'bg-gray-900/50 border border-gray-800 text-gray-400 hover:border-gray-700'
+                }`}
+            >
+              Fiat Payment
+            </button>
+            <button
+              onClick={() => {
+                setDepositMode('crypto');
+                setSelectedMethod('crypto');
+              }}
+              className={`flex-1 py-3 px-4 rounded-xl font-medium transition-all ${depositMode === 'crypto'
+                ? 'bg-emerald-500 text-black'
+                : 'bg-gray-900/50 border border-gray-800 text-gray-400 hover:border-gray-700'
+                }`}
+            >
+              Crypto Deposit
+            </button>
+          </div>
+
+          {depositMode === 'fiat' ? (
+            <>
+              {/* Payment Method Selection */}
               <div>
-                <p className="text-sm text-gray-400">Choose a funding rail</p>
-                <h2 className="text-2xl text-white font-semibold">Crypto or instant fiat</h2>
-              </div>
-              <div className="flex items-center gap-2 text-xs text-gray-400">
-                <Sparkles className="w-4 h-4 text-emerald-400" />
-                <span>Ledger-synced in real time</span>
-              </div>
-            </div>
+                <h2 className="text-xl font-semibold mb-4">Select Payment Method</h2>
+                <p className="text-sm text-gray-400 mb-4">Choose how you'd like to deposit funds</p>
 
-            <Tabs defaultValue="crypto">
-              <TabsList className="bg-gray-800/80 w-full mb-6 rounded-xl">
-                <TabsTrigger value="crypto" className="flex-1 data-[state=active]:bg-emerald-500 data-[state=active]:text-black rounded-lg">Crypto Deposit</TabsTrigger>
-                <TabsTrigger value="fiat" className="flex-1 data-[state=active]:bg-emerald-500 data-[state=active]:text-black rounded-lg">Fiat (VNPay & Stripe)</TabsTrigger>
-              </TabsList>
+                <div className="grid md:grid-cols-2 gap-4">
+                  {/* VNPay Card */}
+                  <button
+                    onClick={() => setSelectedMethod('vnpay')}
+                    className={`relative p-6 rounded-2xl border-2 transition-all text-left ${selectedMethod === 'vnpay'
+                      ? 'border-emerald-500 bg-emerald-500/5'
+                      : 'border-gray-800 bg-gray-900/30 hover:border-gray-700'
+                      }`}
+                  >
+                    {selectedMethod === 'vnpay' && (
+                      <div className="absolute top-4 right-4">
+                        <CheckCircle2 className="w-6 h-6 text-emerald-400" />
+                      </div>
+                    )}
+                    <div className="absolute top-4 left-4">
+                      <Badge className="bg-emerald-500 text-black text-xs px-2 py-1">Recommended</Badge>
+                    </div>
+                    <div className="mt-8 mb-4">
+                      <div className="w-12 h-12 rounded-xl bg-gray-800 flex items-center justify-center mb-3">
+                        <Upload className="w-6 h-6 text-emerald-400" />
+                      </div>
+                      <h3 className="text-lg font-semibold mb-1">VNPay</h3>
+                      <p className="text-sm text-gray-400">Vietnamese payment gateway</p>
+                    </div>
+                    <div className="flex items-center gap-2 text-xs text-gray-400 mb-2">
+                      <Clock className="w-3 h-3" />
+                      <span>Fee</span>
+                      <span className="ml-auto text-emerald-400 font-medium">1.5%</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-xs text-gray-400">
+                      <Clock className="w-3 h-3" />
+                      <span>Processing</span>
+                      <span className="ml-auto text-white font-medium">Instant</span>
+                    </div>
+                  </button>
 
-              <TabsContent value="crypto" className="space-y-6">
+                  {/* Stripe Card */}
+                  <button
+                    onClick={() => setSelectedMethod('stripe')}
+                    className={`relative p-6 rounded-2xl border-2 transition-all text-left ${selectedMethod === 'stripe'
+                      ? 'border-emerald-500 bg-emerald-500/5'
+                      : 'border-gray-800 bg-gray-900/30 hover:border-gray-700'
+                      }`}
+                  >
+                    {selectedMethod === 'stripe' && (
+                      <div className="absolute top-4 right-4">
+                        <CheckCircle2 className="w-6 h-6 text-emerald-400" />
+                      </div>
+                    )}
+                    <div className="mt-4 mb-4">
+                      <div className="w-12 h-12 rounded-xl bg-gray-800 flex items-center justify-center mb-3">
+                        <CreditCard className="w-6 h-6 text-emerald-400" />
+                      </div>
+                      <h3 className="text-lg font-semibold mb-1">Stripe</h3>
+                      <p className="text-sm text-gray-400">International cards accepted</p>
+                    </div>
+                    <div className="flex items-center gap-2 text-xs text-gray-400 mb-2">
+                      <Clock className="w-3 h-3" />
+                      <span>Fee</span>
+                      <span className="ml-auto text-emerald-400 font-medium">2.9%</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-xs text-gray-400">
+                      <Clock className="w-3 h-3" />
+                      <span>Processing</span>
+                      <span className="ml-auto text-white font-medium">1-2 minutes</span>
+                    </div>
+                  </button>
+                </div>
+              </div>
+
+              {/* Amount Input */}
+              <div>
+                <h2 className="text-xl font-semibold mb-4">Enter Amount</h2>
+                {selectedMethod === 'vnpay' ? (
+                  <div>
+                    <Label htmlFor="vnd-amount" className="text-gray-400 mb-2 block">Amount (VND)</Label>
+                    <div className="relative">
+                      <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 text-lg">₫</span>
+                      <Input
+                        id="vnd-amount"
+                        type="number"
+                        placeholder="100000"
+                        value={vndAmount}
+                        onChange={(e) => setVndAmount(e.target.value)}
+                        className="bg-gray-900/50 border-gray-800 text-white text-2xl h-16 pl-10 rounded-xl"
+                      />
+                    </div>
+                    <p className="text-xs text-gray-400 mt-2">Minimum 10,000 VND</p>
+                  </div>
+                ) : (
+                  <div>
+                    <Label htmlFor="amount" className="text-gray-400 mb-2 block">Amount (USD)</Label>
+                    <div className="relative">
+                      <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 text-lg">$</span>
+                      <Input
+                        id="amount"
+                        type="number"
+                        placeholder="5000"
+                        value={amount}
+                        onChange={(e) => setAmount(e.target.value)}
+                        className="bg-gray-900/50 border-gray-800 text-white text-2xl h-16 pl-10 rounded-xl"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* Quick Select */}
+                {selectedMethod !== 'vnpay' && (
+                  <div className="mt-4">
+                    <p className="text-sm text-gray-400 mb-3">Quick Select</p>
+                    <div className="grid grid-cols-4 gap-3">
+                      {quickAmounts.map((quickAmount) => (
+                        <button
+                          key={quickAmount}
+                          onClick={() => setAmount(quickAmount.toString())}
+                          className="py-3 px-4 rounded-xl bg-gray-900/50 border border-gray-800 hover:border-emerald-500 hover:bg-emerald-500/5 transition-all font-medium"
+                        >
+                          ${quickAmount}
+                        </button>
+                      ))}
+                      <button className="py-3 px-4 rounded-xl bg-gray-900/50 border border-gray-800 hover:border-emerald-500 hover:bg-emerald-500/5 transition-all font-medium">
+                        Custom
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Accepted Payment Methods */}
+              {selectedMethod === 'stripe' && (
+                <div className="bg-gray-900/30 border border-gray-800 rounded-2xl p-6">
+                  <h3 className="font-semibold mb-3">Accepted with Stripe:</h3>
+                  <ul className="space-y-2 text-sm text-gray-300">
+                    <li className="flex items-center gap-2">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                      Visa, Mastercard, American Express
+                    </li>
+                    <li className="flex items-center gap-2">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                      Apple Pay, Google Pay
+                    </li>
+                    <li className="flex items-center gap-2">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                      International bank cards
+                    </li>
+                  </ul>
+                </div>
+              )}
+            </>
+          ) : (
+            /* Crypto Deposit Section */
+            <div className="space-y-6">
+              <div>
+                <h2 className="text-xl font-semibold mb-4">Cryptocurrency Deposit</h2>
                 <div className="grid gap-4 md:grid-cols-2">
                   <div>
-                    <Label>Select currency</Label>
+                    <Label className="text-gray-400 mb-2 block">Select Currency</Label>
                     <Select value={selectedCurrency} onValueChange={setSelectedCurrency}>
-                      <SelectTrigger className="mt-2 bg-gray-800 border-gray-700">
+                      <SelectTrigger className="bg-gray-900/50 border-gray-800 h-12 rounded-xl">
                         <SelectValue />
                       </SelectTrigger>
-                      <SelectContent className="bg-gray-800 border-gray-700 text-white">
+                      <SelectContent className="bg-gray-900 border-gray-800 text-white">
                         {cryptoCurrencies.map((currency) => (
                           <SelectItem key={currency.symbol} value={currency.symbol}>
                             {currency.name} ({currency.symbol})
@@ -292,195 +476,108 @@ export default function Deposit() {
                   <Alert className="bg-blue-500/5 border-blue-500/20">
                     <Info className="h-4 w-4 text-blue-400" />
                     <AlertDescription className="text-blue-200 text-sm">
-                      Network: {currentCurrency.network} · Minimum: {currentCurrency.minDeposit} {currentCurrency.symbol}
+                      Network: {currentCurrency.network} · Min: {currentCurrency.minDeposit} {currentCurrency.symbol}
                     </AlertDescription>
                   </Alert>
                 </div>
+              </div>
 
-                <div className="bg-gradient-to-br from-gray-900 to-gray-800 border border-gray-800 rounded-2xl p-4 md:p-6">
-                  <div className="flex items-center justify-between mb-3">
-                    <Label className="text-white">Deposit Address</Label>
-                    <span className="text-xs text-gray-500">Hot wallet • monitored</span>
-                  </div>
-                  <div className="flex gap-2">
-                    <Input value={depositAddress} readOnly className="bg-gray-900 border-gray-700 text-white" />
-                    <Button onClick={handleCopy} className="bg-emerald-500 text-black hover:bg-emerald-400">
-                      {copied ? <CheckCircle2 className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-                    </Button>
-                  </div>
-                  <p className="text-xs text-gray-400 mt-2">Send {selectedCurrency} to the address above. Funds credit after the configured confirmation threshold.</p>
+              <div className="bg-gray-900/30 border border-gray-800 rounded-2xl p-6">
+                <div className="flex items-center justify-between mb-3">
+                  <Label className="text-white">Deposit Address</Label>
+                  <span className="text-xs text-gray-500">Hot wallet • monitored</span>
                 </div>
-
-                <div className="grid md:grid-cols-2 gap-4">
-                  <div className="border border-dashed border-gray-700 rounded-2xl p-6 text-center">
-                    <div className="w-40 h-40 bg-white/80 rounded-xl mx-auto mb-4 flex items-center justify-center text-gray-900 font-semibold">QR</div>
-                    <p className="text-gray-400 text-sm">Scan to push the address to your mobile wallet.</p>
-                  </div>
-                  <Alert className="bg-yellow-500/5 border-yellow-500/30 rounded-2xl">
-                    <Info className="h-4 w-4 text-yellow-400" />
-                    <AlertDescription className="text-yellow-100 text-sm">Send only {selectedCurrency}. Deposits of other assets to this address result in unrecoverable loss.</AlertDescription>
-                  </Alert>
+                <div className="flex gap-2">
+                  <Input value={depositAddress} readOnly className="bg-gray-900 border-gray-700 text-white" />
+                  <Button onClick={handleCopy} className="bg-emerald-500 text-black hover:bg-emerald-400">
+                    {copied ? <CheckCircle2 className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                  </Button>
                 </div>
-              </TabsContent>
+                <p className="text-xs text-gray-400 mt-2">Send {selectedCurrency} to the address above. Funds credit after network confirmation.</p>
+              </div>
 
-              <TabsContent value="fiat" className="space-y-6">
-                <div className="grid gap-3 md:grid-cols-2">
-                  {fiatMethods.map((method) => (
-                    <button
-                      key={method.id}
-                      type="button"
-                      onClick={() => setSelectedFiatMethod(method.id)}
-                      className={`p-4 rounded-2xl border transition-all ${selectedFiatMethod === method.id ? 'border-emerald-500/80 bg-emerald-500/10 shadow-emerald-500/10 shadow-lg' : 'border-gray-800 bg-gray-900/40 hover:border-gray-700'}`}
-                    >
-                      <div className="flex items-center gap-4">
-                        <div className="w-10 h-10 rounded-full bg-emerald-500/10 flex items-center justify-center text-emerald-400">
-                          <method.icon className="w-5 h-5" />
-                        </div>
-                        <div>
-                          <p className="text-white font-semibold">{method.method}</p>
-                          <p className="text-xs text-gray-400">Processing: {method.processing}</p>
-                        </div>
-                      </div>
-                      <div className="mt-4 flex items-center justify-between text-xs text-gray-400">
-                        <span>{method.currency}</span>
-                        <Badge variant="outline" className="border-emerald-500 text-emerald-400">Fee: {method.fee}</Badge>
-                      </div>
-                    </button>
-                  ))}
+              <div className="grid md:grid-cols-2 gap-4">
+                <div className="border border-dashed border-gray-700 rounded-2xl p-6 text-center">
+                  <div className="w-40 h-40 bg-white/90 rounded-xl mx-auto mb-4 flex items-center justify-center text-gray-900 font-semibold">QR Code</div>
+                  <p className="text-gray-400 text-sm">Scan to get deposit address</p>
                 </div>
-
-                {selectedFiatMethod === 'vnpay' && (
-                  <div className="space-y-4">
-                    <div>
-                      <Label htmlFor="vnd-amount">Amount (VND)</Label>
-                      <Input
-                        id="vnd-amount"
-                        type="number"
-                        placeholder="100000"
-                        value={vndAmount}
-                        onChange={(e) => setVndAmount(e.target.value)}
-                        className="bg-gray-800 border-gray-700 text-white mt-2"
-                      />
-                      <p className="text-xs text-gray-400 mt-2">Minimum 10,000 VND • Tỷ giá cập nhật mỗi 60 giây.</p>
-                    </div>
-                    {vndAmount && parseFloat(vndAmount) >= 10000 && (
-                      <div className="pl-3 text-sm text-emerald-400">˜ {(parseFloat(vndAmount) / 24000).toFixed(2)} USD</div>
-                    )}
-                    <Button
-                      type="button"
-                      onClick={handleVnpayDeposit}
-                      disabled={loading || !vndAmount || parseFloat(vndAmount) < 10000}
-                      className="w-full bg-emerald-500 text-black hover:bg-emerald-400 disabled:opacity-50"
-                    >
-                      {loading ? 'Redirecting to VNPay…' : 'Pay with VNPay'}
-                    </Button>
-                    <Alert className="bg-blue-500/5 border-blue-500/30">
-                      <Info className="h-4 w-4 text-blue-400" />
-                      <AlertDescription className="text-blue-200 text-sm">You will be redirected to VNPay to authorize the payment and automatically returned upon completion.</AlertDescription>
-                    </Alert>
-                  </div>
-                )}
-
-                {selectedFiatMethod === 'stripe' && (
-                  <div className="space-y-4">
-                    <div>
-                      <Label htmlFor="stripe-amount">Amount (USD)</Label>
-                      <Input
-                        id="stripe-amount"
-                        type="number"
-                        placeholder="1000"
-                        value={stripeAmount}
-                        onChange={(e) => setStripeAmount(e.target.value)}
-                        className="bg-gray-800 border-gray-700 text-white mt-2"
-                      />
-                      <p className="text-xs text-gray-400 mt-2">Minimum $1 • Maximum ${formattedStripeMax}</p>
-                    </div>
-                    <Button
-                      type="button"
-                      onClick={handleStripeDeposit}
-                      disabled={
-                        stripeLoading ||
-                        !stripeAmount ||
-                        parseFloat(stripeAmount) < 1 ||
-                        parseFloat(stripeAmount) > STRIPE_MAX_AMOUNT
-                      }
-                      className="w-full bg-emerald-500 text-black hover:bg-emerald-400 disabled:opacity-50"
-                    >
-                      {stripeLoading ? 'Launching Stripe Checkout...' : 'Pay with Stripe'}
-                    </Button>
-                    <Alert className="bg-indigo-500/5 border-indigo-500/30">
-                      <Info className="h-4 w-4 text-indigo-300" />
-                      <AlertDescription className="text-indigo-100 text-sm">Use Stripe test cards (e.g. 4242 4242 4242 4242, 12/34, CVC 123) to simulate payments.</AlertDescription>
-                    </Alert>
-                  </div>
-                )}
-              </TabsContent>
-            </Tabs>
-          </Card>
-
-          <div className="grid md:grid-cols-2 gap-4">
-            {quickHighlights.map((item) => (
-              <Card key={item.title} className="bg-gradient-to-br from-gray-900 to-gray-800 border-gray-800">
-                <div className="flex gap-4">
-                  <div className="w-12 h-12 rounded-full bg-emerald-500/10 flex items-center justify-center text-emerald-400">
-                    <item.icon className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <p className="text-white font-semibold">{item.title}</p>
-                    <p className="text-sm text-gray-400 leading-relaxed">{item.description}</p>
-                  </div>
-                </div>
-              </Card>
-            ))}
-          </div>
+                <Alert className="bg-yellow-500/5 border-yellow-500/30 rounded-2xl">
+                  <Info className="h-4 w-4 text-yellow-400" />
+                  <AlertDescription className="text-yellow-100 text-sm">
+                    Send only {selectedCurrency}. Other assets sent to this address will be lost permanently.
+                  </AlertDescription>
+                </Alert>
+              </div>
+            </div>
+          )}
         </div>
 
+        {/* Right Column - Transaction Summary */}
         <div className="space-y-6">
-          <Card className="bg-gray-900/70 border-gray-800 p-6">
-            <h3 className="text-white font-semibold mb-4">Deposit Checklist</h3>
-            <div className="space-y-4">
-              {instructionSteps.map((step, idx) => (
-                <div key={step} className="flex gap-3">
-                  <div className="w-6 h-6 rounded-full bg-emerald-500/20 text-emerald-400 text-xs flex items-center justify-center">{idx + 1}</div>
-                  <p className="text-sm text-gray-300">{step}</p>
+          {/* Transaction Summary */}
+          <div className="bg-gray-900/50 border border-gray-800 rounded-2xl p-6">
+            <h3 className="text-xl font-semibold mb-6">Transaction Summary</h3>
+
+            <div className="space-y-4 mb-6">
+              <div className="flex justify-between items-center">
+                <span className="text-gray-400">Deposit Amount</span>
+                <span className="text-lg font-medium">{selectedMethod === 'vnpay' ? '₫' : '$'}{depositAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+              </div>
+              <div className="border-t border-gray-800 pt-4">
+                <div className="flex justify-between items-center">
+                  <span className="text-lg font-semibold">Total Amount</span>
+                  <span className="text-2xl font-bold text-emerald-400">{selectedMethod === 'vnpay' ? '₫' : '$'}{totalAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                 </div>
-              ))}
+              </div>
             </div>
-          </Card>
 
-          <Card className="bg-gray-900/70 border-gray-800 p-6">
-            <h3 className="text-white font-semibold mb-4">Quick Tips</h3>
-            <ul className="space-y-3 text-sm text-gray-300">
-              <li className="flex gap-2"><Sparkles className="w-4 h-4 text-emerald-400 mt-0.5" /><span>Large deposits (&gt; $250k) qualify for dedicated routing — message us before sending for pre-authorization.</span></li>
-              <li className="flex gap-2"><Shield className="w-4 h-4 text-emerald-400 mt-0.5" /><span>Always double-check memo tags if required. Missing memos are the #1 reason for delays.</span></li>
-              <li className="flex gap-2"><Headphones className="w-4 h-4 text-emerald-400 mt-0.5" /><span>Need proof-of-funds? Support can generate exportable receipts once your deposit clears.</span></li>
-            </ul>
-          </Card>
-
-          <Card className="bg-gray-900/70 border-gray-800 p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-white font-semibold">Recent Deposits</h3>
-              <Button variant="ghost" size="sm" className="text-emerald-400 hover:text-emerald-300">
-                View all <ArrowRight className="w-4 h-4 ml-1" />
+            {depositMode === 'fiat' && (
+              <Button
+                onClick={handleConfirmDeposit}
+                disabled={loading || stripeLoading || (selectedMethod === 'vnpay' ? !vndAmount : !amount)}
+                className="w-full bg-emerald-500 hover:bg-emerald-400 text-black font-semibold h-12 rounded-xl"
+              >
+                {loading || stripeLoading ? 'Processing...' : 'Confirm Deposit'}
               </Button>
+            )}
+          </div>
+
+          {/* Secure Transaction */}
+          <div className="bg-gray-900/50 border border-gray-800 rounded-2xl p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-full bg-emerald-500/10 flex items-center justify-center">
+                <Shield className="w-5 h-5 text-emerald-400" />
+              </div>
+              <h3 className="font-semibold">Secure Transaction</h3>
             </div>
-            <div className="space-y-3">
-              {recentDeposits.map((deposit) => (
-                <div key={deposit.id} className="p-4 rounded-xl border border-gray-800 bg-gray-900/40">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-white font-semibold">{deposit.amount} {deposit.currency}</p>
-                      <p className="text-xs text-gray-500">{deposit.time}</p>
-                    </div>
-                    <Badge className={deposit.status === 'Completed' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-yellow-500/10 text-yellow-400'}>
-                      {deposit.status}
-                    </Badge>
-                  </div>
-                  <p className="text-xs text-gray-500 mt-1">Ref: {deposit.id}</p>
-                </div>
-              ))}
+            <p className="text-sm text-gray-400 leading-relaxed">
+              All transactions are encrypted and processed through secure payment gateways. Your financial information is never stored on our servers.
+            </p>
+          </div>
+
+          {/* Why Deposit */}
+          <div className="bg-gray-900/50 border border-gray-800 rounded-2xl p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-full bg-emerald-500/10 flex items-center justify-center">
+                <TrendingUp className="w-5 h-5 text-emerald-400" />
+              </div>
+              <h3 className="font-semibold">Why Deposit?</h3>
             </div>
-          </Card>
+            <ul className="space-y-3 text-sm text-gray-300">
+              <li className="flex items-start gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-400 mt-0.5 flex-shrink-0" />
+                <span>Start trading immediately after deposit</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-400 mt-0.5 flex-shrink-0" />
+                <span>Access to premium trading features</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-400 mt-0.5 flex-shrink-0" />
+                <span>No minimum balance requirements</span>
+              </li>
+            </ul>
+          </div>
         </div>
       </div>
     </div>

@@ -393,7 +393,7 @@ public class TradingController : ControllerBase
             TodayPnl = todayPnl,
             TodayPnlPercent = todayPnlPercent,
             AvailableBalance = availableBalance,
-            AvailableBalancePercent = usdBalance > 0 ? (availableBalance / usdBalance) * 100m : 0m,
+            AvailableBalancePercent = totalBalance > 0 ? (availableBalance / totalBalance) * 100m : 0m,
             OpenOrdersCount = openOrders.Count,
             OpenOrdersBuy = openOrdersBuy,
             OpenOrdersSell = openOrdersSell
