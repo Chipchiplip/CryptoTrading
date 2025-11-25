@@ -52,6 +52,19 @@ namespace CryptoTrading.Services
             }
             else
             {
+                // Prevent downgrade from active Premium to Free
+                bool isDowngrade = planType < subscription.PlanType;
+                bool isPremiumActive = subscription.PlanType > 0 && 
+                                      subscription.Status == "active" && 
+                                      subscription.CurrentPeriodEndUtc > DateTime.UtcNow;
+                
+                if (isDowngrade && isPremiumActive && planType == 0)
+                {
+                    throw new InvalidOperationException(
+                        "Cannot downgrade to Free plan while Premium subscription is active. " +
+                        "Please cancel your subscription and it will automatically downgrade when the current period ends.");
+                }
+
                 subscription.PlanType = planType;
                 subscription.Status = "active";
                 subscription.CurrentPeriodStartUtc = periodStart;
@@ -74,11 +87,13 @@ namespace CryptoTrading.Services
             if (subscription == null || subscription.Status != "active")
                 return false;
 
+            // Mark as canceled but don't change plan type yet
+            // Let it remain active until the period ends
             subscription.Status = "canceled";
             subscription.CanceledAtUtc = DateTime.UtcNow;
             subscription.UpdatedAtUtc = DateTime.UtcNow;
 
-            await ApplyUserLevelAsync(userId, 0);
+            // Don't downgrade to Free immediately - let background service handle it when period ends
             await _context.SaveChangesAsync();
             return true;
         }

@@ -268,6 +268,14 @@ public class PaymentController : ControllerBase
                 periodEnd = periodEnd
             });
         }
+        catch (InvalidOperationException ex)
+        {
+            await transaction.RollbackAsync();
+            _logger.LogWarning(ex, "Subscription operation not allowed: UserId={UserId}, Message={Message}", 
+                _currentUser.UserId, ex.Message);
+            
+            return BadRequest(new { message = ex.Message });
+        }
         catch (Exception ex)
         {
             await transaction.RollbackAsync();
