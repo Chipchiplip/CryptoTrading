@@ -522,44 +522,74 @@ public class TradingController : ControllerBase
             usdBalanceByDate[movement.Date] = cumulativeUsd;
         }
 
-        // For each day in the range, calculate NAV using preloaded prices
-        // Limit to max 30 days for performance
-        var daysToCalculate = Math.Min(30, (toDate - fromDate).Days + 1);
-        for (int i = daysToCalculate - 1; i >= 0; i--)
+        // Iterate FORWARD from fromDate to toDate to correctly track position changes
+        var daysToCalculate = (toDate - fromDate).Days + 1;
+        
+        // We already have 'positions' initialized with holdings BEFORE fromDate.
+        // We need to update this state day by day.
+        
+        for (int i = 0; i < daysToCalculate; i++)
         {
             var date = fromDate.AddDays(i);
-            if (date > toDate) continue;
             
             cancellationToken.ThrowIfCancellationRequested();
+
+            // 1. Update positions with trades that happened ON this date
+            var tradesOnDate = allTrades.Where(t => t.CreatedAt.Date == date).ToList();
+            foreach (var trade in tradesOnDate)
+            {
+                var key = trade.CryptocurrencyId;
+                var delta = trade.Order.Side == "BUY" ? trade.QuantityCoin : -trade.QuantityCoin;
+                positions[key] = positions.GetValueOrDefault(key) + delta;
+            }
             
             decimal nav = 0m;
 
-            // Value current positions using latest price on or before current date
+            // 2. Value current positions using latest price on or before current date
             foreach (var pos in positions)
             {
+                if (pos.Value == 0) continue; // Skip empty positions
+
                 decimal latestPrice = 0m;
-                for (var checkDate = date; checkDate >= fromDate; checkDate = checkDate.AddDays(-1))
+                // Find price for this specific date
+                if (allPrices.TryGetValue((pos.Key, date), out var price))
                 {
-                    if (allPrices.TryGetValue((pos.Key, checkDate), out var price))
+                    latestPrice = price;
+                }
+                else
+                {
+                    // Fallback: find latest price before this date
+                    // Since we don't have a time-series structure for quick lookup, we search backwards
+                    // Optimization: In a real app, we'd use a better data structure. 
+                    // For now, limit lookback to avoid O(N^2) in worst case
+                    for (var checkDate = date.AddDays(-1); checkDate >= fromDate.AddDays(-5); checkDate = checkDate.AddDays(-1))
                     {
-                        latestPrice = price;
-                        break;
+                        if (allPrices.TryGetValue((pos.Key, checkDate), out var p))
+                        {
+                            latestPrice = p;
+                            break;
+                        }
                     }
                 }
 
                 nav += pos.Value * latestPrice;
             }
 
-            // Add USD balance using preloaded data
+            // 3. Add USD balance
             if (usdBalanceByDate.Any())
             {
                 // Find the latest USD balance on or before this date
-                var usdBalance = usdBalanceByDate
+                // Optimization: Since we iterate forward, we could cache the last known balance
+                var usdBalanceObj = usdBalanceByDate
                     .Where(kvp => kvp.Key <= date)
                     .OrderByDescending(kvp => kvp.Key)
-                    .FirstOrDefault().Value;
+                    .Select(x => (decimal?)x.Value)
+                    .FirstOrDefault();
                 
-                nav += usdBalance;
+                if (usdBalanceObj.HasValue)
+                {
+                    nav += usdBalanceObj.Value;
+                }
             }
 
             data.Add(new DashboardNavDataPointDto
