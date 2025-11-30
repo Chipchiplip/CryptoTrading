@@ -42,9 +42,15 @@ namespace CryptoTrading.Services.Trading
         /// </summary>
         public async Task<OrderDto> PlaceOrderAsync(int userId, PlaceOrderRequest request)
         {
-            using var transaction = await _context.Database.BeginTransactionAsync();
-            try
+            const int maxRetries = 3;
+            int attempt = 0;
+            
+            while (attempt < maxRetries)
             {
+                attempt++;
+                using var transaction = await _context.Database.BeginTransactionAsync();
+                try
+                {
                 // Validate and parse symbol
                 var (coinSymbol, quoteSymbol) = ParseSymbol(request.Symbol);
 
@@ -130,8 +136,28 @@ namespace CryptoTrading.Services.Trading
 
                 // Check available balance
                 var availableBalance = await CalculateAvailableBalanceAsync(wallet.Id);
+                
+                // ✅ FIX: Clamp balance >= 0 để tránh spam log khi balance âm
+                // Root cause vẫn cần fix ở logic inventory/balance, nhưng đây là safety check
+                if (availableBalance < 0)
+                {
+                    _logger.LogWarning(
+                        "[BalanceCheck] Negative balance detected for wallet {WalletId}: {Balance}. " +
+                        "This indicates inventory/balance mismatch. Clamping to 0.",
+                        wallet.Id, availableBalance);
+                    availableBalance = 0;
+                }
+                
                 if (availableBalance < requiredAmount)
                 {
+                    // ✅ Log chi tiết để debug
+                    _logger.LogWarning(
+                        "[BalanceCheck] Insufficient balance for {Side} order. " +
+                        "WalletId: {WalletId}, AssetType: {AssetType}, CurrencyCode: {CurrencyCode}, CryptoId: {CryptoId}, " +
+                        "Available: {Available}, Required: {Required}",
+                        request.Side, wallet.Id, wallet.AssetType, wallet.CurrencyCode, wallet.CryptocurrencyId,
+                        availableBalance, requiredAmount);
+                    
                     throw new InvalidOperationException(
                         $"Insufficient balance. Available: {availableBalance}, Required: {requiredAmount}");
                 }
@@ -175,15 +201,54 @@ namespace CryptoTrading.Services.Trading
                     "Order {OrderId} placed: {Side} {Quantity} {Symbol} @ {Price}",
                     order.Id, order.Side, order.QuantityCoin, coinSymbol, orderPrice);
 
-                // Return DTO with preserved quote symbol
-                return MapToOrderDto(order, coinSymbol, quoteSymbol);
+                    // Return DTO with preserved quote symbol
+                    return MapToOrderDto(order, coinSymbol, quoteSymbol);
+                }
+                catch (Microsoft.EntityFrameworkCore.DbUpdateConcurrencyException ex)
+                {
+                    await transaction.RollbackAsync();
+                    
+                    // Log chi tiết entity gây ra conflict
+                    foreach (var entry in ex.Entries)
+                    {
+                        var entityType = entry.Metadata.Name;
+                        var keyValues = string.Join(", ", 
+                            entry.Properties
+                                .Where(p => p.Metadata.IsPrimaryKey())
+                                .Select(p => $"{p.Metadata.Name}={p.CurrentValue}"));
+                        
+                        _logger.LogWarning(
+                            "Concurrency conflict on {EntityType} with key [{KeyValues}] (attempt {Attempt}/{MaxRetries})",
+                            entityType, keyValues, attempt, maxRetries);
+                    }
+                    
+                    // Retry nếu chưa hết số lần thử
+                    if (attempt < maxRetries)
+                    {
+                        var delayMs = attempt * 100; // Exponential backoff: 100ms, 200ms, 300ms
+                        _logger.LogInformation(
+                            "Retrying PlaceOrderAsync after {DelayMs}ms (attempt {Attempt}/{MaxRetries})",
+                            delayMs, attempt, maxRetries);
+                        await Task.Delay(delayMs);
+                        continue; // Retry
+                    }
+                    
+                    // Hết số lần retry, throw exception
+                    _logger.LogError(ex, 
+                        "Failed to place order after {MaxRetries} attempts due to concurrency conflict for user {UserId}",
+                        maxRetries, userId);
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    await transaction.RollbackAsync();
+                    _logger.LogError(ex, "Error placing order for user {UserId}", userId);
+                    throw;
+                }
             }
-            catch (Exception ex)
-            {
-                await transaction.RollbackAsync();
-                _logger.LogError(ex, "Error placing order for user {UserId}", userId);
-                throw;
-            }
+            
+            // Không bao giờ đến đây, nhưng compiler cần
+            throw new InvalidOperationException("PlaceOrderAsync failed after all retries");
         }
 
         #endregion
@@ -548,6 +613,17 @@ namespace CryptoTrading.Services.Trading
             // Update filled quantities
             takerOrder.FilledQty += quantity;
             makerOrder.FilledQty += quantity;
+
+            // Update taker order status
+            if (takerOrder.FilledQty >= takerOrder.QuantityCoin)
+            {
+                takerOrder.Status = "FILLED";
+            }
+            else if (takerOrder.FilledQty > 0)
+            {
+                takerOrder.Status = "PARTIAL";
+            }
+            takerOrder.UpdatedAt = DateTime.UtcNow;
 
             // Update maker order status
             if (makerOrder.FilledQty >= makerOrder.QuantityCoin)
@@ -962,48 +1038,49 @@ namespace CryptoTrading.Services.Trading
         /// </summary>
         public async Task<PaginatedResponse<OrderDto>> GetOrdersAsync(int userId, OrdersQuery query)
         {
-            var ordersQuery = _context.Orders
-                .Include(o => o.Cryptocurrency)
-                .Where(o => o.UserId == userId);
+            // Optimize: Build base query without Include first for count
+            var baseQuery = _context.Orders.Where(o => o.UserId == userId);
 
-            // Apply filters
+            // Apply filters (same for count and data queries)
             if (!string.IsNullOrEmpty(query.Symbol))
             {
                 var coinSymbol = ParseSymbol(query.Symbol).CoinSymbol;
-                ordersQuery = ordersQuery.Where(o => o.Cryptocurrency.Symbol.ToUpper() == coinSymbol.ToUpper());
+                // Join with Cryptocurrency only when needed
+                baseQuery = baseQuery.Where(o => o.Cryptocurrency.Symbol.ToUpper() == coinSymbol.ToUpper());
             }
 
             if (!string.IsNullOrEmpty(query.Side))
             {
-                ordersQuery = ordersQuery.Where(o => o.Side == query.Side.ToUpper());
+                baseQuery = baseQuery.Where(o => o.Side == query.Side.ToUpper());
             }
 
             if (!string.IsNullOrEmpty(query.Type))
             {
-                ordersQuery = ordersQuery.Where(o => o.Type == query.Type.ToUpper());
+                baseQuery = baseQuery.Where(o => o.Type == query.Type.ToUpper());
             }
 
             if (query.Status != null && query.Status.Any())
             {
                 var upperStatuses = query.Status.Select(s => s.ToUpper()).ToList();
-                ordersQuery = ordersQuery.Where(o => upperStatuses.Contains(o.Status));
+                baseQuery = baseQuery.Where(o => upperStatuses.Contains(o.Status));
             }
 
             if (query.FromDate.HasValue)
             {
-                ordersQuery = ordersQuery.Where(o => o.CreatedAt >= query.FromDate.Value);
+                baseQuery = baseQuery.Where(o => o.CreatedAt >= query.FromDate.Value);
             }
 
             if (query.ToDate.HasValue)
             {
-                ordersQuery = ordersQuery.Where(o => o.CreatedAt <= query.ToDate.Value);
+                baseQuery = baseQuery.Where(o => o.CreatedAt <= query.ToDate.Value);
             }
 
-            // Get total count
-            var totalItems = await ordersQuery.CountAsync();
+            // Get total count (optimized - no Include needed for count)
+            var totalItems = await baseQuery.CountAsync();
 
-            // Apply pagination
-            var orders = await ordersQuery
+            // Apply pagination and Include only for the data we need
+            var orders = await baseQuery
+                .Include(o => o.Cryptocurrency) // Only include when fetching actual data
                 .OrderByDescending(o => o.CreatedAt)
                 .Skip((query.Page - 1) * query.PageSize)
                 .Take(query.PageSize)
@@ -1394,6 +1471,67 @@ namespace CryptoTrading.Services.Trading
                 Fee = trade.FeeUsd,
                 CreatedAt = trade.CreatedAt
             };
+        }
+
+        /// <summary>
+        /// Updates order status to FILLED if FilledQty >= QuantityCoin
+        /// This fixes orders that were filled but status wasn't updated
+        /// </summary>
+        public async Task<int> UpdateFilledOrderStatusesAsync()
+        {
+            // Tìm tất cả orders có filled >= quantity nhưng status chưa phải FILLED
+            var ordersToUpdate = await _context.Orders
+                .Where(o => o.Status != "FILLED" && 
+                           o.Status != "CANCELED" &&
+                           o.FilledQty > 0 &&
+                           o.QuantityCoin > 0 &&
+                           o.FilledQty >= o.QuantityCoin)
+                .ToListAsync();
+
+            foreach (var order in ordersToUpdate)
+            {
+                order.Status = "FILLED";
+                order.UpdatedAt = DateTime.UtcNow;
+                // Release any remaining locked balance when order is fully filled
+                await ReleaseBalanceAsync(order.Id);
+            }
+
+            if (ordersToUpdate.Any())
+            {
+                await _context.SaveChangesAsync();
+                _logger.LogInformation("Updated {Count} order statuses to FILLED and released OrderHolds", ordersToUpdate.Count);
+            }
+
+            return ordersToUpdate.Count;
+        }
+
+        public async Task<int> CleanupOrphanedOrderHoldsAsync()
+        {
+            // Find all OrderHolds for orders that are FILLED, CANCELED, or REJECTED
+            var orphanedHolds = await _context.OrderHolds
+                .Include(h => h.Order)
+                .Where(h => h.ReleasedAt == null && 
+                           h.Order != null &&
+                           (h.Order.Status == "FILLED" || 
+                            h.Order.Status == "CANCELED" || 
+                            h.Order.Status == "REJECTED" ||
+                            (h.Order.FilledQty > 0 && h.Order.QuantityCoin > 0 && h.Order.FilledQty >= h.Order.QuantityCoin)))
+                .ToListAsync();
+
+            var count = 0;
+            foreach (var hold in orphanedHolds)
+            {
+                hold.ReleasedAt = DateTime.UtcNow;
+                count++;
+            }
+
+            if (count > 0)
+            {
+                await _context.SaveChangesAsync();
+                _logger.LogInformation("Cleaned up {Count} orphaned OrderHolds", count);
+            }
+
+            return count;
         }
 
         #endregion

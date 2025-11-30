@@ -1097,6 +1097,61 @@ public class TradingController : ControllerBase
     {
         return await GetTrades(query);
     }
+
+    /// <summary>
+    /// Update order statuses for orders that are fully filled but status wasn't updated
+    /// </summary>
+    [HttpPost("orders/update-filled-statuses")]
+    public async Task<IActionResult> UpdateFilledOrderStatuses()
+    {
+        try
+        {
+            // Cast to concrete type to access UpdateFilledOrderStatusesAsync method
+            if (_tradingService is TradingService tradingServiceImpl)
+            {
+                var updatedCount = await tradingServiceImpl.UpdateFilledOrderStatusesAsync();
+                return Ok(new { message = $"Updated {updatedCount} order statuses to FILLED", count = updatedCount });
+            }
+            else
+            {
+                return StatusCode(500, new { error = "TradingService implementation not available" });
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error updating filled order statuses");
+            return StatusCode(500, new { error = "Failed to update order statuses", message = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// Cleanup orphaned OrderHolds for filled/cancelled orders
+    /// This fixes negative available balance issues
+    /// </summary>
+    [HttpPost("orders/cleanup-orphaned-holds")]
+    public async Task<IActionResult> CleanupOrphanedOrderHolds()
+    {
+        try
+        {
+            if (_tradingService is TradingService tradingServiceImpl)
+            {
+                var cleanedCount = await tradingServiceImpl.CleanupOrphanedOrderHoldsAsync();
+                return Ok(new { 
+                    message = $"Cleaned up {cleanedCount} orphaned OrderHolds", 
+                    count = cleanedCount 
+                });
+            }
+            else
+            {
+                return StatusCode(500, new { error = "TradingService implementation not available" });
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error cleaning up orphaned OrderHolds");
+            return StatusCode(500, new { error = "Failed to cleanup OrderHolds", message = ex.Message });
+        }
+    }
 }
 
 // DTOs

@@ -26,6 +26,14 @@ namespace CryptoTrading.Interfaces.Bot
 
         // ========== SIMULATION ==========
         Task<SimulationResultDto> SimulateAsync(int userId, Guid botId, SimulationRequest request);
+
+        // ========== INVENTORY MANAGEMENT ==========
+        Task<ResetInventoryResultDto> ResetInventoryAsync(int userId, Guid botId);
+        Task<ResetInventoryResultDto> ResetInventoryAdminAsync(Guid botId); // Admin version - no userId check
+        
+        // ========== ADMIN/DEBUG ==========
+        Task<List<BotSearchResultDto>> SearchBotsByNameAsync(string namePattern);
+        Task<List<BotSearchResultDto>> GetBotsByUserIdAsync(int userId); // Get all bots for a specific user
     }
 
     /// <summary>

@@ -31,30 +31,63 @@ namespace CryptoTrading.Services.Bot
             string quoteAsset, 
             CancellationToken cancellationToken = default)
         {
+            // Normalize baseAsset (remove common prefixes/suffixes)
+            var normalizedAsset = baseAsset.ToUpper().Trim();
+            
             // Try cache first
             if (_cacheService.TryGetCryptoData(out var cachedData) && cachedData != null)
             {
+                // Try multiple matching strategies
                 var coin = cachedData.FirstOrDefault(c => 
-                    c.Symbol.Equals(baseAsset, StringComparison.OrdinalIgnoreCase));
+                    c.Symbol?.Equals(normalizedAsset, StringComparison.OrdinalIgnoreCase) == true ||
+                    c.Symbol?.Equals(baseAsset, StringComparison.OrdinalIgnoreCase) == true);
                 
                 if (coin?.CurrentPrice > 0)
                 {
+                    _logger.LogDebug("Found price in cache: {BaseAsset} = {Price}", baseAsset, coin.CurrentPrice);
                     return coin.CurrentPrice ?? 0m;
                 }
+                
+                // Log available symbols for debugging
+                var availableSymbols = string.Join(", ", cachedData.Take(10).Select(c => c.Symbol ?? "null"));
+                _logger.LogWarning("Asset {BaseAsset} not found in cache. Available symbols (first 10): {Symbols}", 
+                    baseAsset, availableSymbols);
             }
 
             // Fallback to API
             try
             {
                 var marketData = await _coinGeckoService.GetMarketDataAsync();
-                var coin = marketData.FirstOrDefault(c => 
-                    c.Symbol.Equals(baseAsset, StringComparison.OrdinalIgnoreCase));
                 
-                return coin?.CurrentPrice ?? 0m;
+                if (marketData == null || !marketData.Any())
+                {
+                    _logger.LogError("CoinGecko service returned empty market data");
+                    return 0m;
+                }
+                
+                // Try multiple matching strategies
+                var coin = marketData.FirstOrDefault(c => 
+                    c.Symbol?.Equals(normalizedAsset, StringComparison.OrdinalIgnoreCase) == true ||
+                    c.Symbol?.Equals(baseAsset, StringComparison.OrdinalIgnoreCase) == true ||
+                    c.Id?.Equals(normalizedAsset, StringComparison.OrdinalIgnoreCase) == true ||
+                    c.Id?.Equals(baseAsset, StringComparison.OrdinalIgnoreCase) == true);
+                
+                if (coin?.CurrentPrice > 0)
+                {
+                    _logger.LogDebug("Found price from API: {BaseAsset} = {Price}", baseAsset, coin.CurrentPrice);
+                    return coin.CurrentPrice ?? 0m;
+                }
+                
+                // Log available symbols for debugging
+                var availableSymbols = string.Join(", ", marketData.Take(10).Select(c => $"{c.Symbol}({c.Id})"));
+                _logger.LogWarning("Asset {BaseAsset} not found in API. Available symbols (first 10): {Symbols}", 
+                    baseAsset, availableSymbols);
+                
+                return 0m;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to fetch price for {BaseAsset}", baseAsset);
+                _logger.LogError(ex, "Failed to fetch price for {BaseAsset} from CoinGecko API", baseAsset);
                 return 0m;
             }
         }
@@ -158,11 +191,11 @@ namespace CryptoTrading.Services.Bot
         {
             try
             {
-                // Extract base asset from symbol (e.g., "BTCUSDT" -> "BTC")
-                var baseAsset = symbol.Replace("USDT", "").Replace("USD", "");
+                var quoteAsset = ResolveQuoteAsset(symbol);
+                var baseAsset = ExtractBaseAsset(symbol, quoteAsset);
 
                 // Get current price
-                var price = await GetMidPriceAsync(baseAsset, "USDT", cancellationToken);
+                var price = await GetMidPriceAsync(baseAsset, quoteAsset, cancellationToken);
                 if (price <= 0)
                 {
                     _logger.LogWarning("No price data available for {Symbol}", symbol);
@@ -242,6 +275,32 @@ namespace CryptoTrading.Services.Bot
                 _logger.LogError(ex, "Failed to get market data for {Symbol}", symbol);
                 return null;
             }
+        }
+
+        private static string ResolveQuoteAsset(string symbol)
+        {
+            // Always use USD instead of USDT to ensure bot orders match with user orders
+            if (symbol.EndsWith("USDT", StringComparison.OrdinalIgnoreCase))
+            {
+                return "USD"; // Convert USDT to USD
+            }
+
+            if (symbol.EndsWith("USD", StringComparison.OrdinalIgnoreCase))
+            {
+                return "USD";
+            }
+
+            return "USD";
+        }
+
+        private static string ExtractBaseAsset(string symbol, string quoteAsset)
+        {
+            if (symbol.EndsWith(quoteAsset, StringComparison.OrdinalIgnoreCase) && symbol.Length > quoteAsset.Length)
+            {
+                return symbol.Substring(0, symbol.Length - quoteAsset.Length);
+            }
+
+            return symbol.Replace("/", string.Empty);
         }
     }
 }

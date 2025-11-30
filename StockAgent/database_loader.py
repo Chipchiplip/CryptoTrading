@@ -42,7 +42,7 @@ def load_crypto_from_database(symbol: str, timeframe: str = "1h", limit: Optiona
     Since the database stores individual price points, we need to aggregate them.
     
     Args:
-        symbol: Trading pair symbol (e.g., "BTCUSDT", "ETHUSDT")
+        symbol: Trading pair symbol (e.g., "BTCUSD", "ETHUSD")
         timeframe: Timeframe for aggregation ("1h", "4h", "1d")
         limit: Maximum number of bars to return (None = all available)
         
@@ -66,8 +66,8 @@ def load_crypto_from_database(symbol: str, timeframe: str = "1h", limit: Optiona
         
         # Get cryptocurrency ID from symbol
         with connection.cursor() as cursor:
-            # Try to find by symbol (e.g., "BTCUSDT" -> "BTC")
-            base_symbol = symbol.replace("USDT", "").replace("USD", "").upper()
+            # Try to find by symbol (e.g., "BTCUSD" -> "BTC")
+            base_symbol = symbol.replace("USD", "").replace("USDT", "").upper()
             
             # Try exact match first, then base symbol
             # Tables are in crypto_trading database, not in a separate 'market' schema
@@ -191,7 +191,7 @@ def load_multiple_crypto_from_database(symbols: List[str], timeframe: str = "1h"
     Load OHLCV data for multiple crypto symbols from database.
     
     Args:
-        symbols: List of symbols to load (e.g., ["BTCUSDT", "ETHUSDT"])
+        symbols: List of symbols to load (e.g., ["BTCUSD", "ETHUSD"])
         timeframe: Timeframe for aggregation (e.g., "1h", "4h", "1d")
         limit: Maximum number of bars per symbol
         

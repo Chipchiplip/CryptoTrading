@@ -118,9 +118,9 @@ EVENT_2_MESSAGE = "The government has announced an increase in interest rates."
 EVENT_2_LOAN_RATE = [0.0255, 0.0285, 0.0315]
 
 # ==================== CRYPTO MODE CONSTANTS ====================
-# Crypto trading pair symbols
-CRYPTO_SYMBOL_1 = "BTCUSDT"  # Primary crypto (replaces Stock A)
-CRYPTO_SYMBOL_2 = "ETHUSDT"  # Secondary crypto (replaces Stock B)
+# Crypto trading pair symbols (using USD instead of USDT)
+CRYPTO_SYMBOL_1 = "BTCUSD"  # Primary crypto (replaces Stock A)
+CRYPTO_SYMBOL_2 = "ETHUSD"  # Secondary crypto (replaces Stock B)
 
 # Crypto initial prices (can be overridden by CSV data)
 CRYPTO_BTC_INITIAL_PRICE = 50000.0

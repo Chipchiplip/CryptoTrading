@@ -197,6 +197,7 @@ builder.Services.AddHttpClient("AiChatService", client =>
     client.Timeout = TimeSpan.FromSeconds(45);
 });
 builder.Services.AddSingleton<CryptoTrading.Services.Ai.IAiChatSessionStore, CryptoTrading.Services.Ai.InMemoryAiChatSessionStore>();
+builder.Services.AddScoped<CryptoTrading.Services.Ai.IGeminiService, CryptoTrading.Services.Ai.GeminiService>();
 builder.Services.AddScoped<CryptoTrading.Services.Ai.IAiTradingChatService, CryptoTrading.Services.Ai.AiTradingChatService>();
 
 // VNPay Service

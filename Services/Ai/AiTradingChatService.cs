@@ -12,6 +12,7 @@ using CryptoTrading.Interfaces.Bot;
 using UserPortfolioService = CryptoTrading.Interfaces.IPortfolioService;
 using CryptoTrading.Models;
 using CryptoTrading.Models.DTOs;
+using CryptoTrading.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -31,6 +32,8 @@ public class AiTradingChatService : IAiTradingChatService
     private readonly IBotApplicationService _botApplicationService;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILogger<AiTradingChatService> _logger;
+    private readonly ICoinGeckoService _coinGeckoService;
+    private readonly IGeminiService _geminiService;
     private static readonly JsonSerializerOptions SnakeCaseOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
@@ -48,7 +51,9 @@ public class AiTradingChatService : IAiTradingChatService
         UserPortfolioService portfolioService,
         IBotApplicationService botApplicationService,
         IHttpClientFactory httpClientFactory,
-        ILogger<AiTradingChatService> logger)
+        ILogger<AiTradingChatService> logger,
+        ICoinGeckoService coinGeckoService,
+        IGeminiService geminiService)
     {
         _db = db;
         _sessionStore = sessionStore;
@@ -56,6 +61,8 @@ public class AiTradingChatService : IAiTradingChatService
         _botApplicationService = botApplicationService;
         _httpClientFactory = httpClientFactory;
         _logger = logger;
+        _coinGeckoService = coinGeckoService;
+        _geminiService = geminiService;
     }
 
     public async Task<AiChatResponseDto> HandleMessageAsync(AiChatMessageRequest request, CancellationToken ct = default)
@@ -63,7 +70,10 @@ public class AiTradingChatService : IAiTradingChatService
         var session = await _sessionStore.GetOrCreateAsync(request.UserId, request.SessionId, ct);
         if (IsCreateBotCommand(request.Message))
         {
-            var updatedForCommand = AppendConversationEntry(session, request.Message);
+            // Parse message to update session context before creating bot
+            // This ensures we have the latest information from the conversation
+            var (updatedSession, _, _) = ParseMessage(session, request.Message);
+            var updatedForCommand = AppendConversationEntry(updatedSession, request.Message);
             await _sessionStore.SaveAsync(updatedForCommand, ct);
             return await HandleCreateBotCommandAsync(updatedForCommand, request, ct);
         }
@@ -94,92 +104,130 @@ public class AiTradingChatService : IAiTradingChatService
 
         var highlightResult = await BuildMarketHighlightsAsync(3, ct);
         
-        PythonAiChatResponse? aiResponse = null;
+        // Build conversation history for Gemini
+        var conversationHistory = BuildConversationHistory(sessionToPersist);
+        
+        // Add market context to user message if available
+        var enhancedMessage = request.Message;
+        if (highlightResult.Highlights.Count > 0 && intent == "market_scan")
+        {
+            var topCoins = string.Join(", ", highlightResult.Highlights
+                .Take(3)
+                .Select(h =>
+                {
+                    var highlight = JsonSerializer.Deserialize<JsonElement>(JsonSerializer.Serialize(h));
+                    var symbol = highlight.TryGetProperty("symbol", out var s) ? s.GetString() : "N/A";
+                    var change = highlight.TryGetProperty("change_24h", out var c) && c.ValueKind == JsonValueKind.Number
+                        ? c.GetDouble()
+                        : 0;
+                    return $"{symbol} (+{change:F1}%)";
+                }));
+            enhancedMessage = $"{request.Message}\n\nThông tin thị trường: Top coin đang tăng: {topCoins}.";
+        }
+
+        string? geminiReply = null;
         try
         {
-            var payload = await BuildPythonPayloadAsync(
-                sessionToPersist,
-                request.UserId,
-                request.Message,
-                mode: "chat",
-                contextSummary: conversationSummary,
-                intent: intent,
-                marketContext: highlightResult,
-                ct);
-
-            aiResponse = await SendAiChatAsync(payload, ct);
+            _logger.LogInformation("Calling Gemini API for user {UserId}, message length: {Length}, history count: {HistoryCount}", 
+                request.UserId, enhancedMessage.Length, conversationHistory?.Count ?? 0);
+            
+            geminiReply = await _geminiService.ChatAsync(enhancedMessage, conversationHistory, ct);
+            
+            _logger.LogInformation("Gemini API responded successfully, reply length: {Length}", geminiReply?.Length ?? 0);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error calling AI chat service for user {UserId}", request.UserId);
+            _logger.LogError(ex, "Error calling Gemini API for user {UserId}. Exception: {ExceptionType}, Message: {Message}", 
+                request.UserId, ex.GetType().Name, ex.Message);
         }
 
         var replySegments = new List<string>();
 
-        var shouldForceMarketScanFallback = intent == "market_scan" &&
-                                            (aiResponse == null ||
-                                             string.IsNullOrWhiteSpace(aiResponse?.Reply) ||
-                                             aiResponse.TradeSuggestion == null ||
-                                             string.Equals(aiResponse.TradeSuggestion.Decision, "NO_TRADE", StringComparison.OrdinalIgnoreCase));
-
-        if (intent == "market_scan" && shouldForceMarketScanFallback)
+        // If Gemini replied successfully, use it as primary response
+        if (!string.IsNullOrWhiteSpace(geminiReply))
         {
-            if (highlightResult.IsMarketDown)
+            // Clean up markdown formatting from Gemini response
+            var cleanedReply = CleanMarkdownFormatting(geminiReply);
+            
+            // Use Gemini reply as main response - let Gemini handle the conversation naturally
+            // Check if Gemini already acknowledged the user's information in its reply
+            // Check for common number patterns and currency mentions
+            var geminiAcknowledgedInfo = newInfoCaptured && 
+                (cleanedReply.Contains("vốn", StringComparison.OrdinalIgnoreCase) ||
+                 cleanedReply.Contains("USD", StringComparison.OrdinalIgnoreCase) ||
+                 cleanedReply.Contains("BTC", StringComparison.OrdinalIgnoreCase) ||
+                 cleanedReply.Contains("ETH", StringComparison.OrdinalIgnoreCase) ||
+                 cleanedReply.Contains("SOL", StringComparison.OrdinalIgnoreCase) ||
+                 // Check for common number patterns (1000, 5000, 10000, 15000, etc.)
+                 Regex.IsMatch(cleanedReply, @"\b\d{1,2}[.,]\d{3}\b") || // 15.000, 10.000
+                 Regex.IsMatch(cleanedReply, @"\b\d{4,}\b")); // 10000, 15000
+            
+            // Only add conversation summary if Gemini didn't acknowledge the info
+            // This prevents duplicate information
+            if (newInfoCaptured && shouldCollectDetails && !string.IsNullOrWhiteSpace(conversationSummary) && 
+                intent == "chat" && !geminiAcknowledgedInfo)
             {
-                replySegments.Add("Hiện tại thị trường đang đỏ, chưa có coin nào đáng mua. Bạn nên chờ tín hiệu rõ ràng hơn.");
+                replySegments.Add(conversationSummary);
             }
-            else if (highlightResult.Highlights.Count > 0)
+            
+            // Add Gemini's reply
+            replySegments.Add(cleanedReply);
+            
+            // Add bot hint only if:
+            // 1. It's appropriate to show (showBotHint is true)
+            // 2. Gemini didn't already mention /taobot or bot
+            // 3. This is a general chat, not a specific command
+            var geminiMentionedBot = cleanedReply.Contains("/taobot", StringComparison.OrdinalIgnoreCase) ||
+                                     cleanedReply.Contains("bot tự động", StringComparison.OrdinalIgnoreCase) ||
+                                     cleanedReply.Contains("dựng bot", StringComparison.OrdinalIgnoreCase);
+            
+            if (showBotHint && !geminiMentionedBot && intent == "chat")
             {
-                var topCoins = string.Join(", ", highlightResult.Highlights
-                    .Take(3)
-                    .Select(h =>
-                    {
-                        var highlight = JsonSerializer.Deserialize<JsonElement>(JsonSerializer.Serialize(h));
-                        var symbol = highlight.TryGetProperty("symbol", out var s) ? s.GetString() : "N/A";
-                        var change = highlight.TryGetProperty("change_24h", out var c) && c.ValueKind == JsonValueKind.Number
-                            ? c.GetDouble()
-                            : 0;
-                        return $"{symbol} (+{change:F1}%)";
-                    }));
-                replySegments.Add($"Top coin đang tăng: {topCoins}. Bạn có thể xem xét các coin này.");
-            }
-            else
-            {
-                replySegments.Add("Hiện chưa có coin nào có tín hiệu tăng mạnh. Mình sẽ tiếp tục theo dõi và báo lại khi có cơ hội.");
+                replySegments.Add(BotHintMessage);
             }
         }
         else
         {
-            if (!string.IsNullOrWhiteSpace(conversationSummary))
+            // Fallback if Gemini fails
+            if (intent == "direct_advice")
             {
-                replySegments.Add(conversationSummary);
+                replySegments.Add("Tạm thời mình không thể đưa ra lệnh giao dịch. Vui lòng thử lại sau hoặc kiểm tra kết nối AI service.");
             }
-
-            if (aiResponse != null && !string.IsNullOrWhiteSpace(aiResponse.Reply))
+            else if (intent == "market_scan")
             {
-                replySegments.Add(aiResponse.Reply);
-            }
-            else if (aiResponse == null)
-            {
-                if (intent == "direct_advice")
+                if (highlightResult.IsMarketDown)
                 {
-                    replySegments.Add("Tạm thời mình không thể đưa ra lệnh giao dịch. Vui lòng thử lại sau hoặc kiểm tra kết nối AI service.");
+                    replySegments.Add("Hiện tại thị trường đang đỏ, chưa có coin nào đáng mua. Bạn nên chờ tín hiệu rõ ràng hơn.");
+                }
+                else if (highlightResult.Highlights.Count > 0)
+                {
+                    var topCoins = string.Join(", ", highlightResult.Highlights
+                        .Take(3)
+                        .Select(h =>
+                        {
+                            var highlight = JsonSerializer.Deserialize<JsonElement>(JsonSerializer.Serialize(h));
+                            var symbol = highlight.TryGetProperty("symbol", out var s) ? s.GetString() : "N/A";
+                            var change = highlight.TryGetProperty("change_24h", out var c) && c.ValueKind == JsonValueKind.Number
+                                ? c.GetDouble()
+                                : 0;
+                            return $"{symbol} (+{change:F1}%)";
+                        }));
+                    replySegments.Add($"Top coin đang tăng: {topCoins}. Bạn có thể xem xét các coin này.");
                 }
                 else
                 {
-                    replySegments.Add("Xin lỗi, mình đang gặp sự cố kỹ thuật. Vui lòng thử lại sau.");
+                    replySegments.Add("Hiện chưa có coin nào có tín hiệu tăng mạnh. Mình sẽ tiếp tục theo dõi và báo lại khi có cơ hội.");
                 }
             }
-
-            if (!string.IsNullOrWhiteSpace(followUpQuestion) && intent == "chat" && aiResponse != null)
+            else
             {
-                replySegments.Add(followUpQuestion);
+                replySegments.Add("Xin lỗi, mình đang gặp sự cố kỹ thuật. Vui lòng thử lại sau.");
             }
-        }
-
-        if (showBotHint)
-        {
-            replySegments.Add(BotHintMessage);
+            
+            if (showBotHint)
+            {
+                replySegments.Add(BotHintMessage);
+            }
         }
 
         var finalReply = string.Join("\n\n", replySegments.Where(s => !string.IsNullOrWhiteSpace(s)));
@@ -189,7 +237,7 @@ public class AiTradingChatService : IAiTradingChatService
             SessionId = sessionToPersist.SessionId.ToString(),
             Reply = finalReply,
             Bots = new List<AiChatBotSuggestionDto>(),
-            TradeSuggestion = aiResponse?.TradeSuggestion?.ToDto()
+            TradeSuggestion = null // Gemini doesn't return trade suggestions in this flow
         };
     }
 
@@ -205,7 +253,7 @@ public class AiTradingChatService : IAiTradingChatService
             var followUp = BuildFollowUpQuestion(missingFields);
             var lines = new List<string>
             {
-                "Äá»ƒ dá»±ng bot cho báº¡n mÃ¬nh cáº§n thÃªm má»™t chÃºt thÃ´ng tin."
+                "Để dựng bot cho bạn mình cần thêm một chút thông tin"
             };
             if (!string.IsNullOrWhiteSpace(summary))
             {
@@ -223,56 +271,253 @@ public class AiTradingChatService : IAiTradingChatService
             };
         }
 
-        var conversationSummary = BuildConversationSummary(session);
-        var highlightResult = await BuildMarketHighlightsAsync(3, ct);
+        // Build conversation history from session
+        var conversationHistory = BuildConversationHistory(session);
         
-        PythonAiChatResponse? aiResponse = null;
+        _logger.LogInformation("Creating bot from session - UserId: {UserId}, SessionId: {SessionId}, RiskMode: {RiskMode}, Capital: {Capital}, Symbols: {Symbols}, TimeHorizon: {TimeHorizon}",
+            session.UserId, session.SessionId, session.RiskMode, session.TotalEquity, 
+            string.Join(", ", session.PreferredSymbols), session.TimeHorizon);
+        
+        BotConfigJson? botConfig = null;
         List<AiChatBotSuggestionDto> botDtos = new();
         
         try
         {
-            var payload = await BuildPythonPayloadAsync(
-                session,
-                request.UserId,
-                request.Message,
-                mode: "create_bot",
-                contextSummary: conversationSummary,
-                intent: "create_bot",
-                marketContext: highlightResult,
-                ct);
-
-            aiResponse = await SendAiChatAsync(payload, ct);
-            botDtos = await PersistBotSuggestionsAsync(session, aiResponse.Bots, ct);
+            // Use Gemini to extract bot config from conversation
+            botConfig = await _geminiService.ExtractBotConfigAsync(conversationHistory, ct);
+            
+            _logger.LogInformation("Gemini extracted config - RiskMode: {RiskRisk}, CapitalPerTrade: {PerTrade}, DailyExposure: {Daily}, Strategy: {Strategy}",
+                botConfig?.RiskMode, botConfig?.MaxCapitalPerTrade, botConfig?.MaxDailyExposure, botConfig?.StrategyType);
+            
+            if (botConfig != null)
+            {
+                // PRIORITIZE session context over Gemini extraction for critical fields
+                // Session context is parsed directly from user conversation, more reliable
+                var riskMode = !string.IsNullOrEmpty(session.RiskMode)
+                    ? session.RiskMode.ToUpperInvariant()
+                    : botConfig.RiskMode.ToUpperInvariant();
+                
+                // Validate risk mode
+                if (riskMode != "AGGRESSIVE" && riskMode != "BALANCED" && riskMode != "SAFE")
+                {
+                    riskMode = "BALANCED"; // Default fallback
+                }
+                
+                _logger.LogInformation("Bot config extraction - Session risk: {SessionRisk}, Gemini risk: {GeminiRisk}, Final: {FinalRisk}", 
+                    session.RiskMode, botConfig.RiskMode, riskMode);
+                
+                // Calculate capital - prioritize session context
+                decimal totalCapital = session.TotalEquity ?? 0;
+                if (totalCapital == 0 && botConfig.MaxDailyExposure > 0)
+                {
+                    // Estimate from maxDailyExposure (assume 50-100% of total capital)
+                    // For aggressive: ~90%, balanced: ~70%, safe: ~50%
+                    var exposureRatio = riskMode == "AGGRESSIVE" ? 0.90m : 
+                                       riskMode == "BALANCED" ? 0.70m : 0.50m;
+                    totalCapital = (decimal)botConfig.MaxDailyExposure / exposureRatio;
+                }
+                
+                // If still zero, use default
+                if (totalCapital == 0)
+                {
+                    totalCapital = 10000m; // Default fallback
+                }
+                
+                _logger.LogInformation("Bot config - Total capital: {Capital}, Risk mode: {Risk}", totalCapital, riskMode);
+                
+                // ALWAYS recalculate based on session context to ensure consistency
+                // This ensures capital allocation matches the actual risk mode from conversation
+                decimal maxCapitalPerTrade;
+                decimal maxDailyExposure;
+                
+                // Recalculate based on risk mode and total capital
+                if (riskMode == "AGGRESSIVE")
+                {
+                    maxCapitalPerTrade = totalCapital * 0.15m; // 15% per trade
+                    maxDailyExposure = totalCapital * 0.90m; // 90% daily
+                }
+                else if (riskMode == "BALANCED")
+                {
+                    maxCapitalPerTrade = totalCapital * 0.12m; // 12% per trade
+                    maxDailyExposure = totalCapital * 0.70m; // 70% daily
+                }
+                else // SAFE
+                {
+                    maxCapitalPerTrade = totalCapital * 0.08m; // 8% per trade
+                    maxDailyExposure = totalCapital * 0.50m; // 50% daily
+                }
+                
+                _logger.LogInformation("Bot config calculated - Per trade: {PerTrade}, Daily: {Daily}", 
+                    maxCapitalPerTrade, maxDailyExposure);
+                
+                // Ensure symbols are not empty
+                var symbols = botConfig.Symbols?.Any() == true 
+                    ? botConfig.Symbols.ToArray() 
+                    : (session.PreferredSymbols.Any() 
+                        ? session.PreferredSymbols.ToArray() 
+                        : new[] { "BTCUSD" });
+                
+                // Create bot suggestion from extracted config
+                var botSuggestion = new AiChatBotSuggestionDto
+                {
+                    SuggestionId = Guid.NewGuid(),
+                    Name = botConfig.Name ?? $"Bot {string.Join(", ", symbols)}",
+                    Symbols = symbols,
+                    StrategyType = botConfig.StrategyType ?? "grid",
+                    RiskMode = riskMode,
+                    MaxCapitalPerTrade = maxCapitalPerTrade,
+                    MaxDailyExposure = maxDailyExposure,
+                    TimeHorizon = botConfig.TimeHorizon ?? session.TimeHorizon ?? "intraday",
+                    ExpectedReturnPct = null,
+                    RiskNote = $"Bot được tạo từ cuộc trò chuyện với AI. Risk mode: {riskMode}, Strategy: {botConfig.StrategyType ?? "grid"}"
+                };
+                
+                // Persist to database
+                var entity = new AiGeneratedBotProfile
+                {
+                    Id = botSuggestion.SuggestionId,
+                    UserId = session.UserId,
+                    SessionId = session.SessionId,
+                    Name = botSuggestion.Name,
+                    SymbolsJson = JsonSerializer.Serialize(botSuggestion.Symbols),
+                    StrategyType = botSuggestion.StrategyType,
+                    RiskMode = botSuggestion.RiskMode,
+                    MaxCapitalPerTrade = botSuggestion.MaxCapitalPerTrade,
+                    MaxDailyExposure = botSuggestion.MaxDailyExposure,
+                    TimeHorizon = botSuggestion.TimeHorizon,
+                    ExpectedReturnPct = botSuggestion.ExpectedReturnPct,
+                    RiskNote = botSuggestion.RiskNote,
+                    CreatedAtUtc = DateTime.UtcNow
+                };
+                
+                _db.AiGeneratedBotProfiles.Add(entity);
+                await _db.SaveChangesAsync(ct);
+                
+                botDtos.Add(botSuggestion);
+            }
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error creating bot for user {UserId}", request.UserId);
+            _logger.LogError(ex, "Error extracting bot config from Gemini for user {UserId}", request.UserId);
         }
 
         var replyLines = new List<string>();
-        var botSummary = BuildBotContextSummary(session);
-        if (!string.IsNullOrWhiteSpace(botSummary))
-        {
-            replyLines.Add("Mình đang dựng bot dựa trên cấu hình sau:");
-            replyLines.Add(botSummary);
-        }
         
-        if (aiResponse != null && !string.IsNullOrWhiteSpace(aiResponse.Reply))
+        if (botConfig != null && botDtos.Count > 0)
         {
-            replyLines.Add(aiResponse.Reply);
-            replyLines.Add("Bạn cứ nói thêm nếu muốn chỉnh sửa thông số hoặc dựng bot khác.");
+            replyLines.Add("Mình đã phân tích cuộc trò chuyện và tạo bot proposal cho bạn:");
+            replyLines.Add($"• Tên: {botDtos[0].Name}");
+            replyLines.Add($"• Symbols: {string.Join(", ", botDtos[0].Symbols)}");
+            replyLines.Add($"• Strategy: {botDtos[0].StrategyType}");
+            replyLines.Add($"• Risk: {botDtos[0].RiskMode}");
+            replyLines.Add($"• Vốn/lệnh: {botDtos[0].MaxCapitalPerTrade:N0} USD");
+            replyLines.Add($"• Vốn/ngày: {botDtos[0].MaxDailyExposure:N0} USD");
+            replyLines.Add($"• Time horizon: {botDtos[0].TimeHorizon}");
+            replyLines.Add("\nBạn có thể apply bot này hoặc nói thêm nếu muốn chỉnh sửa.");
         }
         else
         {
-            replyLines.Add("Xin lỗi, mình đang gặp sự cố kỹ thuật khi tạo bot. Vui lòng thử lại sau.");
+            // Fallback: Try to create bot from session context if Gemini extraction failed
+            // but we have enough information in session
+            if (session.TotalEquity.HasValue && 
+                !string.IsNullOrEmpty(session.RiskMode) && 
+                session.PreferredSymbols.Any() && 
+                !string.IsNullOrEmpty(session.TimeHorizon))
+            {
+                _logger.LogInformation("Gemini extraction failed, but session has enough info. Creating bot from session context.");
+                
+                // Create bot from session context
+                var riskMode = session.RiskMode.ToUpperInvariant();
+                var totalCapital = session.TotalEquity.Value;
+                
+                // Calculate capital allocation
+                decimal maxCapitalPerTrade;
+                decimal maxDailyExposure;
+                if (riskMode == "AGGRESSIVE")
+                {
+                    maxCapitalPerTrade = totalCapital * 0.15m;
+                    maxDailyExposure = totalCapital * 0.90m;
+                }
+                else if (riskMode == "BALANCED")
+                {
+                    maxCapitalPerTrade = totalCapital * 0.12m;
+                    maxDailyExposure = totalCapital * 0.70m;
+                }
+                else // SAFE
+                {
+                    maxCapitalPerTrade = totalCapital * 0.08m;
+                    maxDailyExposure = totalCapital * 0.50m;
+                }
+                
+                // Choose strategy based on risk mode and time horizon
+                var strategyType = session.TimeHorizon.ToLowerInvariant() switch
+                {
+                    "scalping" => riskMode == "AGGRESSIVE" ? "momentum_scalping" : "grid-basic",
+                    "intraday" => riskMode == "AGGRESSIVE" ? "aggressive_forex" : "grid-basic",
+                    "swing" => "grid-basic",
+                    _ => "grid-basic"
+                };
+                
+                var botSuggestion = new AiChatBotSuggestionDto
+                {
+                    SuggestionId = Guid.NewGuid(),
+                    Name = $"Bot {string.Join(", ", session.PreferredSymbols)}",
+                    Symbols = session.PreferredSymbols.ToArray(),
+                    StrategyType = strategyType,
+                    RiskMode = riskMode,
+                    MaxCapitalPerTrade = maxCapitalPerTrade,
+                    MaxDailyExposure = maxDailyExposure,
+                    TimeHorizon = session.TimeHorizon,
+                    ExpectedReturnPct = null,
+                    RiskNote = $"Bot được tạo từ cuộc trò chuyện với AI. Risk mode: {riskMode}, Strategy: {strategyType}"
+                };
+                
+                // Persist to database
+                var entity = new AiGeneratedBotProfile
+                {
+                    Id = botSuggestion.SuggestionId,
+                    UserId = session.UserId,
+                    SessionId = session.SessionId,
+                    Name = botSuggestion.Name,
+                    SymbolsJson = JsonSerializer.Serialize(botSuggestion.Symbols),
+                    StrategyType = botSuggestion.StrategyType,
+                    RiskMode = botSuggestion.RiskMode,
+                    MaxCapitalPerTrade = botSuggestion.MaxCapitalPerTrade,
+                    MaxDailyExposure = botSuggestion.MaxDailyExposure,
+                    TimeHorizon = botSuggestion.TimeHorizon,
+                    ExpectedReturnPct = botSuggestion.ExpectedReturnPct,
+                    RiskNote = botSuggestion.RiskNote,
+                    CreatedAtUtc = DateTime.UtcNow
+                };
+                
+                _db.AiGeneratedBotProfiles.Add(entity);
+                await _db.SaveChangesAsync(ct);
+                
+                botDtos.Add(botSuggestion);
+                
+                replyLines.Add("Mình đã phân tích cuộc trò chuyện và tạo bot proposal cho bạn:");
+                replyLines.Add($"• Tên: {botSuggestion.Name}");
+                replyLines.Add($"• Symbols: {string.Join(", ", botSuggestion.Symbols)}");
+                replyLines.Add($"• Strategy: {botSuggestion.StrategyType}");
+                replyLines.Add($"• Risk: {botSuggestion.RiskMode}");
+                replyLines.Add($"• Vốn/lệnh: {botSuggestion.MaxCapitalPerTrade:N0} USD");
+                replyLines.Add($"• Vốn/ngày: {botSuggestion.MaxDailyExposure:N0} USD");
+                replyLines.Add($"• Time horizon: {botSuggestion.TimeHorizon}");
+                replyLines.Add("\nBạn có thể apply bot này hoặc nói thêm nếu muốn chỉnh sửa.");
+            }
+            else
+            {
+                replyLines.Add("Xin lỗi, mình không thể extract đủ thông tin từ cuộc trò chuyện để tạo bot.");
+                replyLines.Add("Vui lòng cung cấp thêm thông tin về: vốn, symbols, risk mode, và time horizon.");
+            }
         }
 
         return new AiChatResponseDto
         {
             SessionId = session.SessionId.ToString(),
-            Reply = string.Join("\n\n", replyLines.Where(s => !string.IsNullOrWhiteSpace(s))),
+            Reply = string.Join("\n", replyLines),
             Bots = botDtos,
-            TradeSuggestion = aiResponse?.TradeSuggestion?.ToDto()
+            TradeSuggestion = null
         };
     }
 
@@ -289,13 +534,76 @@ public class AiTradingChatService : IAiTradingChatService
         var symbols = JsonSerializer.Deserialize<string[]>(profile.SymbolsJson) ?? Array.Empty<string>();
         if (symbols.Length == 0)
         {
-            symbols = new[] { "BTCUSDT" };
+            symbols = new[] { "BTCUSD" };
         }
 
         var (baseAsset, quoteAsset) = ParseSymbol(symbols[0]);
 
         var strategy = await ResolveStrategyDefinitionAsync(profile.StrategyType, ct)
             ?? throw new InvalidOperationException("No active bot strategy available for AI suggestions.");
+
+        // Tự động set default parameters cho Grid Trading nếu strategy là grid-basic
+        var parameters = new Dictionary<string, object>
+        {
+            ["ai_source"] = "chat",
+            ["symbols"] = symbols
+        };
+
+        // Nếu là Grid Trading, thêm default parameters dựa trên giá thị trường
+        if (strategy.StrategyKey == "grid-basic")
+        {
+            // Lấy giá thị trường hiện tại để set grid range
+            var currentPrice = 0m;
+            try
+            {
+                var marketData = await _coinGeckoService.GetMarketDataAsync(false);
+                var crypto = marketData?.FirstOrDefault(c => 
+                    c.Symbol?.Equals(baseAsset, StringComparison.OrdinalIgnoreCase) == true ||
+                    c.Id?.Equals($"{baseAsset.ToLower()}-{quoteAsset.ToLower()}", StringComparison.OrdinalIgnoreCase) == true);
+                currentPrice = crypto?.CurrentPrice ?? 0m;
+            }
+            catch (Exception ex)
+            {
+                // Nếu không lấy được giá, dùng default values
+                _logger.LogWarning(ex, "Could not fetch market price for grid trading default parameters");
+                currentPrice = 0m;
+            }
+
+            if (currentPrice > 0)
+            {
+                // Set grid range: lowerBound = 70% currentPrice, upperBound = 150% currentPrice
+                var lowerBound = currentPrice * 0.7m;
+                var upperBound = currentPrice * 1.5m;
+                var gridLevels = 20;
+                var orderSize = 0.1m;
+                var capitalAllocation = profile.MaxCapitalPerTrade > 0 ? profile.MaxCapitalPerTrade : 10000m;
+
+                parameters["lowerBound"] = Math.Round(lowerBound, 2);
+                parameters["upperBound"] = Math.Round(upperBound, 2);
+                parameters["gridLevels"] = gridLevels;
+                parameters["orderSize"] = orderSize;
+                parameters["capitalAllocation"] = capitalAllocation;
+                parameters["refreshIntervalSeconds"] = 60;
+                // Thêm parameters cho market orders
+                parameters["maxBuyOrders"] = 3;  // Tối đa 3 BUY market orders
+                parameters["maxSellOrders"] = 3; // Tối đa 3 SELL market orders
+                parameters["orderType"] = "MARKET"; // Bot dùng market orders
+            }
+            else
+            {
+                // Fallback nếu không lấy được giá
+                parameters["lowerBound"] = 2000m;
+                parameters["upperBound"] = 5000m;
+                parameters["gridLevels"] = 20;
+                parameters["orderSize"] = 0.1m;
+                parameters["capitalAllocation"] = profile.MaxCapitalPerTrade > 0 ? profile.MaxCapitalPerTrade : 10000m;
+                parameters["refreshIntervalSeconds"] = 60;
+                // Thêm parameters cho market orders
+                parameters["maxBuyOrders"] = 3;
+                parameters["maxSellOrders"] = 3;
+                parameters["orderType"] = "MARKET";
+            }
+        }
 
         var createRequest = new CreateBotRequest
         {
@@ -304,11 +612,7 @@ public class AiTradingChatService : IAiTradingChatService
             BaseAsset = baseAsset,
             QuoteAsset = quoteAsset,
             RiskProfile = profile.RiskMode,
-            Parameters = new Dictionary<string, object>
-            {
-                ["ai_source"] = "chat",
-                ["symbols"] = symbols
-            },
+            Parameters = parameters,
             PositionSizing = new Dictionary<string, object>
             {
                 ["maxCapitalPerTrade"] = profile.MaxCapitalPerTrade,
@@ -392,7 +696,7 @@ public class AiTradingChatService : IAiTradingChatService
                 _logger.LogWarning(ex, "Error extracting symbol from market highlights");
             }
         }
-        snapshotSymbol ??= "BTCUSDT";
+        snapshotSymbol ??= "BTCUSD";
         object? marketSnapshot = null;
         try
         {
@@ -436,7 +740,15 @@ public class AiTradingChatService : IAiTradingChatService
             risk_mode = (session.RiskMode ?? "BALANCED").ToLowerInvariant(),
             max_capital_per_trade = maxCapitalPerTrade,
             max_daily_exposure = maxDailyExposure,
-            time_horizon = session.TimeHorizon ?? "intraday"
+            time_horizon = session.TimeHorizon ?? "intraday",
+            // Thông tin về bot strategy: Grid Trading với Market Orders
+            bot_strategy_info = new
+            {
+                strategy_key = "grid-basic",
+                order_type = "MARKET", // Bot dùng market orders
+                execution_mode = "direct_market", // Trade trực tiếp với market ảo
+                description = "Bot sẽ tạo MARKET orders để trade trực tiếp với market ảo (virtual counterparty). Orders sẽ được execute ngay lập tức với market price hiện tại."
+            }
         };
 
         decimal? usdtBalance = null;
@@ -613,6 +925,50 @@ public class AiTradingChatService : IAiTradingChatService
         return session with { ConversationNotes = notes };
     }
 
+    private static List<ChatMessage> BuildConversationHistory(AiChatSessionContext session)
+    {
+        var history = new List<ChatMessage>();
+        
+        // Convert conversation notes to chat messages
+        // Assume alternating user/assistant messages
+        for (int i = 0; i < session.ConversationNotes.Count; i++)
+        {
+            var note = session.ConversationNotes[i];
+            // First message is always from user, then alternate
+            var role = (i % 2 == 0) ? "user" : "assistant";
+            history.Add(new ChatMessage
+            {
+                Role = role,
+                Content = note
+            });
+        }
+        
+        return history;
+    }
+
+    private static string CleanMarkdownFormatting(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+            return text;
+
+        // Remove markdown bold (**text** -> text)
+        text = Regex.Replace(text, @"\*\*([^*]+)\*\*", "$1");
+        
+        // Remove markdown italic (*text* -> text)
+        text = Regex.Replace(text, @"\*([^*]+)\*", "$1");
+        
+        // Remove markdown headers (# Header -> Header)
+        text = Regex.Replace(text, @"^#+\s+", "", RegexOptions.Multiline);
+        
+        // Remove markdown list markers (1. , 2. , - , * )
+        text = Regex.Replace(text, @"^\s*[\d\-*•]\s+", "", RegexOptions.Multiline);
+        
+        // Clean up multiple newlines
+        text = Regex.Replace(text, @"\n{3,}", "\n\n");
+        
+        return text.Trim();
+    }
+
     private static bool IsCreateBotCommand(string message)
     {
         return !string.IsNullOrWhiteSpace(message)
@@ -637,7 +993,7 @@ public class AiTradingChatService : IAiTradingChatService
         if (ctx.TotalEquity.HasValue)
         {
             var formatted = ctx.TotalEquity.Value.ToString("N0", ViCulture);
-            parts.Add($"vốn khoảng {formatted} USDT");
+            parts.Add($"vốn khoảng {formatted} USD");
         }
         if (!string.IsNullOrEmpty(ctx.RiskMode))
         {
@@ -649,7 +1005,7 @@ public class AiTradingChatService : IAiTradingChatService
         }
         if (!string.IsNullOrEmpty(ctx.TimeHorizon))
         {
-            parts.Add($"khung thá»i gian {ctx.TimeHorizon}");
+            parts.Add($"khung thời gian {ctx.TimeHorizon}");
         }
 
         return parts.Count == 0
@@ -662,7 +1018,7 @@ public class AiTradingChatService : IAiTradingChatService
         var lines = new List<string>();
         if (ctx.TotalEquity.HasValue)
         {
-            lines.Add($"• Vốn: {ctx.TotalEquity.Value.ToString("N0", ViCulture)} USDT");
+            lines.Add($"• Vốn: {ctx.TotalEquity.Value.ToString("N0", ViCulture)} USD");
         }
         if (!string.IsNullOrEmpty(ctx.RiskMode))
         {
@@ -690,9 +1046,9 @@ public class AiTradingChatService : IAiTradingChatService
         var field = missingFields[0];
         return field switch
         {
-            "capital" => "Báº¡n dá»± Ä‘á»‹nh dÃ¹ng khoáº£ng bao nhiÃªu vá»‘n cho káº¿ hoáº¡ch nÃ y Ä‘á»ƒ mÃ¬nh canh tá»· trá»ng chuáº©n hÆ¡n?",
-            "risk" => "Báº¡n thiÃªn vá» phong cÃ¡ch máº¡o hiá»ƒm, cÃ¢n báº±ng hay an toÃ n Ä‘á»ƒ mÃ¬nh chá»n chiáº¿n lÆ°á»£c phÃ¹ há»£p?",
-            "symbols" => "Bạn muốn tập trung vào cặp nào? Ví dụ BTCUSDT hay ETHUSDT cũng được.",
+            "capital" => "Bạn dự định dùng khoảng bao nhiêu vốn cho kế hoạch này để mình canh tỷ trọng chuẩn hơn?",
+            "risk" => "Bạn thiên về phong cách mạo hiểm, cân bằng hay an toàn để mình chọn chiến lược phù hợp?",
+            "symbols" => "Bạn muốn tập trung vào cặp nào? Ví dụ BTCUSD hay ETHUSD cũng được.",
             "horizon" => "Bạn đang trade nhanh kiểu scalping, intraday hay giữ swing vài ngày?",
             _ => string.Empty
         };
@@ -980,11 +1336,11 @@ public class AiTradingChatService : IAiTradingChatService
 
     private static string? TryParseRiskMode(string message)
     {
-        if (Regex.IsMatch(message, "máº¡o hiá»ƒm|aggressive", RegexOptions.IgnoreCase))
+        if (Regex.IsMatch(message, "mạo hiểm|aggressive", RegexOptions.IgnoreCase))
             return "AGGRESSIVE";
         if (Regex.IsMatch(message, "cÃ¢n báº±ng|balanced|bÃ¬nh thÆ°á»ng", RegexOptions.IgnoreCase))
             return "BALANCED";
-        if (Regex.IsMatch(message, "an toÃ n|safe|phÃ²ng thá»§", RegexOptions.IgnoreCase))
+        if (Regex.IsMatch(message, "an toàn|safe|phòng thủ", RegexOptions.IgnoreCase))
             return "SAFE";
         return null;
     }
@@ -992,14 +1348,33 @@ public class AiTradingChatService : IAiTradingChatService
     private static List<string> TryParseSymbols(string message)
     {
         var normalized = message.ToUpperInvariant();
-        var matches = Regex.Matches(normalized, @"[A-Z]{2,10}(?:/|-)?USDT");
-        var results = matches.Select(m => m.Value.Replace("-", "/")).ToList();
+        var results = new List<string>();
+        
+        // First, try to match full symbols like BTCUSD, ETHUSD, BTC/USD, etc.
+        // Match both USDT and USD suffixes
+        var fullMatches = Regex.Matches(normalized, @"([A-Z]{2,10})(?:/|-)?(USD|USDT)", RegexOptions.IgnoreCase);
+        foreach (Match match in fullMatches)
+        {
+            var symbol = match.Groups[1].Value;
+            var quote = match.Groups[2].Value;
+            // Normalize to USD (not USDT) for consistency
+            results.Add($"{symbol}USD");
+        }
+        
+        // Also match standalone BTCUSD, ETHUSD without separator
+        var directMatches = Regex.Matches(normalized, @"\b([A-Z]{2,10})(USD|USDT)\b", RegexOptions.IgnoreCase);
+        foreach (Match match in directMatches)
+        {
+            var symbol = match.Groups[1].Value;
+            var quote = match.Groups[2].Value;
+            results.Add($"{symbol}USD");
+        }
 
-        // Capture standalone tickers (BTC, ETH, ZEC, SOL, OP, etc.) even without the /USDT suffix
-        var standalone = Regex.Matches(normalized, @"\b[A-Z]{2,5}\b")
-            .Select(m => m.Value)
+        // Capture standalone tickers (BTC, ETH, ZEC, SOL, OP, etc.) even without the /USD suffix
+        var standalone = Regex.Matches(normalized, @"\b([A-Z]{2,5})\b")
+            .Select(m => m.Groups[1].Value)
             .Where(v => KnownSymbols.Contains(v))
-            .Select(v => $"{v}USDT");
+            .Select(v => $"{v}USD");
 
         results.AddRange(standalone);
         return results.Distinct().Take(5).ToList();
@@ -1009,7 +1384,7 @@ public class AiTradingChatService : IAiTradingChatService
     {
         if (Regex.IsMatch(message, "scalping|\\b\\d{1,2}m\\b", RegexOptions.IgnoreCase)) return "scalping";
         if (Regex.IsMatch(message, "swing", RegexOptions.IgnoreCase)) return "swing";
-        if (Regex.IsMatch(message, "intraday|trong ngÃ y|1-2 ngÃ y", RegexOptions.IgnoreCase)) return "intraday";
+        if (Regex.IsMatch(message, "intraday|trong ngày|1-2 ngày", RegexOptions.IgnoreCase)) return "intraday";
         return null;
     }
 
@@ -1263,14 +1638,45 @@ public class AiTradingChatService : IAiTradingChatService
 
     private async Task<BotStrategyDefinition?> ResolveStrategyDefinitionAsync(string strategyKey, CancellationToken ct)
     {
+        var normalizedKey = NormalizeStrategyKey(strategyKey);
+
+        // Prefer an exact match with the normalized key, but fall back to any active strategy
         return await _db.BotStrategyDefinitions
-            .Where(s => s.IsActive && s.StrategyKey == strategyKey)
-            .OrderByDescending(s => s.CreatedAt)
-            .FirstOrDefaultAsync(ct)
-            ?? await _db.BotStrategyDefinitions
-                .Where(s => s.IsActive)
-                .OrderBy(s => s.CreatedAt)
-                .FirstOrDefaultAsync(ct);
+                   .Where(s => s.IsActive && s.StrategyKey == normalizedKey)
+                   .OrderByDescending(s => s.CreatedAt)
+                   .FirstOrDefaultAsync(ct)
+               ?? await _db.BotStrategyDefinitions
+                   .Where(s => s.IsActive)
+                   .OrderBy(s => s.CreatedAt)
+                   .FirstOrDefaultAsync(ct);
+    }
+
+    private static string NormalizeStrategyKey(string strategyType)
+    {
+        if (string.IsNullOrWhiteSpace(strategyType))
+        {
+            return string.Empty;
+        }
+
+        var key = strategyType.Trim()
+            .Replace(" ", "-")
+            .Replace("_", "-")
+            .ToLowerInvariant();
+
+        return key switch
+        {
+            // Map AI suggestion labels to concrete built-in strategies
+            // Grid Trading dùng MARKET orders để trade trực tiếp với market ảo (virtual counterparty)
+            // Không match với limit orders của users nữa
+            "trend-following" => "grid-basic",
+            "breakout" => "grid-basic",
+            "scalping" => "grid-basic",
+            "momentum" => "grid-basic",
+            "dca" => "grid-basic",
+            "dca-pullback" => "grid-basic",
+            "grid" => "grid-basic",
+            _ => "grid-basic"  // Default về grid-basic
+        };
     }
 
     private static (string BaseAsset, string QuoteAsset) ParseSymbol(string symbol)

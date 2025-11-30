@@ -68,6 +68,18 @@ namespace CryptoTrading.Services.Trading
         /// </summary>
         /// <returns>Number of matches made</returns>
         Task<int> MatchOrdersAsync();
+
+        /// <summary>
+        /// Updates order statuses for fully filled orders
+        /// </summary>
+        /// <returns>Number of orders updated</returns>
+        Task<int> UpdateFilledOrderStatusesAsync();
+
+        /// <summary>
+        /// Cleans up orphaned OrderHolds for filled/cancelled orders
+        /// </summary>
+        /// <returns>Number of OrderHolds cleaned up</returns>
+        Task<int> CleanupOrphanedOrderHoldsAsync();
     }
 }
 

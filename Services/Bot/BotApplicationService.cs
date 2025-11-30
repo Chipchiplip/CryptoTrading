@@ -2,6 +2,7 @@ using CryptoTrading.Data;
 using CryptoTrading.Interfaces.Bot;
 using CryptoTrading.Models;
 using CryptoTrading.Models.DTOs;
+using CryptoTrading.Services.Bot.Strategies;
 using CryptoTrading.Services.Trading;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -54,6 +55,12 @@ namespace CryptoTrading.Services.Bot
                 throw new InvalidOperationException($"Strategy implementation '{strategyDef.StrategyKey}' not registered");
             }
 
+            // Normalize QuoteAsset to USD (convert USDT to USD)
+            var normalizedQuoteAsset = string.IsNullOrWhiteSpace(request.QuoteAsset) || 
+                request.QuoteAsset.Equals("USDT", StringComparison.OrdinalIgnoreCase)
+                ? "USD"
+                : request.QuoteAsset;
+
             // Create bot
             var bot = new TradingBot
             {
@@ -64,7 +71,7 @@ namespace CryptoTrading.Services.Bot
                 Status = "Draft",
                 RiskProfile = request.RiskProfile,
                 BaseAsset = request.BaseAsset,
-                QuoteAsset = request.QuoteAsset,
+                QuoteAsset = normalizedQuoteAsset,
                 Parameters = JsonSerializer.Serialize(request.Parameters),
                 PositionSizing = request.PositionSizing != null 
                     ? JsonSerializer.Serialize(request.PositionSizing) 
@@ -120,7 +127,12 @@ namespace CryptoTrading.Services.Bot
 
             _logger.LogInformation("Updated bot {BotId}", botId);
 
-            return await MapToBotDetailDto(bot, bot.StrategyDefinition!);
+            if (bot.StrategyDefinition == null)
+            {
+                throw new InvalidOperationException($"Bot {botId} has no strategy definition");
+            }
+
+            return await MapToBotDetailDto(bot, bot.StrategyDefinition);
         }
 
         public async Task DeleteAsync(int userId, Guid botId)
@@ -156,7 +168,12 @@ namespace CryptoTrading.Services.Bot
                 throw new KeyNotFoundException("Bot not found");
             }
 
-            return await MapToBotDetailDto(bot, bot.StrategyDefinition!);
+            if (bot.StrategyDefinition == null)
+            {
+                throw new InvalidOperationException($"Bot {botId} has no strategy definition");
+            }
+
+            return await MapToBotDetailDto(bot, bot.StrategyDefinition);
         }
 
         public async Task<PaginatedResponse<TradingBotSummaryDto>> GetListAsync(int userId, BotListQuery query)
@@ -263,7 +280,38 @@ namespace CryptoTrading.Services.Bot
 
             await _context.SaveChangesAsync();
 
-            _logger.LogInformation("Bot {BotId} stopping (reason: {Reason})", botId, request.Reason);
+            // Cancel all pending orders created by this bot
+            var botOrders = await _context.TradingBotOrders
+                .Include(bo => bo.Order)
+                .Where(bo => bo.TradingBotId == botId && bo.Order != null)
+                .ToListAsync();
+
+            var cancelledCount = 0;
+            foreach (var botOrder in botOrders)
+            {
+                var order = botOrder.Order!;
+                // Chỉ cancel orders còn pending (NEW, PARTIAL)
+                // Status hợp lệ: NEW, PARTIAL, FILLED, CANCELED, REJECTED
+                if (order.Status == "NEW" || order.Status == "PARTIAL")
+                {
+                    try
+                    {
+                        await _tradingService.CancelOrderAsync(userId, order.Id);
+                        cancelledCount++;
+                        _logger.LogInformation("Cancelled order {OrderId} (status: {Status}) when stopping bot {BotId}", order.Id, order.Status, botId);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Failed to cancel order {OrderId} when stopping bot {BotId}: {Error}", order.Id, botId, ex.Message);
+                    }
+                }
+                else
+                {
+                    _logger.LogDebug("Skipping order {OrderId} with status {Status} when stopping bot {BotId}", order.Id, order.Status, botId);
+                }
+            }
+
+            _logger.LogInformation("Bot {BotId} stopping (reason: {Reason}), cancelled {Count} pending orders", botId, request.Reason, cancelledCount);
         }
 
         public async Task NudgeAsync(int userId, Guid botId)
@@ -474,7 +522,7 @@ namespace CryptoTrading.Services.Bot
                 BaseAsset = bot.BaseAsset,
                 QuoteAsset = string.IsNullOrWhiteSpace(bot.QuoteAsset) ? "USD" : bot.QuoteAsset,
                 AllowedCapital = simulationRequest.InitialCapital,
-                TradingService = new BotTradingServiceWrapper(_tradingService, bot.UserId, bot.Id),
+                TradingService = new BotTradingServiceWrapper(_tradingService, _context, bot.UserId, bot.Id),
                 MarketData = marketData,
                 PortfolioService = portfolioService,
                 RiskManager = riskManager,
@@ -517,15 +565,128 @@ namespace CryptoTrading.Services.Bot
                 .OrderByDescending(s => s.CapturedAt)
                 .FirstOrDefaultAsync();
 
+            // Calculate metrics from orders
+            var botOrders = await _context.TradingBotOrders
+                .Include(bo => bo.Order)
+                .Where(bo => bo.TradingBotId == bot.Id)
+                .ToListAsync();
+
+            var totalOrders = botOrders.Count;
+            var filledOrders = botOrders.Count(bo => bo.Order != null && 
+                (bo.Order.Status == "FILLED" || bo.Order.Status == "PARTIAL"));
+            
+            // Calculate PnL from TRADES (not orders) - this is the correct way
+            var orderIds = botOrders
+                .Where(bo => bo.Order != null)
+                .Select(bo => bo.Order!.Id)
+                .ToList();
+            
+            var trades = await _context.Trades
+                .Where(t => orderIds.Contains(t.OrderId))
+                .Include(t => t.Order)
+                .ToListAsync();
+            
+            // Calculate realized P&L: Sum of (SELL trades revenue - BUY trades cost - fees)
+            var realizedPnl = trades
+                .Where(t => t.Order != null)
+                .Sum(t => 
+                {
+                    var tradeValue = t.PriceUsd * t.QuantityCoin;
+                    var fee = t.FeeUsd;
+                    
+                    if (t.Order.Side == "BUY")
+                    {
+                        // BUY: negative (cost + fee)
+                        return -(tradeValue + fee);
+                    }
+                    else // SELL
+                    {
+                        // SELL: positive (revenue - fee)
+                        return tradeValue - fee;
+                    }
+                });
+            
+            // Calculate total fees
+            var totalFees = trades.Sum(t => t.FeeUsd);
+            
+            // Calculate unrealized P&L from bot state (inventory đang hold)
+            decimal unrealizedPnl = 0;
+            decimal openPositions = 0;
+            
+            if (latestSnapshot != null && !string.IsNullOrEmpty(latestSnapshot.RuntimeState))
+            {
+                try
+                {
+                    // Load bot state để lấy inventory và average cost price
+                    var stateJson = latestSnapshot.RuntimeState;
+                    var stateType = bot.StrategyDefinition?.StrategyKey == "grid-basic" 
+                        ? typeof(GridRuntimeState) 
+                        : null;
+                    
+                    if (stateType != null)
+                    {
+                        var state = JsonSerializer.Deserialize(stateJson, stateType);
+                        if (state != null)
+                        {
+                            // Lấy inventory và average cost price từ state
+                            var inventoryProperty = stateType.GetProperty("Inventory");
+                            var averageCostProperty = stateType.GetProperty("AverageCostPrice");
+                            
+                            if (inventoryProperty != null && averageCostProperty != null)
+                            {
+                                var inventory = (decimal)(inventoryProperty.GetValue(state) ?? 0m);
+                                var averageCost = (decimal)(averageCostProperty.GetValue(state) ?? 0m);
+                                
+                                openPositions = inventory;
+                                
+                                // Tính unrealized P&L = (current price - average cost) * inventory
+                                if (inventory > 0 && averageCost > 0)
+                                {
+                                    // Lấy current price từ market data
+                                    using var scope = _serviceProvider.CreateScope();
+                                    var marketDataProvider = scope.ServiceProvider.GetRequiredService<IMarketDataProvider>();
+                                    
+                                    try
+                                    {
+                                        var currentPrice = await marketDataProvider.GetMidPriceAsync(
+                                            bot.BaseAsset, 
+                                            bot.QuoteAsset, 
+                                            CancellationToken.None);
+                                        
+                                        if (currentPrice > 0)
+                                        {
+                                            unrealizedPnl = inventory * (currentPrice - averageCost);
+                                        }
+                                    }
+                                    catch (Exception ex)
+                                    {
+                                        _logger.LogWarning(ex, "Failed to get current price for unrealized P&L calculation for bot {BotId}", bot.Id);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to parse bot state for unrealized P&L calculation for bot {BotId}", bot.Id);
+                }
+            }
+
             BotRuntimeInfoDto? runtime = null;
-            if (latestSnapshot != null)
+            if (latestSnapshot != null || totalOrders > 0)
             {
                 runtime = new BotRuntimeInfoDto
                 {
-                    NextRunAt = latestSnapshot.NextTickAt,
-                    LastExecutionAt = latestSnapshot.CapturedAt,
-                    LastSignal = latestSnapshot.LastSignal
-                    // TODO: Calculate PnL and other metrics
+                    NextRunAt = latestSnapshot?.NextTickAt ?? bot.NextRunAt,
+                    LastExecutionAt = latestSnapshot?.CapturedAt ?? bot.UpdatedAt,
+                    LastSignal = latestSnapshot?.LastSignal,
+                    TotalOrders = totalOrders,
+                    FilledOrders = filledOrders,
+                    RealizedPnl = realizedPnl,
+                    OpenPositions = openPositions,
+                    UnrealizedPnl = unrealizedPnl,
+                    TotalFees = totalFees
                 };
             }
 
@@ -563,14 +724,128 @@ namespace CryptoTrading.Services.Bot
                 .OrderByDescending(s => s.CapturedAt)
                 .FirstOrDefaultAsync();
 
+            // Calculate metrics from orders
+            var botOrders = await _context.TradingBotOrders
+                .Include(bo => bo.Order)
+                .Where(bo => bo.TradingBotId == bot.Id)
+                .ToListAsync();
+
+            var totalOrders = botOrders.Count;
+            var filledOrders = botOrders.Count(bo => bo.Order != null && 
+                (bo.Order.Status == "FILLED" || bo.Order.Status == "PARTIAL"));
+            
+            // Calculate PnL from TRADES (not orders) - this is the correct way
+            var orderIds = botOrders
+                .Where(bo => bo.Order != null)
+                .Select(bo => bo.Order!.Id)
+                .ToList();
+            
+            var trades = await _context.Trades
+                .Where(t => orderIds.Contains(t.OrderId))
+                .Include(t => t.Order)
+                .ToListAsync();
+            
+            // Calculate realized P&L: Sum of (SELL trades revenue - BUY trades cost - fees)
+            var realizedPnl = trades
+                .Where(t => t.Order != null)
+                .Sum(t => 
+                {
+                    var tradeValue = t.PriceUsd * t.QuantityCoin;
+                    var fee = t.FeeUsd;
+                    
+                    if (t.Order.Side == "BUY")
+                    {
+                        // BUY: negative (cost + fee)
+                        return -(tradeValue + fee);
+                    }
+                    else // SELL
+                    {
+                        // SELL: positive (revenue - fee)
+                        return tradeValue - fee;
+                    }
+                });
+            
+            // Calculate total fees
+            var totalFees = trades.Sum(t => t.FeeUsd);
+            
+            // Calculate unrealized P&L from bot state (inventory đang hold)
+            decimal unrealizedPnl = 0;
+            decimal openPositions = 0;
+            
+            if (latestSnapshot != null && !string.IsNullOrEmpty(latestSnapshot.RuntimeState))
+            {
+                try
+                {
+                    // Load bot state để lấy inventory và average cost price
+                    var stateJson = latestSnapshot.RuntimeState;
+                    var stateType = strategy.StrategyKey == "grid-basic" 
+                        ? typeof(GridRuntimeState) 
+                        : null;
+                    
+                    if (stateType != null)
+                    {
+                        var state = JsonSerializer.Deserialize(stateJson, stateType);
+                        if (state != null)
+                        {
+                            // Lấy inventory và average cost price từ state
+                            var inventoryProperty = stateType.GetProperty("Inventory");
+                            var averageCostProperty = stateType.GetProperty("AverageCostPrice");
+                            
+                            if (inventoryProperty != null && averageCostProperty != null)
+                            {
+                                var inventory = (decimal)(inventoryProperty.GetValue(state) ?? 0m);
+                                var averageCost = (decimal)(averageCostProperty.GetValue(state) ?? 0m);
+                                
+                                openPositions = inventory;
+                                
+                                // Tính unrealized P&L = (current price - average cost) * inventory
+                                if (inventory > 0 && averageCost > 0)
+                                {
+                                    // Lấy current price từ market data
+                                    using var scope = _serviceProvider.CreateScope();
+                                    var marketDataProvider = scope.ServiceProvider.GetRequiredService<IMarketDataProvider>();
+                                    
+                                    try
+                                    {
+                                        var currentPrice = await marketDataProvider.GetMidPriceAsync(
+                                            bot.BaseAsset, 
+                                            bot.QuoteAsset, 
+                                            CancellationToken.None);
+                                        
+                                        if (currentPrice > 0)
+                                        {
+                                            unrealizedPnl = inventory * (currentPrice - averageCost);
+                                        }
+                                    }
+                                    catch (Exception ex)
+                                    {
+                                        _logger.LogWarning(ex, "Failed to get current price for unrealized P&L calculation for bot {BotId}", bot.Id);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to parse bot state for unrealized P&L calculation for bot {BotId}", bot.Id);
+                }
+            }
+
             BotRuntimeInfoDto? runtime = null;
-            if (latestSnapshot != null)
+            if (latestSnapshot != null || totalOrders > 0)
             {
                 runtime = new BotRuntimeInfoDto
                 {
-                    NextRunAt = latestSnapshot.NextTickAt,
-                    LastExecutionAt = latestSnapshot.CapturedAt,
-                    LastSignal = latestSnapshot.LastSignal
+                    NextRunAt = latestSnapshot?.NextTickAt ?? bot.NextRunAt,
+                    LastExecutionAt = latestSnapshot?.CapturedAt ?? bot.UpdatedAt,
+                    LastSignal = latestSnapshot?.LastSignal,
+                    TotalOrders = totalOrders,
+                    FilledOrders = filledOrders,
+                    RealizedPnl = realizedPnl,
+                    OpenPositions = openPositions,
+                    UnrealizedPnl = unrealizedPnl,
+                    TotalFees = totalFees
                 };
             }
 
@@ -591,6 +866,428 @@ namespace CryptoTrading.Services.Bot
                 Runtime = runtime,
                 CreatedAt = bot.CreatedAt,
                 UpdatedAt = bot.UpdatedAt
+            };
+        }
+
+        public async Task<ResetInventoryResultDto> ResetInventoryAsync(int userId, Guid botId)
+        {
+            // Verify bot exists and belongs to user
+            var bot = await _context.TradingBots
+                .Include(b => b.StrategyDefinition)
+                .FirstOrDefaultAsync(b => b.Id == botId && b.UserId == userId);
+
+            if (bot == null)
+            {
+                throw new KeyNotFoundException("Bot not found");
+            }
+
+            // Only support Grid Trading strategy for now
+            if (bot.StrategyDefinition?.StrategyKey != "grid-basic")
+            {
+                throw new InvalidOperationException("Inventory reset is only supported for Grid Trading strategy");
+            }
+
+            // Get all filled orders for this bot
+            var botOrders = await _context.TradingBotOrders
+                .Include(bo => bo.Order)
+                .ThenInclude(o => o!.Cryptocurrency)
+                .Where(bo => bo.TradingBotId == botId && bo.Order != null)
+                .OrderBy(bo => bo.Order!.CreatedAt)
+                .ToListAsync();
+
+            // Calculate inventory and cash from orders
+            decimal inventory = 0m;
+            decimal cashSpent = 0m;
+            decimal cashReceived = 0m;
+            int ordersProcessed = 0;
+
+            foreach (var botOrder in botOrders)
+            {
+                var order = botOrder.Order;
+                if (order == null) continue;
+
+                // Only count filled orders
+                var isFilled = order.Status == "FILLED" || 
+                              (order.Status == "PARTIAL" && order.FilledQty > 0) ||
+                              (order.FilledQty > 0 && order.FilledQty >= order.QuantityCoin);
+
+                if (!isFilled || order.FilledQty <= 0) continue;
+
+                ordersProcessed++;
+                var fillPrice = order.PriceUsd ?? 0m;
+                var filledQty = order.FilledQty;
+
+                if (order.Side == "BUY")
+                {
+                    inventory += filledQty;
+                    cashSpent += fillPrice * filledQty;
+                }
+                else if (order.Side == "SELL")
+                {
+                    inventory -= filledQty;
+                    cashReceived += fillPrice * filledQty;
+                }
+            }
+
+            // Get initial capital from bot parameters
+            var parameters = !string.IsNullOrEmpty(bot.Parameters)
+                ? JsonSerializer.Deserialize<Dictionary<string, object>>(bot.Parameters)
+                : new Dictionary<string, object>();
+
+            var capitalAllocation = 0m;
+            if (parameters != null && parameters.ContainsKey("capitalAllocation"))
+            {
+                if (parameters["capitalAllocation"] is JsonElement jsonElement)
+                {
+                    capitalAllocation = jsonElement.GetDecimal();
+                }
+                else if (decimal.TryParse(parameters["capitalAllocation"]?.ToString(), out var parsed))
+                {
+                    capitalAllocation = parsed;
+                }
+            }
+
+            // If no capital allocation in parameters, try to get from position sizing
+            if (capitalAllocation <= 0)
+            {
+                var positionSizing = !string.IsNullOrEmpty(bot.PositionSizing)
+                    ? JsonSerializer.Deserialize<Dictionary<string, object>>(bot.PositionSizing)
+                    : null;
+
+                if (positionSizing != null && positionSizing.ContainsKey("maxDailyExposure"))
+                {
+                    if (positionSizing["maxDailyExposure"] is JsonElement jsonElement)
+                    {
+                        capitalAllocation = jsonElement.GetDecimal();
+                    }
+                    else if (decimal.TryParse(positionSizing["maxDailyExposure"]?.ToString(), out var parsed))
+                    {
+                        capitalAllocation = parsed;
+                    }
+                }
+            }
+
+            // Default to 10000 if still no capital found
+            if (capitalAllocation <= 0)
+            {
+                capitalAllocation = 10000m;
+            }
+
+            // Calculate cash available = initial capital - spent + received
+            var cashAvailable = capitalAllocation - cashSpent + cashReceived;
+
+            // Load current state
+            var latestSnapshot = await _context.TradingBotRuntimeSnapshots
+                .Where(s => s.TradingBotId == botId)
+                .OrderByDescending(s => s.CapturedAt)
+                .FirstOrDefaultAsync();
+
+            decimal previousInventory = 0m;
+            decimal previousCash = 0m;
+
+            if (latestSnapshot != null && !string.IsNullOrEmpty(latestSnapshot.RuntimeState))
+            {
+                try
+                {
+                    // Try to deserialize as GridRuntimeState
+                    var state = JsonSerializer.Deserialize<GridRuntimeState>(latestSnapshot.RuntimeState);
+                    
+                    if (state != null)
+                    {
+                        previousInventory = state.Inventory;
+                        previousCash = state.CashAvailable;
+
+                        // Update values
+                        state.Inventory = inventory;
+                        state.CashAvailable = cashAvailable;
+
+                        // Save updated state
+                        var updatedStateJson = JsonSerializer.Serialize(state);
+                        latestSnapshot.RuntimeState = updatedStateJson;
+                        latestSnapshot.CapturedAt = DateTime.UtcNow;
+                        
+                        await _context.SaveChangesAsync();
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error updating state for bot {BotId}", botId);
+                    // If deserialization fails, create new state
+                }
+            }
+
+            // If no snapshot exists or update failed, create new one
+            if (latestSnapshot == null || string.IsNullOrEmpty(latestSnapshot.RuntimeState))
+            {
+                // Create minimal state with correct inventory and cash
+                var newState = new GridRuntimeState
+                {
+                    GridLines = new List<GridLine>(),
+                    CashAvailable = cashAvailable,
+                    Inventory = inventory,
+                    LastPrice = 0m,
+                    LastPnL = 0m,
+                    UnrealizedPnl = 0m,
+                    LastTradeTime = null
+                };
+
+                var newStateJson = JsonSerializer.Serialize(newState);
+                var newSnapshot = new TradingBotRuntimeSnapshot
+                {
+                    TradingBotId = botId,
+                    CapturedAt = DateTime.UtcNow,
+                    RuntimeState = newStateJson,
+                    NextTickAt = DateTime.UtcNow
+                };
+
+                _context.TradingBotRuntimeSnapshots.Add(newSnapshot);
+                await _context.SaveChangesAsync();
+            }
+
+            _logger.LogInformation(
+                "Reset inventory for bot {BotId}: Inventory {PreviousInventory} -> {NewInventory}, Cash {PreviousCash} -> {NewCash}",
+                botId, previousInventory, inventory, previousCash, cashAvailable);
+
+            return new ResetInventoryResultDto
+            {
+                Success = true,
+                Message = $"Inventory reset successfully. Processed {ordersProcessed} filled orders.",
+                PreviousInventory = previousInventory,
+                NewInventory = inventory,
+                PreviousCash = previousCash,
+                NewCash = cashAvailable,
+                OrdersProcessed = ordersProcessed
+            };
+        }
+
+        public async Task<List<BotSearchResultDto>> SearchBotsByNameAsync(string namePattern)
+        {
+            var bots = await _context.TradingBots
+                .Include(b => b.StrategyDefinition)
+                .Where(b => b.Name.Contains(namePattern))
+                .OrderByDescending(b => b.CreatedAt)
+                .Take(50)
+                .ToListAsync();
+
+            return bots.Select(b => new BotSearchResultDto
+            {
+                Id = b.Id,
+                Name = b.Name,
+                UserId = b.UserId,
+                Status = b.Status,
+                BaseAsset = b.BaseAsset,
+                StrategyKey = b.StrategyDefinition?.StrategyKey ?? "unknown"
+            }).ToList();
+        }
+
+        public async Task<List<BotSearchResultDto>> GetBotsByUserIdAsync(int userId)
+        {
+            var bots = await _context.TradingBots
+                .Include(b => b.StrategyDefinition)
+                .Where(b => b.UserId == userId)
+                .OrderByDescending(b => b.CreatedAt)
+                .ToListAsync();
+
+            return bots.Select(b => new BotSearchResultDto
+            {
+                Id = b.Id,
+                Name = b.Name,
+                UserId = b.UserId,
+                Status = b.Status,
+                BaseAsset = b.BaseAsset,
+                StrategyKey = b.StrategyDefinition?.StrategyKey ?? "unknown"
+            }).ToList();
+        }
+
+        public async Task<ResetInventoryResultDto> ResetInventoryAdminAsync(Guid botId)
+        {
+            // Admin version - no userId check, just find bot by ID
+            var bot = await _context.TradingBots
+                .Include(b => b.StrategyDefinition)
+                .FirstOrDefaultAsync(b => b.Id == botId);
+
+            if (bot == null)
+            {
+                throw new KeyNotFoundException($"Bot with ID {botId} not found");
+            }
+
+            // Only support Grid Trading strategy for now
+            if (bot.StrategyDefinition?.StrategyKey != "grid-basic")
+            {
+                throw new InvalidOperationException("Inventory reset is only supported for Grid Trading strategy");
+            }
+
+            // Reuse the same calculation logic but without userId check
+            // Get all filled orders for this bot
+            var botOrders = await _context.TradingBotOrders
+                .Include(bo => bo.Order)
+                .ThenInclude(o => o!.Cryptocurrency)
+                .Where(bo => bo.TradingBotId == botId && bo.Order != null)
+                .OrderBy(bo => bo.Order!.CreatedAt)
+                .ToListAsync();
+
+            // Calculate inventory and cash from orders
+            decimal inventory = 0m;
+            decimal cashSpent = 0m;
+            decimal cashReceived = 0m;
+            int ordersProcessed = 0;
+
+            foreach (var botOrder in botOrders)
+            {
+                var order = botOrder.Order;
+                if (order == null) continue;
+
+                // Only count filled orders
+                var isFilled = order.Status == "FILLED" || 
+                              (order.Status == "PARTIAL" && order.FilledQty > 0) ||
+                              (order.FilledQty > 0 && order.FilledQty >= order.QuantityCoin);
+
+                if (!isFilled || order.FilledQty <= 0) continue;
+
+                ordersProcessed++;
+                var fillPrice = order.PriceUsd ?? 0m;
+                var filledQty = order.FilledQty;
+
+                if (order.Side == "BUY")
+                {
+                    inventory += filledQty;
+                    cashSpent += fillPrice * filledQty;
+                }
+                else if (order.Side == "SELL")
+                {
+                    inventory -= filledQty;
+                    cashReceived += fillPrice * filledQty;
+                }
+            }
+
+            // Get initial capital from bot parameters
+            var parameters = !string.IsNullOrEmpty(bot.Parameters)
+                ? JsonSerializer.Deserialize<Dictionary<string, object>>(bot.Parameters)
+                : new Dictionary<string, object>();
+
+            var capitalAllocation = 0m;
+            if (parameters != null && parameters.ContainsKey("capitalAllocation"))
+            {
+                if (parameters["capitalAllocation"] is JsonElement jsonElement)
+                {
+                    capitalAllocation = jsonElement.GetDecimal();
+                }
+                else if (decimal.TryParse(parameters["capitalAllocation"]?.ToString(), out var parsed))
+                {
+                    capitalAllocation = parsed;
+                }
+            }
+
+            // If no capital allocation in parameters, try to get from position sizing
+            if (capitalAllocation <= 0)
+            {
+                var positionSizing = !string.IsNullOrEmpty(bot.PositionSizing)
+                    ? JsonSerializer.Deserialize<Dictionary<string, object>>(bot.PositionSizing)
+                    : null;
+
+                if (positionSizing != null && positionSizing.ContainsKey("maxDailyExposure"))
+                {
+                    if (positionSizing["maxDailyExposure"] is JsonElement jsonElement)
+                    {
+                        capitalAllocation = jsonElement.GetDecimal();
+                    }
+                    else if (decimal.TryParse(positionSizing["maxDailyExposure"]?.ToString(), out var parsed))
+                    {
+                        capitalAllocation = parsed;
+                    }
+                }
+            }
+
+            // Default to 10000 if still no capital found
+            if (capitalAllocation <= 0)
+            {
+                capitalAllocation = 10000m;
+            }
+
+            // Calculate cash available = initial capital - spent + received
+            var cashAvailable = capitalAllocation - cashSpent + cashReceived;
+
+            // Load current state
+            var latestSnapshot = await _context.TradingBotRuntimeSnapshots
+                .Where(s => s.TradingBotId == botId)
+                .OrderByDescending(s => s.CapturedAt)
+                .FirstOrDefaultAsync();
+
+            decimal previousInventory = 0m;
+            decimal previousCash = 0m;
+
+            if (latestSnapshot != null && !string.IsNullOrEmpty(latestSnapshot.RuntimeState))
+            {
+                try
+                {
+                    // Try to deserialize as GridRuntimeState
+                    var state = JsonSerializer.Deserialize<GridRuntimeState>(latestSnapshot.RuntimeState);
+                    
+                    if (state != null)
+                    {
+                        previousInventory = state.Inventory;
+                        previousCash = state.CashAvailable;
+
+                        // Update values
+                        state.Inventory = inventory;
+                        state.CashAvailable = cashAvailable;
+
+                        // Save updated state
+                        var updatedStateJson = JsonSerializer.Serialize(state);
+                        latestSnapshot.RuntimeState = updatedStateJson;
+                        latestSnapshot.CapturedAt = DateTime.UtcNow;
+                        
+                        await _context.SaveChangesAsync();
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error updating state for bot {BotId}", botId);
+                    // If deserialization fails, create new state
+                }
+            }
+
+            // If no snapshot exists or update failed, create new one
+            if (latestSnapshot == null || string.IsNullOrEmpty(latestSnapshot.RuntimeState))
+            {
+                // Create minimal state with correct inventory and cash
+                var newState = new GridRuntimeState
+                {
+                    GridLines = new List<GridLine>(),
+                    CashAvailable = cashAvailable,
+                    Inventory = inventory,
+                    LastPrice = 0m,
+                    LastPnL = 0m,
+                    UnrealizedPnl = 0m,
+                    LastTradeTime = null
+                };
+
+                var newStateJson = JsonSerializer.Serialize(newState);
+                var newSnapshot = new TradingBotRuntimeSnapshot
+                {
+                    TradingBotId = botId,
+                    CapturedAt = DateTime.UtcNow,
+                    RuntimeState = newStateJson,
+                    NextTickAt = DateTime.UtcNow
+                };
+
+                _context.TradingBotRuntimeSnapshots.Add(newSnapshot);
+                await _context.SaveChangesAsync();
+            }
+
+            _logger.LogInformation(
+                "Reset inventory (admin) for bot {BotId} (userId={UserId}): Inventory {PreviousInventory} -> {NewInventory}, Cash {PreviousCash} -> {NewCash}",
+                botId, bot.UserId, previousInventory, inventory, previousCash, cashAvailable);
+
+            return new ResetInventoryResultDto
+            {
+                Success = true,
+                Message = $"Inventory reset successfully. Processed {ordersProcessed} filled orders. Bot belongs to userId={bot.UserId}.",
+                PreviousInventory = previousInventory,
+                NewInventory = inventory,
+                PreviousCash = previousCash,
+                NewCash = cashAvailable,
+                OrdersProcessed = ordersProcessed
             };
         }
     }

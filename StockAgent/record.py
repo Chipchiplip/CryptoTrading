@@ -144,7 +144,7 @@ class AgentRecordSession:
         
         # Support both stock mode ("stock") and crypto mode ("symbol")
         # Stock mode uses "stock" (e.g., "A", "B")
-        # Crypto mode uses "symbol" (e.g., "BTCUSDT", "ETHUSDT")
+        # Crypto mode uses "symbol" (e.g., "BTCUSD", "ETHUSD")
         self.action_stock = (
             action_json.get("stock") or 
             action_json.get("symbol") or 

@@ -16,6 +16,8 @@ namespace CryptoTrading.Services
         private readonly IServiceProvider _serviceProvider;
         private readonly ILogger<OrderMatchingBackgroundService> _logger;
         private const int MATCHING_INTERVAL_SECONDS = 10; // ✅ Tăng từ 5 → 10 giây (vì đã có immediate matching)
+        private const int CLEANUP_INTERVAL_ITERATIONS = 6; // Cleanup mỗi 6 lần = ~1 phút
+        private int _iterationCount = 0;
 
         public OrderMatchingBackgroundService(
             IServiceProvider serviceProvider,
@@ -56,6 +58,30 @@ namespace CryptoTrading.Services
                         if (matchCount > 0)
                         {
                             _logger.LogInformation("Background matching completed: {Count} matches", matchCount);
+                        }
+                    }
+
+                    // Also update order statuses for orders that are fully filled but status wasn't updated
+                    var tradingServiceForStatus = scope.ServiceProvider.GetRequiredService<ITradingService>();
+                    if (tradingServiceForStatus is TradingService tradingServiceImpl)
+                    {
+                        var updatedCount = await tradingServiceImpl.UpdateFilledOrderStatusesAsync();
+                        if (updatedCount > 0)
+                        {
+                            _logger.LogInformation("Updated {Count} filled order statuses", updatedCount);
+                        }
+                        
+                        // Cleanup orphaned OrderHolds periodically (every 6 iterations = ~1 minute)
+                        // This prevents cash from being locked indefinitely
+                        _iterationCount++;
+                        if (_iterationCount >= CLEANUP_INTERVAL_ITERATIONS)
+                        {
+                            _iterationCount = 0;
+                            var cleanupCount = await tradingServiceImpl.CleanupOrphanedOrderHoldsAsync();
+                            if (cleanupCount > 0)
+                            {
+                                _logger.LogInformation("Cleaned up {Count} orphaned OrderHolds", cleanupCount);
+                            }
                         }
                     }
                 }

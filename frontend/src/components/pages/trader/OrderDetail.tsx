@@ -268,8 +268,25 @@ export default function OrderDetail({ orderId: propOrderId, onNavigate }: OrderD
               </div>
               <div>
                 <div className="text-gray-400 text-sm mb-1">Remaining</div>
-                <div className="text-yellow-500 text-xl font-semibold">
-                  {order.remaining.toLocaleString('en-US', { maximumFractionDigits: 8 })} {baseAsset}
+                <div className={`text-xl font-semibold ${
+                  order.status === 'CANCELED' || order.status === 'REJECTED' 
+                    ? 'text-gray-500' 
+                    : 'text-yellow-500'
+                }`}>
+                  {/* When order is canceled/rejected, remaining should be 0 */}
+                  {(order.status === 'CANCELED' || order.status === 'REJECTED') ? (
+                    <>
+                      <span className="line-through text-gray-500">
+                        {order.remaining.toLocaleString('en-US', { maximumFractionDigits: 8 })}
+                      </span>
+                      <span className="ml-2">0</span>
+                      <span className="text-xs text-gray-500 ml-2">({order.status === 'CANCELED' ? 'Canceled' : 'Rejected'})</span>
+                    </>
+                  ) : (
+                    <>
+                      {order.remaining.toLocaleString('en-US', { maximumFractionDigits: 8 })} {baseAsset}
+                    </>
+                  )}
                 </div>
               </div>
               {order.totalFees !== undefined && (
@@ -360,9 +377,25 @@ export default function OrderDetail({ orderId: propOrderId, onNavigate }: OrderD
             ) : (
               <Card className="bg-gray-800/50 border-gray-700 p-8">
                 <div className="text-center text-gray-400">
-                  <Clock className="w-12 h-12 mx-auto mb-3 opacity-50" />
-                  <p>No fills yet</p>
-                  <p className="text-sm mt-2">This order has not been filled yet.</p>
+                  {order.status === 'CANCELED' ? (
+                    <>
+                      <XCircle className="w-12 h-12 mx-auto mb-3 opacity-50 text-red-500" />
+                      <p>Order Canceled</p>
+                      <p className="text-sm mt-2">This order was canceled and has not been filled.</p>
+                    </>
+                  ) : order.status === 'REJECTED' ? (
+                    <>
+                      <XCircle className="w-12 h-12 mx-auto mb-3 opacity-50 text-red-500" />
+                      <p>Order Rejected</p>
+                      <p className="text-sm mt-2">This order was rejected and has not been filled.</p>
+                    </>
+                  ) : (
+                    <>
+                      <Clock className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                      <p>No fills yet</p>
+                      <p className="text-sm mt-2">This order has not been filled yet.</p>
+                    </>
+                  )}
                 </div>
               </Card>
             )}

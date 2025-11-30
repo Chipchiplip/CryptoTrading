@@ -18,7 +18,7 @@ namespace CryptoTrading.Services.Bot
         private readonly IServiceProvider _serviceProvider;
         private readonly ILogger<BotExecutionHostedService> _logger;
         private readonly Channel<BotExecutionJob> _jobQueue;
-        private const int MAX_CONCURRENT_WORKERS = 5;
+        private const int MAX_CONCURRENT_WORKERS = 2; // Giảm từ 5 xuống 2 để tránh database overload
 
         public BotExecutionHostedService(
             IServiceProvider serviceProvider,
@@ -98,6 +98,13 @@ namespace CryptoTrading.Services.Bot
                 {
                     await ExecuteBotAsync(job, stoppingToken);
                 }
+                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                {
+                    // App đang tắt, không log như lỗi nặng
+                    _logger.LogInformation("Worker {WorkerId} stopped due to application shutdown while executing bot {BotId}", 
+                        workerId, job.BotId);
+                    break; // Thoát khỏi loop khi app đang tắt
+                }
                 catch (Exception ex)
                 {
                     _logger.LogError(ex, "Worker {WorkerId} error executing bot {BotId}", workerId, job.BotId);
@@ -160,9 +167,11 @@ namespace CryptoTrading.Services.Bot
                 BotId = bot.Id,
                 UserId = bot.UserId,
                 BaseAsset = bot.BaseAsset,
-                QuoteAsset = bot.QuoteAsset,
+                QuoteAsset = string.IsNullOrWhiteSpace(bot.QuoteAsset) || bot.QuoteAsset.Equals("USDT", StringComparison.OrdinalIgnoreCase) 
+                    ? "USD" 
+                    : bot.QuoteAsset,
                 AllowedCapital = 100000m, // TODO: Get from user limits
-                TradingService = new BotTradingServiceWrapper(tradingService, bot.UserId, bot.Id),
+                TradingService = new BotTradingServiceWrapper(tradingService, context, bot.UserId, bot.Id),
                 MarketData = marketDataProvider,
                 PortfolioService = portfolioService,
                 RiskManager = riskManager,
@@ -214,13 +223,27 @@ namespace CryptoTrading.Services.Bot
 
                 await context.SaveChangesAsync(stoppingToken);
             }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                // App đang tắt, không log như lỗi nặng và không update bot status
+                _logger.LogInformation("Bot {BotId} execution stopped due to application shutdown", bot.Id);
+                // Không update bot status vì app đang tắt, không phải lỗi
+            }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error executing bot {BotId}", bot.Id);
 
-                bot.Status = "Error";
-                bot.LastStatusReason = ex.Message;
-                await context.SaveChangesAsync(stoppingToken);
+                try
+                {
+                    bot.Status = "Error";
+                    bot.LastStatusReason = ex.Message;
+                    await context.SaveChangesAsync(stoppingToken);
+                }
+                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                {
+                    // App đang tắt trong lúc save, bỏ qua
+                    _logger.LogInformation("Bot {BotId} status update skipped due to application shutdown", bot.Id);
+                }
             }
         }
 

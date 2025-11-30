@@ -33,6 +33,11 @@ namespace CryptoTrading.Interfaces.Bot
             decimal quantity, 
             decimal? price = null,
             CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// Gets order book to see limit orders from other users
+        /// </summary>
+        Task<OrderBookDto> GetOrderBookAsync(string symbol, int depth = 20, CancellationToken cancellationToken = default);
     }
 
     /// <summary>

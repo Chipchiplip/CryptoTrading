@@ -37,11 +37,11 @@ engine = LiveRecommendationEngine()
 
 class TradingPlan(BaseModel):
     """Trading plan configuration"""
-    preferred_symbols: List[str] = Field(default=["BTCUSDT", "ETHUSDT"], description="Allowed trading symbols")
+    preferred_symbols: List[str] = Field(default=["BTCUSD", "ETHUSD"], description="Allowed trading symbols (using USD)")
     strategy_type: str = Field(..., description="Strategy: trend following, DCA pullback, breakout, defensive")
     risk_mode: str = Field(default="normal", description="Risk mode: low, normal, high")
-    max_capital_per_trade: float = Field(..., gt=0, description="Maximum capital per trade in USDT")
-    max_daily_exposure: float = Field(default=5000.0, gt=0, description="Maximum daily exposure in USDT")
+    max_capital_per_trade: float = Field(..., gt=0, description="Maximum capital per trade in USD")
+    max_daily_exposure: float = Field(default=5000.0, gt=0, description="Maximum daily exposure in USD")
     time_horizon: str = Field(default="intraday", description="Time horizon: scalping, intraday, swing")
     entry_conditions: Optional[Dict[str, Any]] = Field(default=None, description="Entry filter conditions")
     exit_conditions: Optional[Dict[str, Any]] = Field(default=None, description="Exit rules")
@@ -62,7 +62,7 @@ class MarketSnapshot(BaseModel):
     volatility: Optional[float] = Field(default=None, ge=0, description="Current volatility")
     support: Optional[float] = Field(default=None, gt=0, description="Support level")
     resistance: Optional[float] = Field(default=None, gt=0, description="Resistance level")
-    usdt_balance: Optional[float] = Field(default=0.0, ge=0, description="Available USDT balance")
+    usdt_balance: Optional[float] = Field(default=0.0, ge=0, description="Available USD balance (field name kept for compatibility)")
     btc_holding: Optional[float] = Field(default=0.0, ge=0, description="BTC holdings")
     eth_holding: Optional[float] = Field(default=0.0, ge=0, description="ETH holdings")
     has_bad_news: Optional[bool] = Field(default=False, description="Bad news flag")
@@ -83,7 +83,7 @@ class RecommendationResponse(BaseModel):
     id: str = Field(..., description="Recommendation ID")
     decision: str = Field(..., description="Decision: NO_TRADE, BUY, SELL")
     symbol: str = Field(..., description="Trading symbol")
-    amount_usdt: float = Field(..., ge=0, description="Amount in USDT")
+    amount_usdt: float = Field(..., ge=0, description="Amount in USD (field name kept for compatibility)")
     reason: str = Field(..., description="Reason for recommendation")
     confidence: float = Field(..., ge=0.0, le=1.0, description="Confidence score 0-1")
     time_horizon: str = Field(..., description="Time horizon: scalping, intraday, swing")
@@ -101,7 +101,7 @@ class PortfolioPayload(BaseModel):
     total_cost: Optional[float] = None
     unrealized_pnl: Optional[float] = None
     unrealized_pnl_percent: Optional[float] = None
-    available_usdt: Optional[float] = None
+    available_usdt: Optional[float] = None  # USD balance (field name kept for compatibility)
     holdings: Optional[List[Dict[str, Any]]] = None
     nav_history: Optional[List[Dict[str, Any]]] = None
     bot_positions: Optional[List[Dict[str, Any]]] = None
@@ -113,7 +113,7 @@ class PortfolioPayload(BaseModel):
 class AiTradeSuggestion(BaseModel):
     decision: str = "NO_TRADE"
     symbol: str = ""
-    amount_usdt: float = 0
+    amount_usdt: float = 0  # USD amount (field name kept for compatibility)
     expected_return_pct: Optional[float] = None
     confidence: float = 0.0
     time_horizon: str = "intraday"
@@ -147,8 +147,12 @@ class BotProposal(BaseModel):
 
 class AiChatResponse(BaseModel):
     reply: str
-    tradeSuggestion: Optional[AiTradeSuggestion] = None
+    tradeSuggestion: Optional[AiTradeSuggestion] = Field(default=None, alias="trade_suggestion")
     bots: List[BotProposal] = Field(default_factory=list)
+    
+    class Config:
+        allow_population_by_field_name = True  # Allow both alias and field name
+        # FastAPI will serialize to JSON, .NET backend uses case-insensitive matching
 
 
 # ============================================
@@ -157,14 +161,29 @@ class AiChatResponse(BaseModel):
 
 def convert_market_snapshot_to_engine_format(snapshot: MarketSnapshot) -> Dict[str, Any]:
     """Convert MarketSnapshot model to engine format"""
+    # Normalize trend values (handle both "uptrend"/"downtrend"/"neutral" and "bullish"/"bearish"/"neutral")
+    def normalize_trend(trend_value: Optional[str]) -> str:
+        if not trend_value:
+            return "neutral"
+        trend_lower = trend_value.lower()
+        if trend_lower in ["uptrend", "bullish"]:
+            return "uptrend"
+        elif trend_lower in ["downtrend", "bearish"]:
+            return "downtrend"
+        else:
+            return "neutral"
+    
     # Build symbols data
     price_value = snapshot.price or 0.0
+    trend_1h = normalize_trend(snapshot.trend_1h)
+    trend_4h = normalize_trend(snapshot.trend_4h)
+    
     symbols_data = {
         snapshot.symbol: {
             "price": price_value,
             "trend": {
-                "1h": snapshot.trend_1h or "neutral",
-                "4h": snapshot.trend_4h or "neutral"
+                "1h": trend_1h,
+                "4h": trend_4h
             },
             "volume_change_pct": snapshot.volume_vs_ma or 0.0,
             "volatility": snapshot.volatility or 0.0,
@@ -174,20 +193,20 @@ def convert_market_snapshot_to_engine_format(snapshot: MarketSnapshot) -> Dict[s
     }
     
     # Add other symbols if mentioned
-    if snapshot.symbol == "BTCUSDT" and snapshot.eth_holding is not None:
-        # Could add ETHUSDT data if available
+    if snapshot.symbol == "BTCUSD" and snapshot.eth_holding is not None:
+        # Could add ETHUSD data if available
         pass
     
     # Build holdings
     holdings = {}
-    if snapshot.symbol == "BTCUSDT":
-        holdings["BTCUSDT"] = snapshot.btc_holding or 0.0
+    if snapshot.symbol == "BTCUSD":
+        holdings["BTCUSD"] = snapshot.btc_holding or 0.0
         if snapshot.eth_holding is not None:
-            holdings["ETHUSDT"] = snapshot.eth_holding
-    elif snapshot.symbol == "ETHUSDT":
-        holdings["ETHUSDT"] = snapshot.eth_holding or 0.0
+            holdings["ETHUSD"] = snapshot.eth_holding
+    elif snapshot.symbol == "ETHUSD":
+        holdings["ETHUSD"] = snapshot.eth_holding or 0.0
         if snapshot.btc_holding is not None:
-            holdings["BTCUSDT"] = snapshot.btc_holding
+            holdings["BTCUSD"] = snapshot.btc_holding
     
     # Build conditions
     conditions = {
@@ -204,34 +223,36 @@ def convert_market_snapshot_to_engine_format(snapshot: MarketSnapshot) -> Dict[s
 
 
 def generate_bot_proposals(plan: TradingPlan) -> List[BotProposal]:
-    symbols = plan.preferred_symbols or ["BTCUSDT"]
+    symbols = plan.preferred_symbols or ["BTCUSD"]
     proposals: List[BotProposal] = []
 
     for idx, symbol in enumerate(symbols[:3]):
         risk = (plan.risk_mode or "balanced").lower()
+        # Grid Trading dùng MARKET orders để trade trực tiếp với market ảo (virtual counterparty)
+        # Không match với limit orders của users nữa
         if risk == "aggressive":
-            strategy = "trend_following" if idx == 0 else "breakout"
+            strategy = "grid"
             scale = 1.0
-            note = "Rủi ro cao, có thể chịu drawdown lớn."
+            note = "Rủi ro cao, có thể chịu drawdown lớn. Bot sẽ dùng MARKET orders để trade trực tiếp với market ảo, orders được execute ngay lập tức."
         elif risk == "safe":
-            strategy = "dca"
+            strategy = "grid"
             scale = 0.4
-            note = "Ưu tiên bảo toàn vốn, vào lệnh nhỏ."
+            note = "Ưu tiên bảo toàn vốn, vào lệnh nhỏ. Bot sẽ dùng MARKET orders để trade trực tiếp với market ảo, orders được execute ngay lập tức."
         else:
-            strategy = "trend_following"
+            strategy = "grid"
             scale = 0.7
-            note = None
+            note = "Bot sẽ dùng MARKET orders để trade trực tiếp với market ảo (virtual counterparty), orders được execute ngay lập tức với market price."
 
         proposals.append(
             BotProposal(
-                name=f"{risk.title()} {symbol} {strategy.replace('_', ' ').title()}",
+                name=f"{risk.title()} {symbol} Grid Trading",
                 symbols=[symbol],
                 strategy_type=strategy,
                 risk_mode=risk.upper(),
                 max_capital_per_trade=plan.max_capital_per_trade * scale,
                 max_daily_exposure=plan.max_daily_exposure * scale,
                 time_horizon=plan.time_horizon,
-                expected_return_pct=0.08 if strategy != "dca" else 0.04,
+                expected_return_pct=0.06,  # Grid Trading thường có return ổn định hơn
                 risk_note=note,
             )
         )
@@ -248,7 +269,7 @@ def format_price(price: Optional[float]) -> str:
 def describe_price(snapshot: MarketSnapshot) -> str:
     if snapshot.has_price is False or not snapshot.price:
         return "hiện mình chưa có giá realtime chính xác"
-    return f"khoảng {format_price(snapshot.price)} USDT"
+    return f"khoảng {format_price(snapshot.price)} USD"
 
 
 def build_reply_text(
@@ -294,7 +315,7 @@ def build_direct_intent_reply(
         action = "mua" if trade_suggestion.decision == "BUY" else "bán"
         return (
             f"Mình đang nghiêng về việc {action} {trade_suggestion.symbol} "
-            f"khoảng {trade_suggestion.amount_usdt:.0f} USDT ({trade_suggestion.time_horizon}), "
+            f"khoảng {trade_suggestion.amount_usdt:.0f} USD ({trade_suggestion.time_horizon}), "
             f"confidence ~{trade_suggestion.confidence:.0%}. Bạn có thể cân nhắc chia lệnh theo khẩu vị rủi ro của mình."
         )
 
@@ -325,7 +346,7 @@ def build_planning_reply(
     if trade_suggestion and trade_suggestion.decision != "NO_TRADE":
         lines.append(
             f"Tín hiệu hiện tại: {trade_suggestion.decision} {trade_suggestion.symbol} "
-            f"~{trade_suggestion.amount_usdt:.0f} USDT (confidence {trade_suggestion.confidence:.0%})."
+            f"~{trade_suggestion.amount_usdt:.0f} USD (confidence {trade_suggestion.confidence:.0%})."
         )
     else:
         lines.append("Chưa có lệnh nào thật sự chắc chắn, mình sẽ ping ngay khi điều kiện đẹp hơn.")
@@ -364,14 +385,14 @@ def build_bot_reply_text(
         return "\n".join(lines)
 
     lines.append(
-        f"Cấu hình {friendly_risk} với hạn mức ~{plan.max_capital_per_trade:.0f} USDT/lệnh, "
+        f"Cấu hình {friendly_risk} với hạn mức ~{plan.max_capital_per_trade:.0f} USD/lệnh, "
         f"mình đề xuất các bot sau:"
     )
 
     for idx, bot in enumerate(bots, start=1):
         bot_line = (
             f"- Bot {idx}: {bot.name} ({', '.join(bot.symbols)}) • {bot.strategy_type.replace('_', ' ')} • "
-            f"{bot.max_capital_per_trade:.0f} USDT/lệnh, tối đa ngày ~{bot.max_daily_exposure:.0f}."
+            f"{bot.max_capital_per_trade:.0f} USD/lệnh, tối đa ngày ~{bot.max_daily_exposure:.0f}."
         )
         lines.append(bot_line)
         if bot.risk_note:
@@ -489,56 +510,143 @@ async def ai_chat(request: AiChatRequest):
     and JSON trade suggestion.
     """
     try:
+        # Log request (logger will handle Unicode encoding)
         log.logger.info(
-            "AI chat request from user_id=%s bot_id=%s message=%s",
+            "AI chat request from user_id=%s bot_id=%s message=%s mode=%s intent=%s",
             request.user_id,
             request.bot_id,
-            request.user_message[:200]
+            request.user_message[:200] if request.user_message else "",
+            request.mode,
+            request.intent
         )
 
-        trading_plan_dict = request.trading_plan.model_dump()
-        market_snapshot_dict = convert_market_snapshot_to_engine_format(request.market_snapshot)
+        # Validate required fields
+        if not request.user_message or len(request.user_message.strip()) == 0:
+            log.logger.warning("Empty user message received")
+            return AiChatResponse(
+                reply="Xin lỗi, mình không nhận được tin nhắn của bạn. Bạn có thể gửi lại được không?",
+                tradeSuggestion=None,
+                bots=[]
+            )
 
-        recommendation = engine.generate_recommendation(
-            trading_plan=trading_plan_dict,
-            market_snapshot=market_snapshot_dict
-        )
+        # Convert trading plan to engine format
+        try:
+            trading_plan_dict = request.trading_plan.model_dump()
+        except Exception as e:
+            log.logger.error("Error converting trading plan: %s", e, exc_info=True)
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid trading plan: {str(e)}"
+            )
 
+        # Convert market snapshot to engine format
+        try:
+            market_snapshot_dict = convert_market_snapshot_to_engine_format(request.market_snapshot)
+        except Exception as e:
+            log.logger.error("Error converting market snapshot: %s", e, exc_info=True)
+            # Use fallback snapshot if conversion fails
+            market_snapshot_dict = {
+                "symbols": {
+                    request.market_snapshot.symbol: {
+                        "price": request.market_snapshot.price or 0.0,
+                        "trend": {
+                            "1h": request.market_snapshot.trend_1h or "neutral",
+                            "4h": request.market_snapshot.trend_4h or "neutral"
+                        },
+                        "volume_change_pct": request.market_snapshot.volume_vs_ma or 0.0,
+                        "volatility": request.market_snapshot.volatility or 0.0,
+                        "support": request.market_snapshot.support,
+                        "resistance": request.market_snapshot.resistance
+                    }
+                },
+                "holdings": {},
+                "conditions": {},
+                "meta": request.market_snapshot.meta or {}
+            }
+
+        # Generate recommendation
+        try:
+            recommendation = engine.generate_recommendation(
+                trading_plan=trading_plan_dict,
+                market_snapshot=market_snapshot_dict
+            )
+        except Exception as e:
+            log.logger.error("Error generating recommendation: %s", e, exc_info=True)
+            # Return fallback response if recommendation fails
+            return AiChatResponse(
+                reply="Xin lỗi, mình đang gặp sự cố khi phân tích thị trường. Vui lòng thử lại sau.",
+                tradeSuggestion=None,
+                bots=[]
+            )
+
+        # Extract recommendation data with safe defaults
         decision = recommendation.get("decision", "NO_TRADE")
-        symbol = recommendation.get("symbol", request.market_snapshot.symbol)
+        symbol = recommendation.get("symbol", request.market_snapshot.symbol or "BTCUSD")
         amount_usdt = float(recommendation.get("amount_usdt", 0))
         confidence = float(recommendation.get("confidence", 0))
-        time_horizon = recommendation.get("time_horizon", request.trading_plan.time_horizon)
+        time_horizon = recommendation.get("time_horizon", request.trading_plan.time_horizon or "intraday")
         expected_return = recommendation.get("expected_return_pct")
 
         trade_suggestion = None
         if decision != "NO_TRADE":
-            trade_suggestion = AiTradeSuggestion(
-                decision=decision,
-                symbol=symbol,
-                amount_usdt=amount_usdt,
-                expected_return_pct=expected_return,
-                confidence=confidence,
-                time_horizon=time_horizon
-            )
+            try:
+                trade_suggestion = AiTradeSuggestion(
+                    decision=decision,
+                    symbol=symbol,
+                    amount_usdt=amount_usdt,
+                    expected_return_pct=expected_return,
+                    confidence=confidence,
+                    time_horizon=time_horizon
+                )
+            except Exception as e:
+                log.logger.error("Error creating trade suggestion: %s", e, exc_info=True)
+                trade_suggestion = None
 
-        bots = generate_bot_proposals(request.trading_plan) if request.mode == "create_bot" else []
-        reply = build_reply_text(
-            request.trading_plan,
-            bots,
-            trade_suggestion,
-            request.user_message,
-            request.market_snapshot,
-            mode=request.mode,
-            context_summary=request.context_summary,
-            intent=request.intent,
-            market_highlights=request.market_highlights
+        # Generate bot proposals if in create_bot mode
+        bots = []
+        if request.mode == "create_bot":
+            try:
+                bots = generate_bot_proposals(request.trading_plan)
+            except Exception as e:
+                log.logger.error("Error generating bot proposals: %s", e, exc_info=True)
+                bots = []
+
+        # Build reply text
+        try:
+            reply = build_reply_text(
+                request.trading_plan,
+                bots,
+                trade_suggestion,
+                request.user_message,
+                request.market_snapshot,
+                mode=request.mode or "chat",
+                context_summary=request.context_summary,
+                intent=request.intent or "chat",
+                market_highlights=request.market_highlights
+            )
+        except Exception as e:
+            log.logger.error("Error building reply text: %s", e, exc_info=True)
+            # Fallback reply
+            reply = "Mình đã nhận được tin nhắn của bạn. Đang xử lý..."
+
+        # Ensure reply is not empty
+        if not reply or len(reply.strip()) == 0:
+            reply = "Mình đã nhận được tin nhắn của bạn. Đang phân tích thị trường..."
+
+        log.logger.info(
+            "AI chat response: reply_length=%d has_trade_suggestion=%s bots_count=%d",
+            len(reply),
+            trade_suggestion is not None,
+            len(bots)
         )
 
         return AiChatResponse(reply=reply, tradeSuggestion=trade_suggestion, bots=bots)
 
+    except HTTPException:
+        # Re-raise HTTP exceptions
+        raise
     except Exception as exc:
-        log.logger.error("AI chat failed: %s", exc, exc_info=True)
+        log.logger.error("AI chat failed with unexpected error: %s", exc, exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="AI chat service failed to process the request."

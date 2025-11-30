@@ -476,6 +476,25 @@ namespace CryptoTrading.Services.Bot.Strategies
 
                 // Create new position
                 var quantity = positionSize / opportunity.CurrentPrice;
+                var orderRequest = new PlaceOrderRequest
+                {
+                    Symbol = $"{opportunity.Symbol}/{context.QuoteAsset}",
+                    Side = "BUY",
+                    Type = "MARKET",
+                    Quantity = quantity
+                };
+
+                ulong orderId;
+                try
+                {
+                    orderId = await context.TradingService.PlaceOrderAsync(orderRequest);
+                }
+                catch (Exception ex)
+                {
+                    context.Logger.LogError("Trading", $"Failed to place BUY order for {opportunity.Symbol}: {ex.Message}");
+                    continue;
+                }
+
                 var position = new MomentumPosition
                 {
                     Id = Guid.NewGuid(),
@@ -492,10 +511,10 @@ namespace CryptoTrading.Services.Bot.Strategies
                 
                 context.Logger.LogInfo("Trading", 
                     $"Opened momentum position: {opportunity.Symbol} {quantity:F6} @ ${opportunity.CurrentPrice:F2} " +
-                    $"(Momentum: +{opportunity.PriceChangePercent:F2}%, TP: ${position.TakeProfitPrice:F2}, SL: ${position.StopLossPrice:F2})");
-
-                // TODO: Execute actual trade through trading service
-                // await context.TradingService.PlaceMarketOrderAsync(opportunity.Symbol, "BUY", quantity);
+                    $"(Momentum: +{opportunity.PriceChangePercent:F2}%, TP: ${position.TakeProfitPrice:F2}, SL: ${position.StopLossPrice:F2}), orderId={orderId}");
+                context.Logger.LogInfo("Signal",
+                    $"Signal BUY {opportunity.Symbol} at ${opportunity.CurrentPrice:F2} qty={quantity:F6} (spike {opportunity.PriceChangePercent:F2}%)",
+                    new { opportunity.Symbol, quantity, opportunity.CurrentPrice, orderId });
             }
         }
 
@@ -542,6 +561,26 @@ namespace CryptoTrading.Services.Bot.Strategies
                         var pnl = (exitPrice - position.EntryPrice) * position.Quantity;
                         var pnlPercent = (exitPrice - position.EntryPrice) / position.EntryPrice * 100;
 
+                        var side = position.Quantity > 0 ? "SELL" : "BUY";
+                        var orderRequest = new PlaceOrderRequest
+                        {
+                            Symbol = $"{position.Symbol}/{context.QuoteAsset}",
+                            Side = side,
+                            Type = "MARKET",
+                            Quantity = Math.Abs(position.Quantity)
+                        };
+
+                        ulong orderId;
+                        try
+                        {
+                            orderId = await context.TradingService.PlaceOrderAsync(orderRequest);
+                        }
+                        catch (Exception ex)
+                        {
+                            context.Logger.LogError("Trading", $"Failed to close position {position.Symbol}: {ex.Message}");
+                            continue;
+                        }
+
                         // Record trade
                         state.DailyTrades.Add(new TradeRecord
                         {
@@ -560,10 +599,10 @@ namespace CryptoTrading.Services.Bot.Strategies
 
                         context.Logger.LogInfo("Trading",
                             $"Closed position: {position.Symbol} {position.Quantity:F6} @ ${exitPrice:F2} " +
-                            $"({exitReason}, PnL: ${pnl:F2} / {pnlPercent:F2}%)");
-
-                        // TODO: Execute actual trade through trading service
-                        // await context.TradingService.PlaceMarketOrderAsync(position.Symbol, "SELL", position.Quantity);
+                            $"({exitReason}, PnL: ${pnl:F2} / {pnlPercent:F2}%), orderId={orderId}");
+                        context.Logger.LogInfo("Signal",
+                            $"Exit {position.Symbol} at ${exitPrice:F2} reason={exitReason} qty={position.Quantity:F6} PnL=${pnl:F2}",
+                            new { position.Symbol, position.Quantity, exitPrice, exitReason, orderId });
                     }
                 }
                 catch (Exception ex)

@@ -20,7 +20,7 @@ CRYPTO_LASTDAY_FORUM_AND_PRICE_PROMPT = NamedBlock(
     name="Last Day Forum and Crypto Prices",
     content="""
         After the previous trading period, the prices of {crypto_symbol_1} and {crypto_symbol_2} 
-        were {crypto_price_1} USDT and {crypto_price_2} USDT, respectively. 
+        were {crypto_price_1} USD and {crypto_price_2} USD, respectively. 
         Posts by other traders on the forum are as follows: {lastday_forum_message}
     """
 )
@@ -42,7 +42,7 @@ CRYPTO_DECIDE_IF_LOAN_PROMPT = NamedBlock(
     content="""
     It is the {date} day, and your current character is {character}. 
     You hold {crypto_amount_1} {crypto_symbol_1}, {crypto_amount_2} {crypto_symbol_2},
-    Now you have {cash} USDT in cash and {debt} in your loan situation.
+    Now you have {cash} USD in cash and {debt} in your loan situation.
     You need to decide whether to continue the loan and the amount of the loan.
     The alternative type is {crypto_loan_type_prompt}, and you should use the number to select a loan type. 
     The loan amount shall not exceed {max_loan}.
@@ -71,10 +71,10 @@ CRYPTO_DECIDE_BUY_SELL_PROMPT = NamedBlock(
     name="Instruction",
     content="""
     It is the {time} trading session on the {date} day, and after the previous session, 
-    the price of {crypto_symbol_1} is {crypto_price_1} USDT and the price of {crypto_symbol_2} is {crypto_price_2} USDT.
+    the price of {crypto_symbol_1} is {crypto_price_1} USD and the price of {crypto_symbol_2} is {crypto_price_2} USD.
     In the current session, the buy and sell order book of {crypto_symbol_1} is {crypto_deals_1}, 
     and the buy and sell order book of {crypto_symbol_2} is {crypto_deals_2}
-    You currently hold {crypto_amount_1} {crypto_symbol_1}, {crypto_amount_2} {crypto_symbol_2}, and {cash} USDT in cash.
+    You currently hold {crypto_amount_1} {crypto_symbol_1}, {crypto_amount_2} {crypto_symbol_2}, and {cash} USD in cash.
     You need to decide whether to buy/sell {crypto_symbol_1} or {crypto_symbol_2}, and how much to buy/sell and at what price.
     You can refer to the current price and the market to determine the price yourself, not necessarily the current price. 
     The quantity must be a positive number (can be fractional for crypto).

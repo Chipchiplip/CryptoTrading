@@ -29,6 +29,7 @@ import Market from './components/pages/trader/Market';
 import ChartTest from './components/pages/test/ChartTest';
 import AiTradingChat from './components/pages/trader/AiTradingChat';
 import TraderBots from './components/pages/trader/Bots';
+import BotDetail from './components/pages/trader/BotDetail';
 
 import AdminLayout from './components/AdminLayout';
 import AdminUsers from './components/pages/admin/AdminUsers';
@@ -61,6 +62,7 @@ const traderPathMap: Record<string, string> = {
     'market': '/market',
     'ai-chat': '/ai-chat',
     'bots': '/bots',
+    'bot-detail': '/bot-detail',
 };
 
 const adminPathMap: Record<string, string> = {
@@ -229,6 +231,7 @@ export default function App() {
                 <Route path="/market" element={<ProtectedRoute><TraderPage current="market"><Market /></TraderPage></ProtectedRoute>} />
                 <Route path="/ai-chat" element={<ProtectedRoute><TraderPage current="ai-chat"><AiTradingChat /></TraderPage></ProtectedRoute>} />
                 <Route path="/bots" element={<ProtectedRoute><TraderPage current="bots"><TraderBots /></TraderPage></ProtectedRoute>} />
+                <Route path="/bot-detail" element={<ProtectedRoute><TraderPage current="bot-detail"><BotDetail /></TraderPage></ProtectedRoute>} />
                 
                 {/* ========== Admin Protected Routes (Cần đăng nhập & Role Admin) ========== */}
                 <Route path="/admin/users" element={<ProtectedRoute adminOnly={true}><AdminPage current="admin-users"><AdminUsers /></AdminPage></ProtectedRoute>} />

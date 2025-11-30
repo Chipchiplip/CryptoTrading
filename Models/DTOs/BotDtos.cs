@@ -72,7 +72,7 @@ namespace CryptoTrading.Models.DTOs
     public class BotRuntimeInfoDto
     {
         public DateTime? NextRunAt { get; set; }
-        public int OpenPositions { get; set; }
+        public decimal OpenPositions { get; set; }
         public decimal UnrealizedPnl { get; set; }
         public decimal RealizedPnl { get; set; }
         public decimal TotalFees { get; set; }
@@ -332,6 +332,27 @@ namespace CryptoTrading.Models.DTOs
     {
         public DateTime Timestamp { get; set; }
         public decimal Equity { get; set; }
+    }
+
+    public class ResetInventoryResultDto
+    {
+        public bool Success { get; set; }
+        public string Message { get; set; } = string.Empty;
+        public decimal PreviousInventory { get; set; }
+        public decimal NewInventory { get; set; }
+        public decimal PreviousCash { get; set; }
+        public decimal NewCash { get; set; }
+        public int OrdersProcessed { get; set; }
+    }
+
+    public class BotSearchResultDto
+    {
+        public Guid Id { get; set; }
+        public string Name { get; set; } = string.Empty;
+        public int UserId { get; set; }
+        public string Status { get; set; } = string.Empty;
+        public string BaseAsset { get; set; } = string.Empty;
+        public string StrategyKey { get; set; } = string.Empty;
     }
 }
 

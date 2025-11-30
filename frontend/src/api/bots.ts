@@ -89,6 +89,36 @@ export interface BotListOptions {
   pageSize?: number;
 }
 
+export interface BotOrder {
+  id: string;
+  botId: string;
+  orderId: string;
+  intent: string;
+  signalId?: string;
+  createdAt: string;
+  orderDetails?: {
+    id: string;
+    symbol: string;
+    side: string;
+    type: string;
+    quantity: number;
+    price?: number;
+    filled: number;
+    remaining: number;
+    status: string;
+    createdAt: string;
+    updatedAt?: string;
+  };
+}
+
+export interface PaginatedBotOrdersResponse {
+  page: number;
+  pageSize: number;
+  totalItems: number;
+  totalPages: number;
+  data: BotOrder[];
+}
+
 export const BotApi = {
   getBots: (options: BotListOptions = {}) => {
     const params = new URLSearchParams();
@@ -99,10 +129,22 @@ export const BotApi = {
     if (options.baseAsset) params.set('baseAsset', options.baseAsset);
     return apiGet<PaginatedBotsResponse>(`/api/bots?${params.toString()}`);
   },
+  getBot: (id: string) => apiGet<BotDetail>(`/api/bots/${id}`),
+  getBotOrders: (id: string, page = 1, pageSize = 20) => {
+    const params = new URLSearchParams();
+    params.set('page', String(page));
+    params.set('pageSize', String(pageSize));
+    return apiGet<PaginatedBotOrdersResponse>(`/api/bots/${id}/orders?${params.toString()}`);
+  },
   startBot: (id: string, payload: Record<string, unknown> = {}) =>
     apiRequest<BotSummary>(`/api/bots/${id}/start`, 'POST', payload),
   stopBot: (id: string, payload: Record<string, unknown> = {}) =>
     apiRequest<BotSummary>(`/api/bots/${id}/stop`, 'POST', payload),
   deleteBot: (id: string) => apiRequest<{ success: boolean }>(`/api/bots/${id}`, 'DELETE'),
+  closePositions: (id: string) =>
+    apiRequest<{ message: string; closedQuantity: number; ordersCreated: number; remainingInventory: number }>(
+      `/api/bots/${id}/close-positions`,
+      'POST'
+    ),
 };
 

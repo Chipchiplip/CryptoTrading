@@ -43,6 +43,7 @@ Welcome to the CryptoTrading platform documentation. This directory contains all
 |----------|-------------|
 | [TRADING_SYSTEM_IMPLEMENTATION.md](TRADING_SYSTEM_IMPLEMENTATION.md) | Trading system implementation details |
 | [TRADING_MODULE_TASKS.md](TRADING_MODULE_TASKS.md) | Trading module tasks and requirements |
+| [BOT_OPERATION_SUMMARY.md](BOT_OPERATION_SUMMARY.md) | **Tóm tắt cách bot trading hoạt động** |
 
 ## 🎨 Frontend Documentation
 

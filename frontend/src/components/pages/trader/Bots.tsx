@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { RefreshCw, Loader2, Play, Square, Trash2 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { RefreshCw, Loader2, Play, Square, Trash2, TrendingUp, TrendingDown, DollarSign } from 'lucide-react';
 import { BotApi, BotSummary } from '../../../api/bots';
 import { Button } from '../../ui/button';
 import { Badge } from '../../ui/badge';
@@ -57,7 +58,19 @@ const formatPnl = (value?: number) => {
   return `${value >= 0 ? '+' : ''}${formatted} USDT`;
 };
 
+const getTotalPnl = (bot: BotSummary) => {
+  const realized = bot.runtime?.realizedPnl ?? 0;
+  const unrealized = bot.runtime?.unrealizedPnl ?? 0;
+  return realized + unrealized;
+};
+
+const formatTotalPnl = (bot: BotSummary) => {
+  const total = getTotalPnl(bot);
+  return formatPnl(total);
+};
+
 const TraderBots = () => {
+  const navigate = useNavigate();
   const [bots, setBots] = useState<BotSummary[]>([]);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('RUNNING');
   const [loading, setLoading] = useState(false);
@@ -95,6 +108,18 @@ const TraderBots = () => {
     () => bots.filter((bot) => bot.status === 'RUNNING').length,
     [bots]
   );
+
+  const totalPnl = useMemo(() => {
+    return bots.reduce((sum, bot) => {
+      const realized = bot.runtime?.realizedPnl ?? 0;
+      const unrealized = bot.runtime?.unrealizedPnl ?? 0;
+      return sum + realized + unrealized;
+    }, 0);
+  }, [bots]);
+
+  const totalFees = useMemo(() => {
+    return bots.reduce((sum, bot) => sum + (bot.runtime?.totalFees ?? 0), 0);
+  }, [bots]);
 
   const handleRefresh = () => fetchBots();
   const handleChangeStatus = (value: StatusFilter) => setStatusFilter(value);
@@ -145,6 +170,50 @@ const TraderBots = () => {
           }`}
         >
           {actionBanner.message}
+        </div>
+      )}
+
+      {/* Summary Cards */}
+      {bots.length > 0 && (
+        <div className="grid md:grid-cols-3 gap-4">
+          <div className="bg-gray-950 border border-gray-800 rounded-2xl p-6">
+            <div className="flex items-center gap-2 mb-2">
+              <DollarSign className="w-5 h-5 text-emerald-500" />
+              <div className="text-gray-400 text-sm">Total P&L (All Bots)</div>
+            </div>
+            <div className={`text-2xl font-bold ${totalPnl >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
+              {totalPnl >= 0 ? '+' : ''}{totalPnl.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USDT
+            </div>
+            <div className="text-xs text-gray-500 mt-1">
+              {bots.length} bot{bots.length !== 1 ? 's' : ''}
+            </div>
+          </div>
+
+          <div className="bg-gray-950 border border-gray-800 rounded-2xl p-6">
+            <div className="flex items-center gap-2 mb-2">
+              <TrendingUp className="w-5 h-5 text-blue-500" />
+              <div className="text-gray-400 text-sm">Active Bots</div>
+            </div>
+            <div className="text-2xl font-bold text-white">
+              {activeCount}
+            </div>
+            <div className="text-xs text-gray-500 mt-1">
+              {bots.length - activeCount} stopped
+            </div>
+          </div>
+
+          <div className="bg-gray-950 border border-gray-800 rounded-2xl p-6">
+            <div className="flex items-center gap-2 mb-2">
+              <DollarSign className="w-5 h-5 text-yellow-500" />
+              <div className="text-gray-400 text-sm">Total Fees</div>
+            </div>
+            <div className="text-2xl font-bold text-white">
+              {totalFees.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USDT
+            </div>
+            <div className="text-xs text-gray-500 mt-1">
+              Across all bots
+            </div>
+          </div>
         </div>
       )}
 
@@ -234,7 +303,12 @@ const TraderBots = () => {
                   return (
                   <tr key={bot.id} className="hover:bg-gray-900/40 transition-colors">
                     <td className="px-6 py-4">
-                      <div className="font-semibold text-white">{bot.name}</div>
+                      <div 
+                        className="font-semibold text-white cursor-pointer hover:text-emerald-400 transition-colors"
+                        onClick={() => navigate(`/bot-detail?id=${bot.id}`)}
+                      >
+                        {bot.name}
+                      </div>
                       <div className="text-xs text-gray-500 mt-1">{formatPair(bot)}</div>
                     </td>
                     <td className="px-6 py-4">
@@ -259,10 +333,32 @@ const TraderBots = () => {
                       )}
                     </td>
                     <td className="px-6 py-4">
-                      <div className={bot.runtime?.unrealizedPnl ?? 0 >= 0 ? 'text-emerald-400' : 'text-red-400'}>
-                        {formatPnl(bot.runtime?.unrealizedPnl)}
+                      <div className="space-y-1">
+                        {/* Total P&L - Most prominent */}
+                        <div className={`flex items-center gap-1 font-semibold text-lg ${
+                          getTotalPnl(bot) >= 0 ? 'text-emerald-400' : 'text-red-400'
+                        }`}>
+                          {getTotalPnl(bot) >= 0 ? (
+                            <TrendingUp className="w-4 h-4" />
+                          ) : (
+                            <TrendingDown className="w-4 h-4" />
+                          )}
+                          {formatTotalPnl(bot)}
+                        </div>
+                        {/* Breakdown */}
+                        <div className="text-xs space-y-0.5">
+                          <div className="text-gray-400">
+                            Realized: <span className={bot.runtime?.realizedPnl ?? 0 >= 0 ? 'text-emerald-400' : 'text-red-400'}>
+                              {formatPnl(bot.runtime?.realizedPnl)}
+                            </span>
+                          </div>
+                          <div className="text-gray-400">
+                            Unrealized: <span className={bot.runtime?.unrealizedPnl ?? 0 >= 0 ? 'text-emerald-400' : 'text-red-400'}>
+                              {formatPnl(bot.runtime?.unrealizedPnl)}
+                            </span>
+                          </div>
+                        </div>
                       </div>
-                      <div className="text-xs text-gray-500">Realized: {formatPnl(bot.runtime?.realizedPnl)}</div>
                     </td>
                     <td className="px-6 py-4 text-gray-400">{formatDate(bot.runtime?.lastExecutionAt)}</td>
                     <td className="px-6 py-4">

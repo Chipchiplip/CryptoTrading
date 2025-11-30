@@ -18,7 +18,7 @@ def load_crypto_csv(path: str, symbol: str) -> pd.DataFrame:
     
     Args:
         path: Path to CSV file
-        symbol: Trading pair symbol (e.g., "BTCUSDT") for validation
+        symbol: Trading pair symbol (e.g., "BTCUSD") for validation
         
     Returns:
         DataFrame with columns: timestamp, open, high, low, close, volume
@@ -63,11 +63,11 @@ def load_multiple_crypto_symbols(data_dir: str, symbols: List[str], timeframe: s
     Load OHLCV data for multiple crypto symbols.
     
     Expected file naming: {symbol}_{timeframe}.csv
-    Example: BTCUSDT_1h.csv, ETHUSDT_1h.csv
+    Example: BTCUSD_1h.csv, ETHUSD_1h.csv
     
     Args:
         data_dir: Directory containing CSV files
-        symbols: List of symbols to load (e.g., ["BTCUSDT", "ETHUSDT"])
+        symbols: List of symbols to load (e.g., ["BTCUSD", "ETHUSD"])
         timeframe: Timeframe suffix (e.g., "1h", "4h") - used in filename
         
     Returns:
@@ -76,7 +76,7 @@ def load_multiple_crypto_symbols(data_dir: str, symbols: List[str], timeframe: s
     data = {}
     
     for symbol in symbols:
-        # Construct filename: BTCUSDT_1h.csv
+        # Construct filename: BTCUSD_1h.csv
         filename = f"{symbol}_{timeframe}.csv"
         filepath = os.path.join(data_dir, filename)
         

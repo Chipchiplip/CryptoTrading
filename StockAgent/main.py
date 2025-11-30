@@ -34,7 +34,7 @@ def handle_action(action, stock_deals, all_agents, stock, session, is_crypto=Fal
         is_crypto: Whether we're in crypto mode
     """
     # For stock mode: action["stock"] = "A" or "B"
-    # For crypto mode: action["symbol"] = "BTCUSDT" or "ETHUSDT"
+    # For crypto mode: action["symbol"] = "BTCUSD" or "ETHUSD"
     try:
         # Determine asset identifier
         asset_id = action.get("symbol") if is_crypto else action.get("stock")

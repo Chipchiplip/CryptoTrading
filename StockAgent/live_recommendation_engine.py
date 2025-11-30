@@ -53,7 +53,7 @@ class LiveRecommendationEngine:
         Returns JSON:
         {
             "decision": "NO_TRADE" | "BUY" | "SELL",
-            "symbol": "BTCUSDT" | "ETHUSDT",
+            "symbol": "BTCUSD" | "ETHUSD",
             "amount_usdt": number,
             "reason": "string",
             "confidence": number,
@@ -66,7 +66,7 @@ class LiveRecommendationEngine:
         max_capital_per_trade = trading_plan.get("max_capital_per_trade", 1000.0)
         max_daily_exposure = trading_plan.get("max_daily_exposure", 5000.0)
         # Support both "symbols" and "preferred_symbols" keys
-        allowed_symbols = trading_plan.get("preferred_symbols") or trading_plan.get("symbols", ["BTCUSDT", "ETHUSDT"])
+        allowed_symbols = trading_plan.get("preferred_symbols") or trading_plan.get("symbols", ["BTCUSD", "ETHUSD"])
         time_horizon = trading_plan.get("time_horizon", "intraday")
         
         # Extract market data
@@ -388,7 +388,7 @@ class LiveRecommendationEngine:
         """Create NO_TRADE response."""
         return {
             "decision": "NO_TRADE",
-            "symbol": "BTCUSDT",
+            "symbol": "BTCUSD",
             "amount_usdt": 0,
             "reason": reason,
             "confidence": 0.0,

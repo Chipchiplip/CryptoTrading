@@ -92,7 +92,7 @@ namespace CryptoTrading.Services.Bot
             }
             else
             {
-                symbols.AddRange(new[] { "BTCUSDT", "ETHUSDT" });
+                symbols.AddRange(new[] { "BTCUSD", "ETHUSD" });
             }
 
             // Extract position sizing limits
@@ -155,7 +155,10 @@ namespace CryptoTrading.Services.Bot
             }
 
             // Determine symbol
-            var targetSymbol = symbol ?? (bot != null ? $"{bot.BaseAsset}{bot.QuoteAsset}" : "BTCUSDT");
+            var targetSymbol = symbol ?? (bot != null ? $"{bot.BaseAsset}{bot.QuoteAsset}" : "BTCUSD");
+
+            var quoteAsset = AiRecommendationSymbolHelper.ResolveQuoteAsset(targetSymbol, bot);
+            var baseAsset = AiRecommendationSymbolHelper.ExtractBaseAsset(targetSymbol, quoteAsset);
 
             // Get current market data
             var marketData = await _marketDataProvider.GetMarketDataAsync(targetSymbol, ct);
@@ -165,8 +168,7 @@ namespace CryptoTrading.Services.Bot
             }
 
             // Get user holdings
-            var baseAsset = targetSymbol.Replace("USDT", "").Replace("USD", "");
-            var usdtBalance = await _portfolioService.GetBalanceAsync(userId, "USDT", ct);
+            var usdtBalance = await _portfolioService.GetBalanceAsync(userId, quoteAsset, ct);
             var btcHolding = await _portfolioService.GetBalanceAsync(userId, "BTC", ct);
             var ethHolding = await _portfolioService.GetBalanceAsync(userId, "ETH", ct);
 
@@ -337,6 +339,40 @@ namespace CryptoTrading.Services.Bot
         public double EthHolding { get; set; }
         public bool HasBadNews { get; set; }
         public Dictionary<string, object>? Meta { get; set; }
+    }
+
+    internal static class AiRecommendationSymbolHelper
+    {
+        public static string ResolveQuoteAsset(string symbol, TradingBot? bot)
+        {
+            // Always use USD instead of USDT to ensure bot orders match with user orders
+            if (symbol.EndsWith("USDT", StringComparison.OrdinalIgnoreCase))
+            {
+                return "USD"; // Convert USDT to USD
+            }
+
+            if (symbol.EndsWith("USD", StringComparison.OrdinalIgnoreCase))
+            {
+                return "USD";
+            }
+
+            // Normalize bot's QuoteAsset (convert USDT to USD)
+            var botQuoteAsset = !string.IsNullOrWhiteSpace(bot?.QuoteAsset)
+                ? (bot!.QuoteAsset.Equals("USDT", StringComparison.OrdinalIgnoreCase) ? "USD" : bot.QuoteAsset)
+                : "USD";
+
+            return botQuoteAsset;
+        }
+
+        public static string ExtractBaseAsset(string symbol, string quoteAsset)
+        {
+            if (symbol.EndsWith(quoteAsset, StringComparison.OrdinalIgnoreCase) && symbol.Length > quoteAsset.Length)
+            {
+                return symbol.Substring(0, symbol.Length - quoteAsset.Length);
+            }
+
+            return symbol.Replace("/", string.Empty);
+        }
     }
 }
 

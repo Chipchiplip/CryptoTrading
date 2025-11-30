@@ -8,7 +8,7 @@ import util
 
 class Crypto:
     """
-    Represents a cryptocurrency trading pair (e.g., BTCUSDT, ETHUSDT).
+    Represents a cryptocurrency trading pair (e.g., BTCUSD, ETHUSD).
     
     Unlike stocks, crypto markets are 24/7 with no market open/close.
     Each bar (candle) represents a tradable period.
@@ -19,8 +19,8 @@ class Crypto:
         Initialize a crypto trading pair.
         
         Args:
-            symbol: Trading pair symbol (e.g., "BTCUSDT", "ETHUSDT")
-            initial_price: Initial price in USDT
+            symbol: Trading pair symbol (e.g., "BTCUSD", "ETHUSD")
+            initial_price: Initial price in USD
             initial_holdings: Initial amount held (for simulation purposes)
             is_new: Whether this is a newly listed token (not used in spot-only mode)
         """
@@ -51,9 +51,9 @@ class Crypto:
         Returns:
             String description of on-chain metrics
         """
-        if self.symbol == "BTCUSDT":
+        if self.symbol == "BTCUSD":
             return util.ONCHAIN_METRICS_BTC[index] if index < len(util.ONCHAIN_METRICS_BTC) else ""
-        elif self.symbol == "ETHUSDT":
+        elif self.symbol == "ETHUSD":
             return util.ONCHAIN_METRICS_ETH[index] if index < len(util.ONCHAIN_METRICS_ETH) else ""
         return ""
     
