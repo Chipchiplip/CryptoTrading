@@ -21,7 +21,6 @@ import TradesHistory from './components/pages/trader/TradesHistory';
 import Portfolio from './components/pages/trader/Portfolio';
 import Wallets from './components/pages/trader/Wallets';
 import Deposit from './components/pages/trader/Deposit';
-import Withdraw from './components/pages/trader/Withdraw';
 import Subscription from './components/pages/trader/Subscription';
 import Settings from './components/pages/trader/Settings';
 import OrderDetail from './components/pages/trader/OrderDetail';
@@ -56,7 +55,6 @@ const traderPathMap: Record<string, string> = {
     'portfolio': '/portfolio',
     'wallets': '/wallets',
     'deposit': '/deposit',
-    'withdraw': '/withdraw',
     'subscription': '/subscription',
     'settings': '/settings',
     'market': '/market',
@@ -225,7 +223,6 @@ export default function App() {
                 <Route path="/portfolio" element={<ProtectedRoute><TraderPage current="portfolio"><Portfolio /></TraderPage></ProtectedRoute>} />
                 <Route path="/wallets" element={<ProtectedRoute><TraderPage current="wallets"><Wallets /></TraderPage></ProtectedRoute>} />
                 <Route path="/deposit" element={<ProtectedRoute><TraderPage current="deposit"><Deposit /></TraderPage></ProtectedRoute>} />
-                <Route path="/withdraw" element={<ProtectedRoute><TraderPage current="withdraw"><Withdraw /></TraderPage></ProtectedRoute>} />
                 <Route path="/subscription" element={<ProtectedRoute><TraderPage current="subscription"><Subscription /></TraderPage></ProtectedRoute>} />
                 <Route path="/settings" element={<ProtectedRoute><TraderPage current="settings"><Settings /></TraderPage></ProtectedRoute>} />
                 <Route path="/market" element={<ProtectedRoute><TraderPage current="market"><Market /></TraderPage></ProtectedRoute>} />

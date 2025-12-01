@@ -6,6 +6,8 @@ import { Button } from '../../ui/button';
 import { Textarea } from '../../ui/textarea';
 import { MarketApi } from '../../../api/market';
 import { TradingApi } from '../../../api/trading';
+import { useSubscriptionPlan } from '../../../hooks/useSubscriptionPlan';
+import { PremiumFeatureGate } from '../../PremiumFeatureGate';
 
 type ChatRole = 'user' | 'ai';
 
@@ -34,6 +36,7 @@ const AiTradingChat = () => {
   const [placingOrderId, setPlacingOrderId] = useState<string | null>(null);
   const [status, setStatus] = useState<StatusBanner>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const { isPremium, loading: planLoading } = useSubscriptionPlan();
 
   const userInfo = useMemo(() => getUserInfo(), []);
 
@@ -180,6 +183,24 @@ const AiTradingChat = () => {
       text: `Đã tạo bot "${bot.name}". Bot đang ở trạng thái bản nháp, hãy vào trang Bots và nhấn "Bật" để kích hoạt.`,
     });
   };
+
+  if (planLoading) {
+    return (
+      <div className="min-h-screen bg-black text-white flex items-center justify-center">
+        <Loader2 className="w-10 h-10 text-emerald-500 animate-spin" />
+      </div>
+    );
+  }
+
+  if (!isPremium) {
+    return (
+      <PremiumFeatureGate
+        featureName="AI Chat"
+        description="Trao quyền truy cập AI Chat, bot gợi ý và tạo lệnh tự động dành riêng cho người dùng Premium."
+        helperText="Nâng cấp Premium để trò chuyện với AI trading, nhận khuyến nghị và triển khai bot ngay trong một cú nhấp."
+      />
+    );
+  }
 
   return (
     <div className="min-h-screen bg-black text-white">

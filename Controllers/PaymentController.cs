@@ -71,10 +71,11 @@ public class PaymentController : ControllerBase
                 period = "month",
                 features = new[]
                 {
-                    "Basic trading features",
-                    "10 trades per day",
-                    "Email support",
-                    "Standard trading fees (0.2%)"
+                    "Trade up to 10 spot orders per day (0.2% fee)",
+                    "Access only basic watchlist & summary portfolio view",
+                    "No AI Chat, AI bots or real-time recommendations",
+                    "Email support during business hours",
+                    "Great for exploring the platform with a small balance"
                 }
             },
             new
@@ -86,16 +87,11 @@ public class PaymentController : ControllerBase
                 period = "month",
                 features = new[]
                 {
-                    "All Free features",
-                    "Unlimited trades",
-                    "24/7 dedicated support",
-                    "Lowest fees (0.05%)",
-                    "Advanced analytics",
-                    "Custom trading bots",
-                    "Priority withdrawals",
-                    "Personal account manager",
-                    "Advanced charts",
-                    "API access"
+                    "Unlimited trades and bot automation at 0.05% fee",
+                    "Unlimited watchlists + smart alerts",
+                    "Full AI suite: AI Chat, live recommendations, custom bots",
+                    "Detailed portfolio analytics, PnL, NAV per bot",
+                    "API access and professional tooling for power users"
                 }
             }
         };

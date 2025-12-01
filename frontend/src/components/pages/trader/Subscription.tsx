@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Check, Crown, Zap, Star, Loader2, AlertTriangle } from 'lucide-react';
+import { Check, Crown, Star, Loader2, AlertTriangle } from 'lucide-react';
 import { Card } from '../../ui/card';
 import { Button } from '../../ui/button';
 import { Badge } from '../../ui/badge';
@@ -98,6 +98,12 @@ export default function Subscription() {
 
   const handleUpgrade = async (planType: number) => {
     if (planType === currentPlanType) return;
+
+    // Prevent downgrading while Premium subscription is active
+    if (currentPlanType === 2 && planType < currentPlanType) {
+      setError('Bạn đang ở gói Premium. Vui lòng hủy subscription hiện tại, hệ thống sẽ tự chuyển về Free khi hết hạn.');
+      return;
+    }
 
     // Show confirmation dialog for plan changes
     setPendingPlanType(planType);
@@ -222,11 +228,28 @@ export default function Subscription() {
     );
   }
 
+  const marketingFeatures: Record<number, string[]> = {
+    0: [
+      'Trade up to 10 spot orders per day (0.2% fee)',
+      'Basic watchlist & summary-only portfolio view',
+      'No AI Chat, AI bots or live recommendations',
+      'Email support during business hours',
+      'Perfect for testing the platform with a small balance'
+    ],
+    2: [
+      'Unlimited trades and bot automation at 0.05% fee',
+      'Unlimited watchlists plus smart alerts',
+      'Full AI suite: AI chat, live recommendations, custom bots',
+      'Detailed portfolio analytics (PnL, NAV, per-bot metrics)',
+      'API access and professional tooling for power users'
+    ]
+  };
+
   return (
     <div className="p-4 lg:p-8">
       <div className="mb-8 text-center">
         <h1 className="text-4xl mb-2">Choose Your Plan</h1>
-        <p className="text-gray-400">Upgrade to unlock more features and better rates</p>
+        <p className="text-gray-400">Free keeps the bare essentials; Premium unlocks AI chat, automated bots, unlimited watchlists, and deep portfolio analytics.</p>
       </div>
 
       {error && !insufficientBalanceDialogOpen && (
@@ -242,6 +265,8 @@ export default function Subscription() {
           const isCurrent = plan.id === currentPlanType;
           const isPopular = plan.id === 2; // Premium plan
           const isProcessing = processing === plan.id;
+
+          const isDowngradeLocked = currentPlanType === 2 && plan.id === 0;
 
           return (
             <Card
@@ -278,7 +303,7 @@ export default function Subscription() {
               </div>
 
               <ul className="space-y-3 mb-8">
-                {plan.features.map((feature, index) => (
+                {(marketingFeatures[plan.id] ?? plan.features).map((feature, index) => (
                   <li key={index} className="flex items-start gap-2">
                     <Check className="w-5 h-5 text-emerald-500 flex-shrink-0 mt-0.5" />
                     <span className="text-gray-300">{feature}</span>
@@ -286,13 +311,21 @@ export default function Subscription() {
                 ))}
               </ul>
 
+              {isDowngradeLocked && (
+                <div className="text-sm text-yellow-400 mb-4 bg-yellow-500/10 border border-yellow-500/30 rounded p-2 text-center">
+                  Đang có gói Premium hoạt động. Hủy subscription để quay về Free sau khi hết hạn.
+                </div>
+              )}
+
               <Button
                 className={`w-full ${
                   isCurrent
                     ? 'bg-gray-700 text-gray-300 cursor-not-allowed'
-                    : 'bg-emerald-500 text-black hover:bg-emerald-600'
+                    : isDowngradeLocked
+                      ? 'bg-gray-800 text-gray-500 cursor-not-allowed'
+                      : 'bg-emerald-500 text-black hover:bg-emerald-600'
                 }`}
-                disabled={isCurrent || isProcessing}
+                disabled={isCurrent || isProcessing || isDowngradeLocked}
                 onClick={() => handleUpgrade(plan.id)}
               >
                 {isProcessing ? (
@@ -302,6 +335,8 @@ export default function Subscription() {
                   </>
                 ) : isCurrent ? (
                   'Current Plan'
+                ) : isDowngradeLocked ? (
+                  'Locked'
                 ) : (
                   'Upgrade Now'
                 )}

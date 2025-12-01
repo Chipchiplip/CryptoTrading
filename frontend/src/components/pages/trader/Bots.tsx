@@ -4,6 +4,8 @@ import { RefreshCw, Loader2, Play, Square, Trash2, TrendingUp, TrendingDown, Dol
 import { BotApi, BotSummary } from '../../../api/bots';
 import { Button } from '../../ui/button';
 import { Badge } from '../../ui/badge';
+import { useSubscriptionPlan } from '../../../hooks/useSubscriptionPlan';
+import { PremiumFeatureGate } from '../../PremiumFeatureGate';
 
 type StatusFilter = 'RUNNING' | 'STOPPED' | 'ALL';
 
@@ -80,6 +82,7 @@ const TraderBots = () => {
   const [actionBanner, setActionBanner] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const pageSize = 20;
+  const { isPremium, loading: planLoading } = useSubscriptionPlan();
 
   const fetchBots = async (targetPage = page, filter = statusFilter) => {
     setLoading(true);
@@ -100,9 +103,13 @@ const TraderBots = () => {
   };
 
   useEffect(() => {
+    if (!isPremium) {
+      setBots([]);
+      return;
+    }
     fetchBots(1, statusFilter);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [statusFilter]);
+  }, [statusFilter, isPremium]);
 
   const activeCount = useMemo(
     () => bots.filter((bot) => bot.status === 'RUNNING').length,
@@ -150,6 +157,24 @@ const TraderBots = () => {
 
   const canPrev = page > 1;
   const canNext = page < totalPages;
+
+  if (planLoading) {
+    return (
+      <div className="min-h-screen bg-black text-white flex items-center justify-center">
+        <Loader2 className="w-10 h-10 text-emerald-500 animate-spin" />
+      </div>
+    );
+  }
+
+  if (!isPremium) {
+    return (
+      <PremiumFeatureGate
+        featureName="AI Bots"
+        description="Tính năng bot tự động chỉ dành cho gói Premium để giao dịch liên tục và nhận phân tích nâng cao."
+        helperText="Nâng cấp Premium để tạo, bật/tắt và quản lý bot AI với chiến lược độc quyền."
+      />
+    );
+  }
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-8 space-y-6">

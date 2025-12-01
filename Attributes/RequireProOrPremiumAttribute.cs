@@ -7,8 +7,8 @@ using CryptoTrading.Interfaces;
 namespace CryptoTrading.Attributes;
 
 /// <summary>
-/// Authorization attribute that restricts access to Pro (PlanType = 1) and Premium (PlanType = 2) users only.
-/// Free users (PlanType = 0) will receive a 403 Forbidden response.
+/// Authorization attribute that restricts access to Premium (PlanType = 2) users only.
+/// Free users (PlanType = 0) will receive a 403 Forbidden response with upgrade info.
 /// </summary>
 public class RequireProOrPremiumAttribute : AuthorizeAttribute, IAsyncAuthorizationFilter
 {
@@ -31,15 +31,15 @@ public class RequireProOrPremiumAttribute : AuthorizeAttribute, IAsyncAuthorizat
 
         var planType = await subscriptionService.GetUserPlanTypeAsync(userId.Value);
         
-        // PlanType: 0 = Free, 1 = Pro, 2 = Premium
-        if (planType == 0) // Free user
+        // PlanType: 0 = Free, 2 = Premium (legacy PlanType 1 is no longer used)
+        if (planType != 2)
         {
             context.Result = new ForbidObjectResult(new 
             { 
-                message = "AI features are only available for Pro and Premium users. Please upgrade your subscription.",
+                message = "Tính năng này chỉ dành cho gói Premium. Vui lòng nâng cấp để sử dụng AI chat, bot AI và portfolio chi tiết.",
                 requiresUpgrade = true,
-                currentPlan = "Free",
-                availablePlans = new[] { "Pro", "Premium" }
+                currentPlan = planType == 0 ? "Free" : "Unknown",
+                availablePlans = new[] { "Premium" }
             });
             return;
         }

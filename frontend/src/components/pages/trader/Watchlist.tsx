@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { Star, Plus, TrendingUp, TrendingDown, Trash2, Search, Loader2, AlertCircle } from 'lucide-react';
 import { Card } from '../../ui/card';
 import { Button } from '../../ui/button';
@@ -6,8 +6,9 @@ import { Input } from '../../ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '../../ui/dialog';
 import { Badge } from '../../ui/badge';
 import { Alert, AlertDescription } from '../../ui/alert';
-import { PortfolioApi, WatchlistCoin } from '../../../api/portfolio';
+import { PortfolioApi, WatchlistCoin, WatchlistQuota } from '../../../api/portfolio';
 import { MarketApi, Crypto } from '../../../api/market';
+import { useSubscriptionPlan } from '../../../hooks/useSubscriptionPlan';
 
 interface WatchlistProps {
   onNavigate?: (page: string) => void;
@@ -52,48 +53,56 @@ export default function Watchlist({ onNavigate }: WatchlistProps) {
   const [watchlistCoins, setWatchlistCoins] = useState<WatchlistCoinWithPrice[]>([]);
   const [allCryptos, setAllCryptos] = useState<Crypto[]>([]);
   const [loading, setLoading] = useState(true);
-  const [loadingPrices, setLoadingPrices] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [addCoinDialogOpen, setAddCoinDialogOpen] = useState(false);
+  const [quota, setQuota] = useState<WatchlistQuota | null>(null);
+  const { planType, loading: planLoading } = useSubscriptionPlan();
+  const isPremium = planType === 2;
+  const freeLimit = 2;
+  const reachedLimit = !isPremium && watchlistCoins.length >= freeLimit;
 
-  // Fetch default watchlist
-  useEffect(() => {
-    const fetchWatchlist = async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const res = await PortfolioApi.getDefaultWatchlist();
-        if (!res.ok) {
-          setError(res.error);
-          setLoading(false);
-          return;
-        }
-        setWatchlistId(res.data.id);
-        setWatchlistCoins(res.data.coins.map(c => ({
-          ...c,
-          volume24h: 0, // Will be filled from market data
-          chart: Array.from({ length: 7 }, () => Math.random() * 50 + 40), // Mock chart data
-          // iconUrl is already in WatchlistCoin from API
-        })));
+  const fetchWatchlist = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await PortfolioApi.getDefaultWatchlist();
+      if (!res.ok) {
+        setError(res.error);
         setLoading(false);
-      } catch (e: any) {
-        setError(e?.message || 'Failed to load watchlist');
-        setLoading(false);
+        return;
       }
-    };
-    
-    fetchWatchlist();
+      setWatchlistId(res.data.id);
+      setWatchlistCoins(res.data.coins.map((c) => ({
+        ...c,
+        volume24h: 0,
+        chart: Array.from({ length: 7 }, () => Math.random() * 50 + 40),
+      })));
+    } catch (e: any) {
+      setError(e?.message || 'Failed to load watchlist');
+    } finally {
+      setLoading(false);
+    }
   }, []);
+
+  const loadQuota = useCallback(async () => {
+    const res = await PortfolioApi.getWatchlistQuota();
+    if (res.ok) {
+      setQuota(res.data);
+    }
+  }, []);
+
+  useEffect(() => {
+    void fetchWatchlist();
+    void loadQuota();
+  }, [fetchWatchlist, loadQuota]);
 
   // Fetch realtime prices
   const fetchPrices = async () => {
     if (!watchlistId) return;
-    setLoadingPrices(true);
     try {
       const res = await MarketApi.getWatchlistRealtime(watchlistId);
       if (!res.ok) {
         console.error('Failed to fetch prices:', res.error);
-        setLoadingPrices(false);
         return;
       }
       
@@ -117,7 +126,7 @@ export default function Watchlist({ onNavigate }: WatchlistProps) {
     } catch (e: any) {
       console.error('Error fetching prices:', e);
     } finally {
-      setLoadingPrices(false);
+      // intentionally left blank
     }
   };
 
@@ -173,26 +182,23 @@ export default function Watchlist({ onNavigate }: WatchlistProps) {
       setError(res.error);
       return;
     }
-        setWatchlistCoins(prev => prev.filter(coin => coin.symbol !== symbol));
+    setWatchlistCoins((prev) => prev.filter((coin) => coin.symbol !== symbol));
+    await loadQuota();
   };
 
   const addToWatchlist = async (crypto: Crypto) => {
+    if (reachedLimit) {
+      setError('Gói Free chỉ có thể theo dõi tối đa 2 coin. Vui lòng nâng cấp Premium để thêm coin.');
+      return;
+    }
     const res = await PortfolioApi.addCoinToDefault({ coinSymbol: crypto.symbol });
     if (!res.ok) {
       setError(res.error);
       return;
     }
-    // Reload watchlist
-    const watchlistRes = await PortfolioApi.getDefaultWatchlist();
-    if (watchlistRes.ok) {
-      setWatchlistId(watchlistRes.data.id);
-      setWatchlistCoins(watchlistRes.data.coins.map(c => ({
-        ...c,
-        volume24h: 0,
-        chart: Array.from({ length: 7 }, () => Math.random() * 50 + 40)
-      })));
-      setAddCoinDialogOpen(false);
-    }
+    await fetchWatchlist();
+    await loadQuota();
+    setAddCoinDialogOpen(false);
   };
 
   const formatPrice = (price: number | undefined | null) => {
@@ -215,12 +221,18 @@ export default function Watchlist({ onNavigate }: WatchlistProps) {
           <div>
             <h1 className="text-3xl mb-2">My Watchlist</h1>
             <p className="text-gray-400">Track your favorite cryptocurrencies</p>
+            <p className="text-sm text-gray-500 mt-1">
+              {planLoading ? 'Đang kiểm tra gói...' : isPremium ? 'Bạn đang sử dụng Premium - watchlist không giới hạn.' : 'Bạn đang ở gói Free - tối đa 2 coin trong watchlist.'}
+            </p>
           </div>
           <Dialog open={addCoinDialogOpen} onOpenChange={setAddCoinDialogOpen}>
             <DialogTrigger asChild>
-              <Button className="bg-emerald-500 text-black hover:bg-emerald-600">
+              <Button
+                className={`bg-emerald-500 text-black hover:bg-emerald-600 ${reachedLimit ? 'opacity-60 cursor-not-allowed' : ''}`}
+                disabled={reachedLimit}
+              >
                 <Plus className="w-4 h-4 mr-2" />
-                Add Coin
+                {reachedLimit ? 'Limit Reached' : 'Add Coin'}
               </Button>
             </DialogTrigger>
             <DialogContent className="bg-gray-900 border-gray-800 text-white max-w-2xl max-h-[80vh] overflow-y-auto">
@@ -268,8 +280,9 @@ export default function Watchlist({ onNavigate }: WatchlistProps) {
                             size="sm"
                             onClick={() => addToWatchlist(coin)}
                             className="bg-emerald-500 text-black hover:bg-emerald-600"
+                            disabled={reachedLimit}
                           >
-                            Add
+                            {reachedLimit ? 'Locked' : 'Add'}
                           </Button>
                         </div>
                       </div>
@@ -287,11 +300,32 @@ export default function Watchlist({ onNavigate }: WatchlistProps) {
           </Alert>
         )}
 
+        {!isPremium && (
+          <Alert className="bg-yellow-500/10 border-yellow-500/50 text-yellow-300 mb-4">
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription>
+              Gói Free chỉ theo dõi tối đa {freeLimit} coin. Bạn đang theo dõi {watchlistCoins.length}/{freeLimit}. Nâng cấp Premium để mở khóa watchlist không giới hạn.
+            </AlertDescription>
+          </Alert>
+        )}
+
         <Card className="bg-gray-900 border-gray-800 p-4">
           <div className="flex items-center gap-2 text-sm text-gray-400">
             <Star className="w-4 h-4 text-yellow-500 fill-yellow-500" />
             <span>{watchlistCoins.length} coins in your watchlist</span>
+            {isPremium ? (
+              <Badge className="bg-emerald-500/20 text-emerald-300 border-emerald-500/30">Unlimited</Badge>
+            ) : (
+              <Badge className="bg-yellow-500/10 text-yellow-300 border border-yellow-500/30">
+                Free limit {freeLimit}
+              </Badge>
+            )}
           </div>
+          {quota && (
+            <p className="text-xs text-gray-500 mt-2">
+              Quota: {quota.currentCount}/{quota.maxAllowed === 1000 ? '∞' : quota.maxAllowed} • {quota.subscriptionTier} plan
+            </p>
+          )}
         </Card>
       </div>
 
@@ -312,9 +346,12 @@ export default function Watchlist({ onNavigate }: WatchlistProps) {
             <p className="text-gray-400 mb-6">Add coins to track their prices and performance</p>
             <Dialog>
               <DialogTrigger asChild>
-                <Button className="bg-emerald-500 text-black hover:bg-emerald-600">
+                <Button
+                  className={`bg-emerald-500 text-black hover:bg-emerald-600 ${reachedLimit ? 'opacity-60 cursor-not-allowed' : ''}`}
+                  disabled={reachedLimit}
+                >
                   <Plus className="w-4 h-4 mr-2" />
-                  Add Your First Coin
+                  {reachedLimit ? 'Limit Reached' : 'Add Your First Coin'}
                 </Button>
               </DialogTrigger>
               <DialogContent className="bg-gray-900 border-gray-800 text-white max-w-2xl max-h-[80vh] overflow-y-auto">
@@ -345,8 +382,9 @@ export default function Watchlist({ onNavigate }: WatchlistProps) {
                             size="sm"
                             onClick={() => addToWatchlist(coin)}
                             className="bg-emerald-500 text-black hover:bg-emerald-600"
+                            disabled={reachedLimit}
                           >
-                            Add
+                            {reachedLimit ? 'Locked' : 'Add'}
                           </Button>
                         </div>
                       ))}

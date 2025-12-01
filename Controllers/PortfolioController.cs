@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using CryptoTrading.Interfaces;
 using CryptoTrading.Models.DTOs;
 using System.Security.Claims;
+using CryptoTrading.Attributes;
 
 namespace CryptoTrading.Controllers;
 
@@ -304,6 +305,7 @@ public class PortfolioController : ControllerBase
     /// Get portfolio overview including holdings, PnL, and NAV history
     /// </summary>
     [HttpGet("overview")]
+    [RequireProOrPremium]
     public async Task<IActionResult> GetPortfolioOverview(CancellationToken cancellationToken)
     {
         _logger.LogInformation("[PortfolioController] GET /api/portfolio/overview - Request received");
@@ -350,6 +352,7 @@ public class PortfolioController : ControllerBase
     /// Get portfolio performance metrics for a date range
     /// </summary>
     [HttpGet("performance")]
+    [RequireProOrPremium]
     public async Task<IActionResult> GetPerformance([FromQuery] DateTime? from, [FromQuery] DateTime? to)
     {
         try

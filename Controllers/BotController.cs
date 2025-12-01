@@ -8,13 +8,15 @@ using Microsoft.EntityFrameworkCore;
 using CryptoTrading.Data;
 using Microsoft.Extensions.DependencyInjection;
 using CryptoTrading.Services.Trading;
+using CryptoTrading.Attributes;
 
 namespace CryptoTrading.Controllers
 {
     [ApiController]
     [Route("api/bots")]
-    [Authorize]
-    public class BotController : ControllerBase
+[Authorize]
+[RequireProOrPremium]
+public class BotController : ControllerBase
     {
         private readonly IBotApplicationService _botService;
         private readonly ILogger<BotController> _logger;

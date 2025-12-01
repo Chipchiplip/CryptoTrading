@@ -8,7 +8,6 @@ import {
   Briefcase,
   Wallet,
   ArrowDownToLine,
-  ArrowUpFromLine,
   CreditCard,
   Settings,
   Bell,
@@ -30,12 +29,20 @@ import { useNavigate } from 'react-router-dom';
 import { useDashboardSummary } from '../contexts/DashboardContext';
 import NotificationsPanel from './NotificationsPanel';
 import { AuthApi, UserProfileDto } from '../api/auth';
+import { useSubscriptionPlan } from '../hooks/useSubscriptionPlan';
 
 interface TraderLayoutProps {
   children: React.ReactNode;
   currentPage: string;
   onNavigate: (page: string) => void;
 }
+
+type MenuItem = {
+  id: string;
+  label: string;
+  icon: typeof LayoutDashboard;
+  requiresPremium?: boolean;
+};
 
 export default function TraderLayout({ children, currentPage, onNavigate }: TraderLayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -44,6 +51,7 @@ export default function TraderLayout({ children, currentPage, onNavigate }: Trad
   const [userProfile, setUserProfile] = useState<UserProfileDto | null>(null);
   const userMenuRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
+  const { planType, loading: subscriptionLoading } = useSubscriptionPlan();
   
   // ✅ Use shared dashboard context instead of direct API calls
   const { summary: dashboardSummary, loading: balanceLoading } = useDashboardSummary();
@@ -145,23 +153,31 @@ export default function TraderLayout({ children, currentPage, onNavigate }: Trad
     }).format(value);
   };
 
-  const menuItems = [
+  const menuItems: MenuItem[] = [
     { id: 'trader-dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'watchlist', label: 'Watchlist', icon: Star },
     { id: 'market', label: 'Market', icon: BarChart3 },
     { id: 'trade', label: 'Trade', icon: TrendingUp },
-    { id: 'ai-chat', label: 'AI Chat', icon: Bot },
-    { id: 'bots', label: 'Bots', icon: Cpu },
+    { id: 'ai-chat', label: 'AI Chat', icon: Bot, requiresPremium: true },
+    { id: 'bots', label: 'Bots', icon: Cpu, requiresPremium: true },
     { id: 'orders', label: 'Orders', icon: ListOrdered },
     { id: 'trades-history', label: 'Trades', icon: History },
-    { id: 'portfolio', label: 'Portfolio', icon: Briefcase },
+    { id: 'portfolio', label: 'Portfolio', icon: Briefcase, requiresPremium: true },
     { id: 'wallets', label: 'Wallets', icon: Wallet },
     { id: 'deposit', label: 'Deposit', icon: ArrowDownToLine },
-    { id: 'withdraw', label: 'Withdraw', icon: ArrowUpFromLine },
     { id: 'subscription', label: 'Subscription', icon: CreditCard },
     { id: 'settings', label: 'Settings', icon: Settings },
-
   ];
+
+  const handleMenuNavigate = (item: MenuItem) => {
+    if (item.requiresPremium && planType !== 2) {
+      onNavigate('subscription');
+      setSidebarOpen(false);
+      return;
+    }
+    onNavigate(item.id);
+    setSidebarOpen(false);
+  };
 
   const SidebarContent = () => (
     <div className="flex flex-col h-full">
@@ -178,24 +194,38 @@ export default function TraderLayout({ children, currentPage, onNavigate }: Trad
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
-        {menuItems.map((item) => (
-          <button
-            key={item.id}
-            onClick={() => {
-              onNavigate(item.id);
-              setSidebarOpen(false);
-            }}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
-              currentPage === item.id
-                ? 'bg-emerald-500 text-black'
-                : 'text-gray-300 hover:bg-gray-800 hover:text-white'
-            }`}
-          >
-            <item.icon className="w-5 h-5" />
-            <span>{item.label}</span>
-          </button>
-        ))}
+      <nav className="flex-1 p-4 space-y-1">
+        <div className="text-xs text-gray-500 px-2 pb-2">
+          {subscriptionLoading ? 'Đang kiểm tra gói...' : planType === 2 ? 'Premium plan active' : 'Free plan'}
+        </div>
+        {menuItems.map((item) => {
+          const isLocked = item.requiresPremium && planType !== 2;
+          return (
+            <button
+              key={item.id}
+              onClick={() => handleMenuNavigate(item)}
+              className={`w-full flex items-center justify-between gap-3 px-4 py-3 rounded-lg transition-colors ${
+                currentPage === item.id
+                  ? 'bg-emerald-500 text-black'
+                  : 'text-gray-300 hover:bg-gray-800 hover:text-white'
+              } ${isLocked ? 'opacity-70' : ''}`}
+            >
+              <div className="flex items-center gap-3">
+                <item.icon className="w-5 h-5" />
+                <span>{item.label}</span>
+              </div>
+              {item.requiresPremium && (
+                <span
+                  className={`text-xs px-2 py-0.5 rounded-full ${
+                    isLocked ? 'bg-emerald-500/10 text-emerald-300' : 'bg-emerald-500/60 text-black'
+                  }`}
+                >
+                  {isLocked ? 'Locked' : 'Premium'}
+                </span>
+              )}
+            </button>
+          );
+        })}
       </nav>
 
       {/* Quick Stats - Fixed at bottom */}

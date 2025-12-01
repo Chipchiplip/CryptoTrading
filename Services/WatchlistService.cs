@@ -10,11 +10,17 @@ namespace CryptoTrading.Services
     {
         private readonly ApplicationDbContext _context;
         private readonly ICoinGeckoService _coinGeckoService;
+        private readonly ISubscriptionService _subscriptionService;
+        private const int FreePlanCoinLimit = 2;
 
-        public WatchlistService(ApplicationDbContext context, ICoinGeckoService coinGeckoService)
+        public WatchlistService(
+            ApplicationDbContext context,
+            ICoinGeckoService coinGeckoService,
+            ISubscriptionService subscriptionService)
         {
             _context = context;
             _coinGeckoService = coinGeckoService;
+            _subscriptionService = subscriptionService;
         }
 
         public async Task<WatchlistDto> CreateWatchlistAsync(int userId, CreateWatchlistDto dto)
@@ -71,6 +77,8 @@ namespace CryptoTrading.Services
 
         public async Task<bool> AddCoinToDefaultWatchlistAsync(int userId, string coinSymbol)
         {
+            await EnsureCanAddCoinAsync(userId);
+
             // Find cryptocurrency by symbol
             var crypto = await _context.Cryptocurrencies
                 .FirstOrDefaultAsync(c => c.Symbol.ToUpper() == coinSymbol.ToUpper());
@@ -167,18 +175,9 @@ namespace CryptoTrading.Services
         {
             // Count coins in UserWatchlist instead of watchlists
             var currentCount = await _context.UserWatchlists.CountAsync(uw => uw.UserId == userId);
-            
-            // TODO: Get user subscription tier from User entity
-            // For now, assume basic tier
-            var subscriptionTier = "Basic";
-            // For coins in watchlist, allow more
-            var maxAllowed = subscriptionTier switch
-            {
-                "Basic" => 50,
-                "Plus" => 100,
-                "Pro" => 500,
-                _ => 25
-            };
+            var planType = await _subscriptionService.GetUserPlanTypeAsync(userId);
+            var subscriptionTier = planType == 2 ? "Premium" : "Free";
+            var maxAllowed = planType == 2 ? 1000 : FreePlanCoinLimit;
 
             return new WatchlistQuotaDto(
                 currentCount,
@@ -254,6 +253,21 @@ namespace CryptoTrading.Services
             // With UserWatchlist schema, we don't have multiple watchlists
             // This method is no longer needed
             await Task.CompletedTask;
+        }
+
+        private async Task EnsureCanAddCoinAsync(int userId)
+        {
+            var planType = await _subscriptionService.GetUserPlanTypeAsync(userId);
+            if (planType == 2)
+            {
+                return;
+            }
+
+            var currentCount = await _context.UserWatchlists.CountAsync(uw => uw.UserId == userId);
+            if (currentCount >= FreePlanCoinLimit)
+            {
+                throw new InvalidOperationException("Gói Free chỉ có thể theo dõi 2 coin. Vui lòng nâng cấp Premium để mở khóa watchlist không giới hạn.");
+            }
         }
     }
 }

@@ -5,13 +5,15 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using System.Text.Json;
+using CryptoTrading.Attributes;
 
 namespace CryptoTrading.Controllers
 {
     [ApiController]
     [Route("api/bot-strategies")]
-    [Authorize]
-    public class BotStrategyController : ControllerBase
+[Authorize]
+[RequireProOrPremium]
+public class BotStrategyController : ControllerBase
     {
         private readonly ApplicationDbContext _context;
         private readonly IStrategyRegistry _strategyRegistry;

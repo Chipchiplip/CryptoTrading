@@ -5,6 +5,8 @@ import { Badge } from '../../ui/badge';
 import { Alert, AlertDescription } from '../../ui/alert';
 import { PieChart, Pie, Cell, ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip } from 'recharts';
 import { PortfolioApi, PortfolioHolding } from '../../../api/portfolio';
+import { useSubscriptionPlan } from '../../../hooks/useSubscriptionPlan';
+import { PremiumFeatureGate } from '../../PremiumFeatureGate';
 
 export default function Portfolio() {
   const [holdings, setHoldings] = useState<PortfolioHolding[]>([]);
@@ -19,10 +21,33 @@ export default function Portfolio() {
     unrealizedPnLPercent: 0,
     realizedPnL: 0,
   });
+  const { isPremium, loading: planLoading } = useSubscriptionPlan();
 
   useEffect(() => {
+    if (!isPremium) {
+      setLoading(false);
+      return;
+    }
     fetchPortfolioData();
-  }, []);
+  }, [isPremium]);
+
+  if (planLoading) {
+    return (
+      <div className="p-4 lg:p-8 flex items-center justify-center h-[60vh]">
+        <Loader2 className="w-10 h-10 text-emerald-500 animate-spin" />
+      </div>
+    );
+  }
+
+  if (!isPremium) {
+    return (
+      <PremiumFeatureGate
+        featureName="Portfolio chi tiết"
+        description="Bảng Portfolio, NAV history và phân tích nâng cao chỉ khả dụng cho gói Premium."
+        helperText="Nâng cấp Premium để xem hiệu suất chi tiết, phân bổ tài sản và báo cáo PnL realtime."
+      />
+    );
+  }
 
   const fetchPortfolioData = async () => {
     try {

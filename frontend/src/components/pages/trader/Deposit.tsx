@@ -1,9 +1,7 @@
 ﻿import { useState, useEffect } from 'react';
 import {
-  Copy,
   Upload,
   CheckCircle2,
-  Info,
   CreditCard,
   Shield,
   TrendingUp,
@@ -15,35 +13,21 @@ import {
 import { Button } from '../../ui/button';
 import { Input } from '../../ui/input';
 import { Label } from '../../ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../ui/select';
 import { Alert, AlertDescription } from '../../ui/alert';
 import { Badge } from '../../ui/badge';
 import { PaymentApi } from '../../../api/payment';
 import { TradingApi } from '../../../api/trading';
 
 export default function Deposit() {
-  const [selectedCurrency, setSelectedCurrency] = useState('BTC');
   const [amount, setAmount] = useState('5000');
   const [vndAmount, setVndAmount] = useState('');
-
-  const [copied, setCopied] = useState(false);
   const [loading, setLoading] = useState(false);
   const [stripeLoading, setStripeLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
-  const [selectedMethod, setSelectedMethod] = useState<'vnpay' | 'stripe' | 'crypto'>('stripe');
+  const [selectedMethod, setSelectedMethod] = useState<'vnpay' | 'stripe'>('stripe');
   const [currentBalance, setCurrentBalance] = useState(0);
-  const [depositMode, setDepositMode] = useState<'fiat' | 'crypto'>('fiat');
-
-  const depositAddress = '1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa';
   const STRIPE_MAX_AMOUNT = 999999.99;
-
-
-  const cryptoCurrencies = [
-    { symbol: 'BTC', name: 'Bitcoin', network: 'Bitcoin', minDeposit: 0.0001, fee: 0 },
-    { symbol: 'ETH', name: 'Ethereum', network: 'Ethereum (ERC20)', minDeposit: 0.01, fee: 0 },
-    { symbol: 'USDT', name: 'Tether', network: 'Ethereum (ERC20)', minDeposit: 10, fee: 0 },
-  ];
 
   // Fetch current balance
   useEffect(() => {
@@ -209,16 +193,6 @@ export default function Deposit() {
     }
   };
 
-  const handleCopy = () => {
-    navigator.clipboard.writeText(depositAddress);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-
-
-
-  const currentCurrency = cryptoCurrencies.find(c => c.symbol === selectedCurrency) || cryptoCurrencies[0];
-
   // Calculate deposit amount (no processing fee)
   const depositAmount = selectedMethod === 'vnpay'
     ? parseFloat(vndAmount) || 0
@@ -271,33 +245,7 @@ export default function Deposit() {
       <div className="max-w-7xl mx-auto grid lg:grid-cols-3 gap-6">
         {/* Left Column - Payment Selection */}
         <div className="lg:col-span-2 space-y-6">
-          {/* Mode Selection */}
-          <div className="flex gap-3">
-            <button
-              onClick={() => setDepositMode('fiat')}
-              className={`flex-1 py-3 px-4 rounded-xl font-medium transition-all ${depositMode === 'fiat'
-                ? 'bg-emerald-500 text-black'
-                : 'bg-gray-900/50 border border-gray-800 text-gray-400 hover:border-gray-700'
-                }`}
-            >
-              Fiat Payment
-            </button>
-            <button
-              onClick={() => {
-                setDepositMode('crypto');
-                setSelectedMethod('crypto');
-              }}
-              className={`flex-1 py-3 px-4 rounded-xl font-medium transition-all ${depositMode === 'crypto'
-                ? 'bg-emerald-500 text-black'
-                : 'bg-gray-900/50 border border-gray-800 text-gray-400 hover:border-gray-700'
-                }`}
-            >
-              Crypto Deposit
-            </button>
-          </div>
-
-          {depositMode === 'fiat' ? (
-            <>
+          <>
               {/* Payment Method Selection */}
               <div>
                 <h2 className="text-xl font-semibold mb-4">Select Payment Method</h2>
@@ -451,65 +399,7 @@ export default function Deposit() {
                   </ul>
                 </div>
               )}
-            </>
-          ) : (
-            /* Crypto Deposit Section */
-            <div className="space-y-6">
-              <div>
-                <h2 className="text-xl font-semibold mb-4">Cryptocurrency Deposit</h2>
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div>
-                    <Label className="text-gray-400 mb-2 block">Select Currency</Label>
-                    <Select value={selectedCurrency} onValueChange={setSelectedCurrency}>
-                      <SelectTrigger className="bg-gray-900/50 border-gray-800 h-12 rounded-xl">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent className="bg-gray-900 border-gray-800 text-white">
-                        {cryptoCurrencies.map((currency) => (
-                          <SelectItem key={currency.symbol} value={currency.symbol}>
-                            {currency.name} ({currency.symbol})
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <Alert className="bg-blue-500/5 border-blue-500/20">
-                    <Info className="h-4 w-4 text-blue-400" />
-                    <AlertDescription className="text-blue-200 text-sm">
-                      Network: {currentCurrency.network} · Min: {currentCurrency.minDeposit} {currentCurrency.symbol}
-                    </AlertDescription>
-                  </Alert>
-                </div>
-              </div>
-
-              <div className="bg-gray-900/30 border border-gray-800 rounded-2xl p-6">
-                <div className="flex items-center justify-between mb-3">
-                  <Label className="text-white">Deposit Address</Label>
-                  <span className="text-xs text-gray-500">Hot wallet • monitored</span>
-                </div>
-                <div className="flex gap-2">
-                  <Input value={depositAddress} readOnly className="bg-gray-900 border-gray-700 text-white" />
-                  <Button onClick={handleCopy} className="bg-emerald-500 text-black hover:bg-emerald-400">
-                    {copied ? <CheckCircle2 className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-                  </Button>
-                </div>
-                <p className="text-xs text-gray-400 mt-2">Send {selectedCurrency} to the address above. Funds credit after network confirmation.</p>
-              </div>
-
-              <div className="grid md:grid-cols-2 gap-4">
-                <div className="border border-dashed border-gray-700 rounded-2xl p-6 text-center">
-                  <div className="w-40 h-40 bg-white/90 rounded-xl mx-auto mb-4 flex items-center justify-center text-gray-900 font-semibold">QR Code</div>
-                  <p className="text-gray-400 text-sm">Scan to get deposit address</p>
-                </div>
-                <Alert className="bg-yellow-500/5 border-yellow-500/30 rounded-2xl">
-                  <Info className="h-4 w-4 text-yellow-400" />
-                  <AlertDescription className="text-yellow-100 text-sm">
-                    Send only {selectedCurrency}. Other assets sent to this address will be lost permanently.
-                  </AlertDescription>
-                </Alert>
-              </div>
-            </div>
-          )}
+          </>
         </div>
 
         {/* Right Column - Transaction Summary */}
@@ -531,15 +421,13 @@ export default function Deposit() {
               </div>
             </div>
 
-            {depositMode === 'fiat' && (
-              <Button
-                onClick={handleConfirmDeposit}
-                disabled={loading || stripeLoading || (selectedMethod === 'vnpay' ? !vndAmount : !amount)}
-                className="w-full bg-emerald-500 hover:bg-emerald-400 text-black font-semibold h-12 rounded-xl"
-              >
-                {loading || stripeLoading ? 'Processing...' : 'Confirm Deposit'}
-              </Button>
-            )}
+            <Button
+              onClick={handleConfirmDeposit}
+              disabled={loading || stripeLoading || (selectedMethod === 'vnpay' ? !vndAmount : !amount)}
+              className="w-full bg-emerald-500 hover:bg-emerald-400 text-black font-semibold h-12 rounded-xl"
+            >
+              {loading || stripeLoading ? 'Processing...' : 'Confirm Deposit'}
+            </Button>
           </div>
 
           {/* Secure Transaction */}

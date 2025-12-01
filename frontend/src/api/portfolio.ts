@@ -170,8 +170,8 @@ export interface AddCoinDto {
 }
 
 export interface WatchlistQuota {
+  currentCount: number;
   maxAllowed: number;
-  current: number;
   canCreateMore: boolean;
   subscriptionTier: string;
 }
