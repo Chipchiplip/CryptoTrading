@@ -1,185 +1,58 @@
 # Bot Troubleshooting Guide
 
-## Vấn đề: Bot đang chạy nhưng không trading
+Use this guide to debug bots and grid strategies in the current ASP.NET Core monolith.
 
-### Triệu chứng:
-- ✅ Status: "Running"
-- ❌ P&L: 0.00
-- ❌ Realized P&L: 0.00
-- ❌ Tín hiệu gần nhất: "—" (không có)
-- ❌ totalOrders: 0
+## Quick checks (in order)
+- Status must be `Running`; if not, start and watch `lastExecutionAt`.
+- Logs: `GET /api/bots/{id}/logs?page=1&pageSize=50` (Execution + Trading). Look for price fetch, signal, and order placement.
+- Orders: `GET /api/bots/{id}/orders?page=1&pageSize=20`. If none, the bot never placed; if unfilled, matcher has not filled yet.
+- Runtime snapshot: review `totalOrders`, `filledOrders`, `lastSignal`, `nextRunAt`, `heartbeat`.
+- Nudge: `POST /api/bots/{id}/nudge` to force a run now.
+- Balance: ensure quote asset balance exists; holds reduce available balance.
+- Market data: CoinGecko reachable; verify prices in `/api/market/cryptocurrencies`.
 
-## Các bước kiểm tra:
+## Common causes and fixes
+- No market data / price fetch errors: CoinGecko down or API key missing → retry, verify `CoinGecko` config; timeout is 10s with backoff.
+- Sideways trend: strategy waits for signal; reduce `emaPeriod`/thresholds or let history accumulate.
+- Insufficient balance: wallet has zero available or is fully locked in holds → deposit or release holds.
+- Symbol mismatch: ensure base/quote assets (e.g., `ETH`/`USD`) exist in `Cryptocurrencies`.
+- Bot not executing: `lastExecutionAt` stale → nudge; confirm `BotExecutionHostedService` running (app logs).
+- Order placement errors: inspect Trading logs; price validation may reject orders outside allowed bounds.
 
-### Bước 1: Kiểm tra Logs
+## Grid bot & order-count issues (merged fixes)
+- “Only 1-2 orders” or “no orders”:
+  - Check `gridLevels`, `lowerBound`, `upperBound`, and `orderSize` > 0.
+  - Ensure capital/inventory covers planned grid; low balance caps number of placed orders.
+  - Price must be within [lowerBound, upperBound]; outside range → no placements.
+- Missing parameters:
+  - Required: bounds, levels, order size, capital allocation; verify JSON matches strategy schema.
+- Matching behavior:
+  - Grid uses limit orders; fills depend on OrderMatchingBackgroundService (5s loop). If prices never cross grid lines, orders remain open.
+  - Maker price execution; partial fills expected when liquidity is thin.
+- Strategy differences:
+  - Aggressive Forex vs Grid: aggressive may pyramid/martingale; grid is range-bound. Pick by market regime.
 
-```http
-GET http://localhost:5299/api/bots/{botId}/logs?page=1&pageSize=50
-```
+## Monitoring and health (rolled up)
+- Logs: Execution (price fetch, signals), Trading (orders, errors).
+- Runtime metrics: `totalOrders`, `filledOrders`, `unrealizedPnl`, `realizedPnl`, `lastSignal`, `lastExecutionAt`, `heartbeatAt`.
+- Health: `GET /health`; verify background services in application logs.
 
-**Tìm các log quan trọng:**
+## Price fetch troubleshooting
+- Symptoms: “Unable to get current price”, `null` prices, repeated backoff.
+- Actions: verify CoinGecko base URL/key, outbound network, and that `GetMarketDataAsync(forceRefresh)` succeeds; restart if cache is stale.
 
-#### ✅ Logs tốt (Bot đang hoạt động):
-```json
-{
-  "level": "Info",
-  "category": "Execution",
-  "message": "Got price from GetMidPriceAsync: $3155.23"
-},
-{
-  "level": "Info",
-  "category": "Trading",
-  "message": "Placed BUY order 0.1 ETH/USD (orderId=12345)"
-},
-{
-  "level": "Info",
-  "category": "Signal",
-  "message": "Initial LONG signal at $3155.23 qty=0.1"
-}
-```
+## Quick commands
+- Force run: `POST /api/bots/{id}/nudge`
+- Recent logs: `GET /api/bots/{id}/logs?page=1&pageSize=50&category=Execution`
+- Orders: `GET /api/bots/{id}/orders?page=1&pageSize=20`
 
-#### ❌ Logs xấu (Bot có vấn đề):
+## Debug checklist
+- [ ] Status = Running
+- [ ] `lastExecutionAt` recent
+- [ ] Logs show price + signal + placed order
+- [ ] `totalOrders > 0`
+- [ ] Balance available (not fully locked)
+- [ ] CoinGecko reachable
+- [ ] No blocking errors in Trading/BotExecution services
 
-**1. Không lấy được giá:**
-```json
-{
-  "level": "Error",
-  "category": "Execution",
-  "message": "Unable to get current price"
-}
-```
-→ Xem `BOT_PRICE_FETCH_DEBUG.md`
-
-**2. Trend luôn Sideways:**
-```json
-{
-  "level": "Warning",
-  "category": "Execution",
-  "message": "Trend is Sideways, but attempting entry with small position"
-}
-```
-→ Bot chưa có đủ data hoặc market không có trend rõ ràng
-
-**3. Không đủ balance:**
-```json
-{
-  "level": "Error",
-  "category": "Trading",
-  "message": "Insufficient balance. Available: 0, Required: 315.52"
-}
-```
-→ User không có đủ USD
-
-**4. Lỗi khi place order:**
-```json
-{
-  "level": "Error",
-  "category": "Trading",
-  "message": "Failed to place BUY order for ETH: ..."
-}
-```
-→ Có lỗi khi tạo order (check error message)
-
-### Bước 2: Kiểm tra Orders
-
-```http
-GET http://localhost:5299/api/bots/{botId}/orders?page=1&pageSize=20
-```
-
-- Nếu `totalItems = 0` → Bot chưa từng place order
-- Nếu có orders nhưng `filledOrders = 0` → Orders chưa được match
-
-### Bước 3: Nudge Bot
-
-```http
-POST http://localhost:5299/api/bots/{botId}/nudge
-```
-
-Force bot chạy ngay, sau đó kiểm tra logs lại.
-
-### Bước 4: Kiểm tra Market Data
-
-```http
-GET http://localhost:5299/api/market/crypto
-```
-
-Xem có data ETH không và format như thế nào.
-
-### Bước 5: Kiểm tra Balance
-
-Đảm bảo user có đủ USD balance để bot có thể trade.
-
-## Các nguyên nhân thường gặp:
-
-### 1. **Không có Market Data** (Phổ biến nhất)
-- **Triệu chứng**: Logs có "Unable to get current price"
-- **Giải pháp**: 
-  - Kiểm tra CoinGecko service
-  - Xem `BOT_PRICE_FETCH_DEBUG.md`
-
-### 2. **Trend luôn Sideways**
-- **Triệu chứng**: Logs có "Trend is Sideways"
-- **Nguyên nhân**: 
-  - Chưa đủ price history (EMA cần 50-200 periods)
-  - Market không có trend rõ ràng
-- **Giải pháp**: 
-  - Đợi bot tích lũy đủ data
-  - Hoặc giảm `emaPeriod` trong parameters
-
-### 3. **Không đủ Balance**
-- **Triệu chứng**: Logs có "Insufficient balance"
-- **Giải pháp**: Nạp thêm USD vào wallet
-
-### 4. **Bot không chạy thực sự**
-- **Triệu chứng**: `lastExecutionAt` cũ, không có logs mới
-- **Giải pháp**: 
-  - Nudge bot
-  - Kiểm tra `BotExecutionHostedService` có chạy không
-  - Restart application
-
-### 5. **Symbol không match**
-- **Triệu chứng**: Logs có "Asset ETH not found"
-- **Giải pháp**: 
-  - Kiểm tra bot dùng "ETH" hay "ethereum"
-  - Xem available symbols trong logs
-
-## Quick Fix Commands:
-
-### Force bot chạy ngay:
-```http
-POST http://localhost:5299/api/bots/{botId}/nudge
-```
-
-### Xem logs real-time:
-```http
-GET http://localhost:5299/api/bots/{botId}/logs?page=1&pageSize=50&category=Execution
-```
-
-### Kiểm tra orders:
-```http
-GET http://localhost:5299/api/bots/{botId}/orders?page=1&pageSize=20
-```
-
-## Checklist Debug:
-
-- [ ] Bot status = "Running"?
-- [ ] `lastExecutionAt` gần đây?
-- [ ] Logs có "Got price"?
-- [ ] Logs có "Placed order"?
-- [ ] `totalOrders > 0`?
-- [ ] User có đủ USD balance?
-- [ ] CoinGecko service đang chạy?
-- [ ] Không có Error logs?
-
-## Expected Behavior:
-
-Sau khi bot chạy vài lần, bạn nên thấy:
-
-1. **Logs có price**: "Got price from GetMidPriceAsync: $XXXX"
-2. **Logs có signal**: "Initial LONG/SHORT signal"
-3. **Logs có order**: "Placed BUY/SELL order"
-4. **totalOrders > 0**: Bot đã tạo orders
-5. **lastSignal không null**: Bot có signal gần nhất
-
-Nếu sau 5-10 lần chạy mà vẫn không có gì, check logs để tìm nguyên nhân.
-
+Expected: after a few runs you should see price logs, signals, placed orders, and non-null `lastSignal`. If not, re-check logs and parameters.
