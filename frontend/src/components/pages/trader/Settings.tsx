@@ -83,7 +83,6 @@ export default function Settings() {
   const [activityLoading, setActivityLoading] = useState(false);
   const [activityError, setActivityError] = useState('');
 
-  const [emailNotifications, setEmailNotifications] = useState(true);
   const [copied, setCopied] = useState(false);
  
   useEffect(() => {
@@ -591,16 +590,6 @@ export default function Settings() {
                 </div>
               </div>
 
-              <div className="flex items-center justify-between p-4 bg-gray-800 rounded-lg">
-                <div>
-                  <div className="text-white mb-1">Email Notifications</div>
-                  <div className="text-sm text-gray-400">Receive email about your account activity</div>
-                </div>
-                <Switch
-                  checked={emailNotifications}
-                  onCheckedChange={setEmailNotifications}
-                />
-              </div>
               <Button onClick={handleUpdateProfile} disabled={profileLoading} className="bg-emerald-500 text-black hover:bg-emerald-600">
                 {profileLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Save Changes'}
               </Button>

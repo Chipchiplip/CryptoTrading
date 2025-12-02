@@ -968,7 +968,7 @@ export default function Trade({ onNavigate }: TradeProps) {
   const isPositive = priceChange >= 0;
 
   return (
-    <div className="p-4 lg:p-8 bg-[#1a1f2e] min-h-screen">
+    <div className="p-4 lg:p-8 bg-[#1a1f2e]">
       {/* Header */}
       <div className="mb-6">
         <h1 className="text-3xl font-bold mb-2 text-white">Trade</h1>
@@ -999,13 +999,13 @@ export default function Trade({ onNavigate }: TradeProps) {
                   </div>
                   <div className="flex items-center gap-2 mt-1">
                     <span className="text-white">
-                      {selectedPair.split('/')[0]} sang {selectedPair.split('/')[1]}: 1 {selectedPair.split('/')[0]} = {formatPrice(currentPrice)} {selectedPair.split('/')[1]}
+                      {selectedPair.split('/')[0]} to {selectedPair.split('/')[1]}: 1 {selectedPair.split('/')[0]} = {formatPrice(currentPrice)} {selectedPair.split('/')[1]}
                     </span>
                     <Badge className={isPositive ? 'bg-emerald-500/10 text-emerald-500' : 'bg-red-500/10 text-red-500'}>
                       {isPositive ? <TrendingUp className="w-3 h-3 mr-1" /> : <TrendingDown className="w-3 h-3 mr-1" />}
                       {isPositive ? '+' : ''}{priceChange.toFixed(2)}%
                     </Badge>
-                    <span className="text-gray-300 text-sm">1 ngày</span>
+                    <span className="text-gray-300 text-sm">24h</span>
                   </div>
                 </div>
               </div>
@@ -1042,7 +1042,7 @@ export default function Trade({ onNavigate }: TradeProps) {
                   }
                   size="sm"
                 >
-                  {tf === '1D' ? '1 ngày' : tf === '7D' ? '7 ngày' : tf === '1M' ? '1 tháng' : tf === '3M' ? '3 Tháng' : '1Y'}
+                  {tf === '1D' ? '1D' : tf === '7D' ? '7D' : tf === '1M' ? '1M' : tf === '3M' ? '3M' : '1Y'}
                 </Button>
               ))}
             </div>
@@ -1085,14 +1085,13 @@ export default function Trade({ onNavigate }: TradeProps) {
             </div>
 
             <div className="mt-4 text-xs text-gray-400">
-              Lần gần nhất cập nhật trang: {new Date().toLocaleString('vi-VN', { 
+              Last updated: {new Date().toLocaleString('en-US', { 
                 year: 'numeric', 
                 month: '2-digit', 
                 day: '2-digit', 
                 hour: '2-digit', 
-                minute: '2-digit',
-                timeZone: 'Asia/Ho_Chi_Minh'
-              })} (UTC+7)
+                minute: '2-digit'
+              })}
             </div>
           </Card>
             </div>
@@ -1111,7 +1110,7 @@ export default function Trade({ onNavigate }: TradeProps) {
                       : 'text-gray-300 hover:text-white hover:bg-[#2d4156]/50'
                   }`}
                 >
-                  Mua {selectedPair.split('/')[0]}
+                  Buy {selectedPair.split('/')[0]}
                 </button>
                 <button
                   type="button"
@@ -1122,7 +1121,7 @@ export default function Trade({ onNavigate }: TradeProps) {
                       : 'text-gray-300 hover:text-white hover:bg-[#2d4156]/50'
                   }`}
                 >
-                  Bán {selectedPair.split('/')[0]}
+                  Sell {selectedPair.split('/')[0]}
                 </button>
             </div>
 
@@ -1170,18 +1169,18 @@ export default function Trade({ onNavigate }: TradeProps) {
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <p className="text-sm text-gray-400 cursor-help">
-                        Bạn có{' '}
+                        You have{' '}
                         <span className="text-green-400 font-medium">
                           {formatBalance(balance.available, displaySymbol)} {displaySymbol}
                         </span>
-                        {' '}khả dụng
+                        {' '}available
                       </p>
                     </TooltipTrigger>
                     <TooltipContent className="bg-gray-800 text-white border-gray-700">
                       <div className="space-y-1 text-xs">
-                        <div>Tổng: {formatBalance(balance.total, displaySymbol)} {displaySymbol}</div>
-                        <div>Khả dụng: {formatBalance(balance.available, displaySymbol)} {displaySymbol}</div>
-                        <div>Đang mở lệnh: {formatBalance(balance.locked, displaySymbol)} {displaySymbol}</div>
+                        <div>Total: {formatBalance(balance.total, displaySymbol)} {displaySymbol}</div>
+                        <div>Available: {formatBalance(balance.available, displaySymbol)} {displaySymbol}</div>
+                        <div>Locked in orders: {formatBalance(balance.locked, displaySymbol)} {displaySymbol}</div>
                       </div>
                     </TooltipContent>
                   </Tooltip>
@@ -1194,7 +1193,7 @@ export default function Trade({ onNavigate }: TradeProps) {
                 {/* Limit Price (only for LIMIT orders) */}
                 {orderType === 'LIMIT' && (
                   <div>
-                    <Label className="text-gray-400 mb-2 block">Giá limit</Label>
+                    <Label className="text-gray-400 mb-2 block">Limit Price</Label>
                     <div className="flex gap-2">
                       <Input
                         type="number"
@@ -1208,14 +1207,14 @@ export default function Trade({ onNavigate }: TradeProps) {
                       </div>
                     </div>
                     <p className="text-sm text-gray-500 mt-2">
-                      Giá thị trường hiện tại: {formatPrice(currentPrice)}
+                      Current market price: {formatPrice(currentPrice)}
                     </p>
                   </div>
                 )}
 
                 {/* You Buy */}
                 <div>
-                  <Label className="text-gray-200 mb-2 block">Bạn mua</Label>
+                  <Label className="text-gray-200 mb-2 block">You Buy</Label>
                   <div className="flex gap-2">
                   <Input
                     type="number"
@@ -1235,7 +1234,7 @@ export default function Trade({ onNavigate }: TradeProps) {
 
                 {/* You Use */}
             <div>
-                  <Label className="text-gray-200 mb-2 block">Bạn sử dụng</Label>
+                  <Label className="text-gray-200 mb-2 block">You Use</Label>
                   <div className="flex gap-2">
               <Input
                 type="number"
@@ -1280,7 +1279,7 @@ export default function Trade({ onNavigate }: TradeProps) {
                   }}
                 >
                   <TrendingUp className="w-5 h-5 mr-2 inline" />
-                  Mua {selectedPair.split('/')[0]}
+                  Buy {selectedPair.split('/')[0]}
                 </Button>
           </div>
             ) : (
@@ -1288,7 +1287,7 @@ export default function Trade({ onNavigate }: TradeProps) {
                 {/* Limit Price (only for LIMIT orders) */}
                 {orderType === 'LIMIT' && (
                   <div>
-                    <Label className="text-gray-400 mb-2 block">Giá limit</Label>
+                    <Label className="text-gray-400 mb-2 block">Limit Price</Label>
                     <div className="flex gap-2">
                       <Input
                         type="number"
@@ -1302,14 +1301,14 @@ export default function Trade({ onNavigate }: TradeProps) {
                       </div>
                     </div>
                     <p className="text-sm text-gray-500 mt-2">
-                      Giá thị trường hiện tại: {formatPrice(currentPrice)}
+                      Current market price: {formatPrice(currentPrice)}
                     </p>
                   </div>
                 )}
 
                 {/* You Sell */}
                 <div>
-                  <Label className="text-gray-200 mb-2 block">Bạn bán</Label>
+                  <Label className="text-gray-200 mb-2 block">You Sell</Label>
                   <div className="flex gap-2">
                     <Input
                       type="number"
@@ -1329,7 +1328,7 @@ export default function Trade({ onNavigate }: TradeProps) {
 
                 {/* You Receive */}
                 <div>
-                  <Label className="text-gray-200 mb-2 block">Bạn nhận</Label>
+                  <Label className="text-gray-200 mb-2 block">You Receive</Label>
                   <div className="flex gap-2">
                     <Input
                       type="number"
@@ -1351,7 +1350,7 @@ export default function Trade({ onNavigate }: TradeProps) {
                   className="w-full bg-red-500 hover:bg-red-600 active:bg-red-700 text-white font-bold py-6 text-lg shadow-lg shadow-red-500/30 disabled:opacity-50 disabled:cursor-not-allowed transition-all transform hover:scale-[1.02] active:scale-[0.98]"
                 >
                   <TrendingDown className="w-5 h-5 mr-2 inline" />
-                  Bán {selectedPair.split('/')[0]}
+                  Sell {selectedPair.split('/')[0]}
                 </Button>
               </div>
             )}
@@ -1502,7 +1501,7 @@ export default function Trade({ onNavigate }: TradeProps) {
                 e.currentTarget.style.backgroundColor = '#c93e43';
               }}
             >
-              Hủy
+              Cancel
             </Button>
             <Button
               onClick={confirmOrder}
@@ -1534,17 +1533,17 @@ export default function Trade({ onNavigate }: TradeProps) {
               {isPlacingOrder ? (
                 <>
                   <Loader2 className="w-5 h-5 mr-2 inline animate-spin" />
-                  Đang xử lý...
+                  Processing...
                 </>
               ) : side === 'buy' ? (
                 <>
                   <TrendingUp className="w-5 h-5 mr-2 inline" />
-                  Xác nhận Mua
+                  Confirm Buy
                 </>
               ) : (
                 <>
                   <TrendingDown className="w-5 h-5 mr-2 inline" />
-                  Xác nhận Bán
+                  Confirm Sell
                 </>
               )}
             </Button>
@@ -1559,7 +1558,7 @@ export default function Trade({ onNavigate }: TradeProps) {
           style={{ backgroundColor: '#0C121E' }}
         >
           <DialogHeader>
-            <DialogTitle className="text-center">Đặt lệnh thành công!</DialogTitle>
+            <DialogTitle className="text-center">Order Placed Successfully!</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="flex justify-center mb-4">
@@ -1571,32 +1570,32 @@ export default function Trade({ onNavigate }: TradeProps) {
             {placedOrder && (
               <div className="space-y-3 p-4 bg-gray-900/50 rounded-lg border border-gray-600/50">
                 <div className="flex justify-between">
-                  <span className="text-gray-300">Mã lệnh</span>
+                  <span className="text-gray-300">Order ID</span>
                   <span className="text-white font-mono">#{placedOrder.id || placedOrder.orderId || 'N/A'}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-gray-300">Cặp giao dịch</span>
+                  <span className="text-gray-300">Trading Pair</span>
                   <span className="text-white">{placedOrderPair}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-gray-300">Loại lệnh</span>
+                  <span className="text-gray-300">Side</span>
                   <Badge className={placedOrderSide === 'buy' ? "bg-emerald-500/10 text-emerald-500" : "bg-red-500/10 text-red-500"}>
                     {placedOrderSide === 'buy' ? 'BUY' : 'SELL'}
                   </Badge>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-gray-300">Loại</span>
+                  <span className="text-gray-300">Type</span>
                   <Badge className="bg-blue-500/10 text-blue-500">{placedOrderType}</Badge>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-gray-300">Số lượng</span>
+                  <span className="text-gray-300">Quantity</span>
                   <span className="text-white">
                     {placedOrderAmount} {placedOrderPair.split('/')[0]}
                   </span>
                 </div>
                 {placedOrder.status && (
                   <div className="flex justify-between border-t border-gray-700 pt-3">
-                    <span className="text-gray-300">Trạng thái</span>
+                    <span className="text-gray-300">Status</span>
                     <Badge className={
                       placedOrder.status === 'FILLED' ? 'bg-emerald-500/10 text-emerald-500' :
                       placedOrder.status === 'PARTIALLY_FILLED' ? 'bg-yellow-500/10 text-yellow-500' :
@@ -1610,7 +1609,7 @@ export default function Trade({ onNavigate }: TradeProps) {
             )}
             
             <div className="text-center text-gray-400 text-sm mt-4">
-              Lệnh của bạn đã được đặt thành công!
+              Your order has been placed successfully!
             </div>
           </div>
           <DialogFooter className="gap-3">
@@ -1618,7 +1617,7 @@ export default function Trade({ onNavigate }: TradeProps) {
               onClick={() => setShowSuccessDialog(false)} 
               className="flex-1 font-medium py-6 text-lg transition-all text-white border border-gray-600 hover:bg-gray-800"
             >
-              Ở lại trang này
+              Stay on this page
             </Button>
             <Button
               onClick={handleGoToOrders}
@@ -1631,7 +1630,7 @@ export default function Trade({ onNavigate }: TradeProps) {
                 e.currentTarget.style.backgroundColor = '#00ac72';
               }}
             >
-              Xem lệnh
+              View Orders
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1657,7 +1656,7 @@ export default function Trade({ onNavigate }: TradeProps) {
             }
           `}</style>
           <DialogHeader>
-            <DialogTitle className="text-2xl font-bold">Chọn cặp giao dịch</DialogTitle>
+            <DialogTitle className="text-2xl font-bold">Select Trading Pair</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 flex-1 flex flex-col min-h-0">
             {/* Search Bar */}
@@ -1665,7 +1664,7 @@ export default function Trade({ onNavigate }: TradeProps) {
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
               <Input
                 type="text"
-                placeholder="Tìm kiếm coin (BTC, ETH, ...)"
+                placeholder="Search coins (BTC, ETH, ...)"
                 value={coinSearchQuery}
                 onChange={(e) => setCoinSearchQuery(e.target.value)}
                 className="bg-gray-800 border-gray-700 text-white pl-10 h-12"
@@ -1753,7 +1752,7 @@ export default function Trade({ onNavigate }: TradeProps) {
                         </div>
                         {isSelected && (
                           <div className="text-emerald-500 text-xs mt-1">
-                            Đã chọn
+                            Selected
                           </div>
                         )}
                       </div>
@@ -1768,7 +1767,7 @@ export default function Trade({ onNavigate }: TradeProps) {
                 );
               }).length === 0 && (
                 <div className="text-center py-8 text-gray-400">
-                  Không tìm thấy coin nào
+                  No coins found
                 </div>
               )}
             </div>

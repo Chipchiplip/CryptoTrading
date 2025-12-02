@@ -10,9 +10,9 @@ import { PremiumFeatureGate } from '../../PremiumFeatureGate';
 type StatusFilter = 'RUNNING' | 'STOPPED' | 'ALL';
 
 const statusOptions: { label: string; value: StatusFilter }[] = [
-  { label: 'Đang chạy', value: 'RUNNING' },
-  { label: 'Đã dừng', value: 'STOPPED' },
-  { label: 'Tất cả', value: 'ALL' },
+  { label: 'Running', value: 'RUNNING' },
+  { label: 'Stopped', value: 'STOPPED' },
+  { label: 'All', value: 'ALL' },
 ];
 
 const statusClasses: Record<string, string> = {
@@ -29,17 +29,17 @@ const normalizeStatus = (status: string) => status?.toUpperCase?.() ?? status;
 const statusLabel = (status: string) => {
   switch (normalizeStatus(status)) {
     case 'RUNNING':
-      return 'Đang chạy';
+      return 'Running';
     case 'STARTING':
-      return 'Đang khởi động';
+      return 'Starting';
     case 'STOPPED':
-      return 'Đã dừng';
+      return 'Stopped';
     case 'PAUSED':
-      return 'Tạm dừng';
+      return 'Paused';
     case 'ERROR':
-      return 'Lỗi';
+      return 'Error';
     case 'DRAFT':
-      return 'Bản nháp';
+      return 'Draft';
     default:
       return status;
   }
@@ -148,7 +148,7 @@ const TraderBots = () => {
       setActionBanner({ type: 'error', message: result.error });
     } else {
       const actionVerb =
-        action === 'start' ? 'đã được bật' : action === 'stop' ? 'đã dừng' : 'đã xóa';
+        action === 'start' ? 'has been started' : action === 'stop' ? 'has been stopped' : 'has been deleted';
       setActionBanner({ type: 'success', message: `Bot "${bot.name}" ${actionVerb}.` });
       await fetchBots(page, statusFilter);
     }
@@ -180,9 +180,9 @@ const TraderBots = () => {
     <div className="max-w-6xl mx-auto px-4 py-8 space-y-6">
       <div>
         <p className="text-sm text-emerald-400 uppercase tracking-widest mb-1">Bots</p>
-        <h1 className="text-3xl font-semibold">Danh sách bot đang hoạt động</h1>
+        <h1 className="text-3xl font-semibold">Active Bots List</h1>
         <p className="text-gray-400 mt-2">
-          Xem nhanh các bot bạn đã tạo từ AI hoặc thủ công, theo dõi trạng thái hoạt động và tín hiệu gần nhất.
+          Quick view of bots you've created from AI or manually, track activity status and latest signals.
         </p>
       </div>
 
@@ -244,7 +244,7 @@ const TraderBots = () => {
 
       <div className="bg-gray-950 border border-gray-800 rounded-2xl p-4 flex flex-wrap gap-4 items-center justify-between">
         <div className="flex gap-3 items-center">
-          <div className="text-sm text-gray-400">Trạng thái</div>
+          <div className="text-sm text-gray-400">Status</div>
           <div className="flex gap-2">
             {statusOptions.map((option) => (
               <button
@@ -261,7 +261,7 @@ const TraderBots = () => {
             ))}
           </div>
           <div className="text-sm text-gray-500">
-            Đang chạy: <span className="text-white font-medium">{activeCount}</span>
+            Running: <span className="text-white font-medium">{activeCount}</span>
           </div>
         </div>
         <div className="flex gap-2">
@@ -271,7 +271,7 @@ const TraderBots = () => {
             onClick={() => fetchBots(Math.max(page - 1, 1))}
             disabled={!canPrev || loading}
           >
-            Trang trước
+            Previous
           </Button>
           <Button
             variant="outline"
@@ -279,7 +279,7 @@ const TraderBots = () => {
             onClick={() => fetchBots(Math.min(page + 1, totalPages))}
             disabled={!canNext || loading}
           >
-            Trang sau
+            Next
           </Button>
           <Button onClick={handleRefresh} disabled={loading} className="bg-emerald-500 text-black hover:bg-emerald-400">
             {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
@@ -299,12 +299,12 @@ const TraderBots = () => {
             <thead className="bg-gray-900 text-gray-400 uppercase text-xs tracking-wider">
               <tr>
                 <th className="px-6 py-3 font-semibold">Bot</th>
-                <th className="px-6 py-3 font-semibold">Chiến lược</th>
-                <th className="px-6 py-3 font-semibold">Trạng thái</th>
-                <th className="px-6 py-3 font-semibold">Tín hiệu gần nhất</th>
+                <th className="px-6 py-3 font-semibold">Strategy</th>
+                <th className="px-6 py-3 font-semibold">Status</th>
+                <th className="px-6 py-3 font-semibold">Latest Signal</th>
                 <th className="px-6 py-3 font-semibold">P&L</th>
-                <th className="px-6 py-3 font-semibold">Lần chạy cuối</th>
-                <th className="px-6 py-3 font-semibold text-center">Hành động</th>
+                <th className="px-6 py-3 font-semibold">Last Run</th>
+                <th className="px-6 py-3 font-semibold text-center">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-900">
@@ -319,7 +319,7 @@ const TraderBots = () => {
               ) : bots.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="text-center py-10 text-gray-500">
-                    Chưa có bot nào cho bộ lọc này. Vào AI Chat để tạo bot mới nhé!
+                    No bots found for this filter. Go to AI Chat to create a new bot!
                   </td>
                 </tr>
               ) : (
@@ -350,7 +350,7 @@ const TraderBots = () => {
                         <>
                           <div>{bot.runtime.lastSignal}</div>
                           <div className="text-xs text-gray-500 mt-1">
-                            {bot.runtime.lastExecutionAt ? `Lúc ${formatDate(bot.runtime.lastExecutionAt)}` : '—'}
+                            {bot.runtime.lastExecutionAt ? `At ${formatDate(bot.runtime.lastExecutionAt)}` : '—'}
                           </div>
                         </>
                       ) : (
@@ -400,7 +400,7 @@ const TraderBots = () => {
                             ) : (
                               <>
                                 <Play className="w-4 h-4 mr-1" />
-                                Bật
+                                Start
                               </>
                             )}
                           </Button>
@@ -418,7 +418,7 @@ const TraderBots = () => {
                             ) : (
                               <>
                                 <Square className="w-4 h-4 mr-1" />
-                                Dừng
+                                Stop
                               </>
                             )}
                           </Button>
@@ -436,7 +436,7 @@ const TraderBots = () => {
                             ) : (
                               <>
                                 <Trash2 className="w-4 h-4 mr-1" />
-                                Xóa
+                                Delete
                               </>
                             )}
                           </Button>
@@ -454,9 +454,9 @@ const TraderBots = () => {
         </div>
         <div className="border-t border-gray-900 px-6 py-3 text-xs text-gray-500 flex justify-between">
           <span>
-            Trang {page}/{totalPages}
+            Page {page}/{totalPages}
           </span>
-          <span>Tổng {bots.length} bot trong trang này</span>
+          <span>Total {bots.length} bots on this page</span>
         </div>
       </div>
     </div>

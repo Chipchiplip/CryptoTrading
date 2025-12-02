@@ -241,7 +241,7 @@ export default function TraderDashboard({ onNavigate }: TraderDashboardProps) {
                 <div className="lg:col-span-2">
                     <ChartCard
                         title="Net Asset Value (NAV)"
-                        subtitle="Last 30 days performance - Tổng giá trị tài sản ròng (tất cả crypto + USD) theo thời gian"
+                        subtitle="Last 30 days performance - Total net asset value (all crypto + USD) over time"
                         action={
                             <Button
                                 size="sm"
@@ -255,8 +255,8 @@ export default function TraderDashboard({ onNavigate }: TraderDashboardProps) {
                         {navData.length === 0 ? (
                             <div className="flex items-center justify-center h-[280px] text-gray-400">
                                 <div className="text-center">
-                                    <p className="mb-2">Chưa có dữ liệu NAV</p>
-                                    <p className="text-sm">Dữ liệu sẽ xuất hiện sau khi bạn bắt đầu giao dịch</p>
+                                    <p className="mb-2">No NAV data yet</p>
+                                    <p className="text-sm">Data will appear after you start trading</p>
                                 </div>
                             </div>
                         ) : (
@@ -269,13 +269,13 @@ export default function TraderDashboard({ onNavigate }: TraderDashboardProps) {
                 <div>
                     <ChartCard
                         title="Today's PnL"
-                        subtitle="Hourly breakdown - Lợi nhuận/lỗ theo từng giờ trong ngày"
+                        subtitle="Hourly breakdown - Profit/loss per hour per day"
                     >
                         {pnlData.length === 0 ? (
                             <div className="flex items-center justify-center h-[280px] text-gray-400">
                                 <div className="text-center">
-                                    <p className="mb-2">Chưa có dữ liệu PnL hôm nay</p>
-                                    <p className="text-sm">Dữ liệu sẽ xuất hiện sau khi có giao dịch</p>
+                                    <p className="mb-2">No PnL data today yet</p>
+                                    <p className="text-sm">Data will appear after trading</p>
                                 </div>
                             </div>
                         ) : (
@@ -291,7 +291,7 @@ export default function TraderDashboard({ onNavigate }: TraderDashboardProps) {
                     <div className="flex items-center justify-between mb-6">
                         <div>
                             <h2 className="text-xl">Top Holdings</h2>
-                            <p className="text-gray-400 text-sm">Các tài sản crypto bạn đang nắm giữ, sắp xếp theo giá trị USD</p>
+                            <p className="text-gray-400 text-sm">Crypto assets you hold, sorted by USD value</p>
                         </div>
                         <Button
                             variant="ghost"
@@ -305,7 +305,7 @@ export default function TraderDashboard({ onNavigate }: TraderDashboardProps) {
                     <div className="space-y-3">
                         {holdings.length === 0 ? (
                             <div className="text-gray-400 text-sm text-center py-8">
-                                Chưa có holdings. Bắt đầu mua crypto để xem ở đây!
+                                No holdings yet. Start buying crypto to see them here!
                             </div>
                         ) : (
                             holdings.slice(0, 5).map((holding, index) => (
@@ -337,7 +337,7 @@ export default function TraderDashboard({ onNavigate }: TraderDashboardProps) {
                     <div className="flex items-center justify-between mb-6">
                         <div>
                             <h2 className="text-xl">Recent Orders</h2>
-                            <p className="text-gray-400 text-sm">5 lệnh giao dịch gần đây nhất của bạn</p>
+                            <p className="text-gray-400 text-sm">Your 5 most recent trades</p>
                         </div>
                         <Button
                             variant="ghost"
@@ -351,7 +351,7 @@ export default function TraderDashboard({ onNavigate }: TraderDashboardProps) {
                     <div className="space-y-3">
                         {recentOrders.length === 0 ? (
                             <div className="text-gray-400 text-sm text-center py-8">
-                                Chưa có lệnh nào. Bắt đầu giao dịch để xem ở đây!
+                                No orders yet. Start trading to see them here!
                             </div>
                         ) : (
                             recentOrders.map((order) => (

@@ -188,7 +188,7 @@ export default function Watchlist({ onNavigate }: WatchlistProps) {
 
   const addToWatchlist = async (crypto: Crypto) => {
     if (reachedLimit) {
-      setError('Gói Free chỉ có thể theo dõi tối đa 2 coin. Vui lòng nâng cấp Premium để thêm coin.');
+      setError('Free plan can only track up to 2 coins. Please upgrade to Premium to add more coins.');
       return;
     }
     const res = await PortfolioApi.addCoinToDefault({ coinSymbol: crypto.symbol });
@@ -222,7 +222,7 @@ export default function Watchlist({ onNavigate }: WatchlistProps) {
             <h1 className="text-3xl mb-2">My Watchlist</h1>
             <p className="text-gray-400">Track your favorite cryptocurrencies</p>
             <p className="text-sm text-gray-500 mt-1">
-              {planLoading ? 'Đang kiểm tra gói...' : isPremium ? 'Bạn đang sử dụng Premium - watchlist không giới hạn.' : 'Bạn đang ở gói Free - tối đa 2 coin trong watchlist.'}
+              {planLoading ? 'Checking plan...' : isPremium ? 'You are using Premium - unlimited watchlist.' : 'You are on Free plan - maximum 2 coins in watchlist.'}
             </p>
           </div>
           <Dialog open={addCoinDialogOpen} onOpenChange={setAddCoinDialogOpen}>
@@ -304,7 +304,7 @@ export default function Watchlist({ onNavigate }: WatchlistProps) {
           <Alert className="bg-yellow-500/10 border-yellow-500/50 text-yellow-300 mb-4">
             <AlertCircle className="h-4 w-4" />
             <AlertDescription>
-              Gói Free chỉ theo dõi tối đa {freeLimit} coin. Bạn đang theo dõi {watchlistCoins.length}/{freeLimit}. Nâng cấp Premium để mở khóa watchlist không giới hạn.
+              Free plan only tracks a maximum of {freeLimit} coins. You are currently tracking {watchlistCoins.length}/{freeLimit}. Upgrade to Premium to unlock unlimited watchlist.
             </AlertDescription>
           </Alert>
         )}

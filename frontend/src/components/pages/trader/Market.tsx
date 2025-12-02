@@ -326,8 +326,8 @@ export default function Market({ onNavigate }: MarketProps) {
       <Card className="bg-gray-900 border-gray-800 p-6">
         {/* Header */}
         <div className="mb-6">
-          <h1 className="text-3xl font-bold mb-2">Thị trường</h1>
-          <p className="text-gray-400">Dữ liệu tiền mã hóa theo thời gian thực - Cập nhật mỗi 30 giây</p>
+          <h1 className="text-3xl font-bold mb-2">Market</h1>
+          <p className="text-gray-400">Real-time cryptocurrency data - Updated every 30 seconds</p>
         </div>
 
         {/* Search */}
@@ -364,15 +364,15 @@ export default function Market({ onNavigate }: MarketProps) {
                   <th className="p-4">#</th>
                   <th className="p-4">Coin</th>
                   <th className="p-4 text-right">
-                    <SortButton field="price" label="Giá (USD)" />
+                    <SortButton field="price" label="Price (USD)" />
                   </th>
                   <th className="p-4 text-right">
                     <SortButton field="change24h" label="24h %" />
                   </th>
                   <th className="p-4 text-right hidden md:table-cell">
-                    <SortButton field="marketCap" label="Vốn hóa" />
+                    <SortButton field="marketCap" label="Market Cap" />
                   </th>
-                  <th className="p-4 text-right hidden lg:table-cell">Khối lượng 24h</th>
+                  <th className="p-4 text-right hidden lg:table-cell">24h Volume</th>
                 </tr>
               </thead>
               <tbody>

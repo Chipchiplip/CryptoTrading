@@ -11,7 +11,6 @@ import {
   CreditCard,
   Settings,
   Bell,
-  Search,
   ChevronDown,
   Menu,
   X,
@@ -22,7 +21,6 @@ import {
   Bot,
   Cpu
 } from 'lucide-react';
-import { Input } from './ui/input';
 import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar';
 import { setAccessToken } from '../api/http';
 import { useNavigate } from 'react-router-dom';
@@ -182,21 +180,21 @@ export default function TraderLayout({ children, currentPage, onNavigate }: Trad
   const SidebarContent = () => (
     <div className="flex flex-col h-full">
       {/* Logo */}
-      <div className="p-6 border-b border-gray-800 flex-shrink-0">
+      <div className="p-3 border-b border-gray-800 flex-shrink-0">
         <div className="flex items-center gap-2">
           <img 
             src="/logo.png" 
             alt="CryptoTrade Logo" 
-            className="w-10 h-10 object-contain"
+            className="w-8 h-8 object-contain"
           />
-          <span className="text-xl">CryptoTrade</span>
+          <span className="text-lg font-semibold">CryptoTrade</span>
         </div>
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 p-4 space-y-1">
-        <div className="text-xs text-gray-500 px-2 pb-2">
-          {subscriptionLoading ? 'Đang kiểm tra gói...' : planType === 2 ? 'Premium plan active' : 'Free plan'}
+      <nav className="flex-1 p-2 space-y-0.5 overflow-hidden">
+        <div className="text-xs text-gray-500 px-2 py-1.5">
+          {subscriptionLoading ? 'Checking plan...' : planType === 2 ? 'Premium plan active' : 'Free plan'}
         </div>
         {menuItems.map((item) => {
           const isLocked = item.requiresPremium && planType !== 2;
@@ -204,19 +202,19 @@ export default function TraderLayout({ children, currentPage, onNavigate }: Trad
             <button
               key={item.id}
               onClick={() => handleMenuNavigate(item)}
-              className={`w-full flex items-center justify-between gap-3 px-4 py-3 rounded-lg transition-colors ${
+              className={`w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg transition-colors text-sm ${
                 currentPage === item.id
                   ? 'bg-emerald-500 text-black'
                   : 'text-gray-300 hover:bg-gray-800 hover:text-white'
               } ${isLocked ? 'opacity-70' : ''}`}
             >
-              <div className="flex items-center gap-3">
-                <item.icon className="w-5 h-5" />
-                <span>{item.label}</span>
+              <div className="flex items-center gap-2">
+                <item.icon className="w-4 h-4 flex-shrink-0" />
+                <span className="truncate">{item.label}</span>
               </div>
               {item.requiresPremium && (
                 <span
-                  className={`text-xs px-2 py-0.5 rounded-full ${
+                  className={`text-xs px-1.5 py-0.5 rounded-full flex-shrink-0 ${
                     isLocked ? 'bg-emerald-500/10 text-emerald-300' : 'bg-emerald-500/60 text-black'
                   }`}
                 >
@@ -229,19 +227,19 @@ export default function TraderLayout({ children, currentPage, onNavigate }: Trad
       </nav>
 
       {/* Quick Stats - Fixed at bottom */}
-      <div className="p-4 border-t border-gray-800 flex-shrink-0">
-        <div className="bg-gray-900 rounded-lg p-4 space-y-2">
-          <div className="text-gray-400 text-sm">Total Balance</div>
+      <div className="p-3 border-t border-gray-800 flex-shrink-0">
+        <div className="bg-gray-900 rounded-lg p-3 space-y-1.5">
+          <div className="text-gray-400 text-xs">Total Balance</div>
           {balanceLoading ? (
-            <div className="flex items-center justify-center py-2">
-              <Loader2 className="w-5 h-5 text-gray-400 animate-spin" />
+            <div className="flex items-center justify-center py-1">
+              <Loader2 className="w-4 h-4 text-gray-400 animate-spin" />
             </div>
           ) : dashboardSummary ? (
             <>
-              <div className="text-2xl text-white" data-testid="sidebar-total-balance">
+              <div className="text-xl text-white" data-testid="sidebar-total-balance">
                 {formatCurrency(dashboardSummary.totalBalance)}
               </div>
-              <div className={`text-sm ${
+              <div className={`text-xs ${
                 dashboardSummary.totalBalanceChange >= 0 ? 'text-emerald-500' : 'text-red-500'
               }`} data-testid="sidebar-balance-change">
                 {dashboardSummary.totalBalanceChange >= 0 ? '+' : ''}
@@ -249,9 +247,9 @@ export default function TraderLayout({ children, currentPage, onNavigate }: Trad
               </div>
             </>
           ) : (
-            <div className="text-sm text-gray-500">
-              <div className="text-xl">--</div>
-              <div className="text-xs mt-1">Unable to load</div>
+            <div className="text-xs text-gray-500">
+              <div className="text-lg">--</div>
+              <div className="text-xs mt-0.5">Unable to load</div>
             </div>
           )}
         </div>
@@ -298,7 +296,7 @@ export default function TraderLayout({ children, currentPage, onNavigate }: Trad
       )}
 
       {/* Main Content */}
-      <main className="flex-1 overflow-auto">
+      <main className="flex-1 overflow-y-auto h-screen">
         {/* Header */}
         <header className="bg-black border-b border-gray-800 px-4 lg:px-8 py-4 sticky top-0 z-10">
           <div className="flex items-center justify-between">
@@ -309,13 +307,6 @@ export default function TraderLayout({ children, currentPage, onNavigate }: Trad
               >
                 <Menu className="w-6 h-6" />
               </button>
-              <div className="relative hidden md:block">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
-                <Input 
-                  placeholder="Search coins, orders..." 
-                  className="pl-10 bg-gray-900 border-gray-800 w-64"
-                />
-              </div>
             </div>
             
             <div className="flex items-center gap-4">

@@ -50,7 +50,7 @@ const AiTradingChat = () => {
 
   const handleSend = async () => {
     if (!userInfo) {
-      setStatus({ type: 'error', text: 'Vui lòng đăng nhập lại để sử dụng AI Chat.' });
+      setStatus({ type: 'error', text: 'Please log in again to use AI Chat.' });
       return;
     }
 
@@ -82,11 +82,11 @@ const AiTradingChat = () => {
       appendMessage({
         id: createId(),
         role: 'ai',
-        text: result.error || 'Hệ thống AI đang bận, vui lòng thử lại sau.',
+        text: result.error || 'AI system is busy, please try again later.',
         timestamp: new Date().toISOString(),
         error: true,
       });
-      setStatus({ type: 'error', text: result.error || 'Không thể gửi tin nhắn đến AI.' });
+      setStatus({ type: 'error', text: result.error || 'Unable to send message to AI.' });
       return;
     }
 
@@ -136,13 +136,13 @@ const AiTradingChat = () => {
 
       const priceResult = await MarketApi.getCryptocurrency(baseAsset);
       if (!priceResult.ok || !priceResult.data || !priceResult.data.currentPrice) {
-        throw new Error('Không thể lấy giá thị trường hiện tại.');
+        throw new Error('Unable to get current market price.');
       }
 
       const price = priceResult.data.currentPrice;
       const quantity = Number((suggestion.amountUsdt / price).toFixed(6));
       if (!quantity || quantity <= 0) {
-        throw new Error('Số lượng giao dịch không hợp lệ.');
+        throw new Error('Invalid trade quantity.');
       }
 
       const orderResult = await TradingApi.placeOrder({
@@ -158,12 +158,12 @@ const AiTradingChat = () => {
 
       setStatus({
         type: 'success',
-        text: `Đã đặt lệnh ${suggestion.decision} ${normalizedSymbol} thành công.`,
+        text: `Order ${suggestion.decision} ${normalizedSymbol} placed successfully.`,
       });
     } catch (error: any) {
       setStatus({
         type: 'error',
-        text: error?.message || 'Đặt lệnh thất bại. Vui lòng thử lại.',
+        text: error?.message || 'Failed to place order. Please try again.',
       });
     } finally {
       setPlacingOrderId(null);
@@ -180,7 +180,7 @@ const AiTradingChat = () => {
     }
     setStatus({
       type: 'success',
-      text: `Đã tạo bot "${bot.name}". Bot đang ở trạng thái bản nháp, hãy vào trang Bots và nhấn "Bật" để kích hoạt.`,
+      text: `Bot "${bot.name}" has been created. The bot is in draft status, go to the Bots page and click "Start" to activate.`,
     });
   };
 
@@ -203,14 +203,14 @@ const AiTradingChat = () => {
   }
 
   return (
-    <div className="min-h-screen bg-black text-white">
+    <div className="bg-black text-white">
       <div className="max-w-5xl mx-auto px-4 py-8 space-y-6">
         <div>
           <p className="text-sm text-emerald-400 uppercase tracking-widest mb-1">AI Trading</p>
-          <h1 className="text-3xl font-semibold">Trò chuyện với AI Trading Assistant</h1>
+          <h1 className="text-3xl font-semibold">Chat with AI Trading Assistant</h1>
           <p className="text-gray-400 mt-2">
-            AI sẽ đọc kế hoạch giao dịch, danh mục và thị trường trước khi trả lời, đồng thời cung cấp gợi ý lệnh
-            (nếu có signal rõ ràng).
+            AI will read your trading plan, portfolio and market before responding, and provide order suggestions
+            (if there is a clear signal).
           </p>
         </div>
 
@@ -227,23 +227,23 @@ const AiTradingChat = () => {
 
         <div className="bg-gray-950 border border-gray-800 rounded-2xl p-4 space-y-4">
           <div>
-            <label className="text-sm text-gray-400 block mb-2">Tin nhắn</label>
+            <label className="text-sm text-gray-400 block mb-2">Message</label>
             <Textarea
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder="Ví dụ: “Dạo này BTC sao rồi?”, “Nên mua coin nào?”, “Scalp BTC được không?” – khi cần lên plan hoặc tạo bot thì hãy gửi giúp mình vốn, risk mode, cặp và timeframe nhé."
+              placeholder='Example: "How is BTC doing lately?", "Which coin should I buy?", "Can I scalp BTC?" – when you need a plan or create a bot, please send me capital, risk mode, pair and timeframe.'
               className="bg-gray-900 border-gray-800 min-h-[80px]"
             />
           </div>
           <div className="flex items-center justify-between">
-            <p className="text-sm text-gray-500">AI chỉ trả về lệnh spot và tuân thủ giới hạn vốn đã cấu hình.</p>
+            <p className="text-sm text-gray-500">AI only returns spot orders and respects configured capital limits.</p>
             <Button
               onClick={handleSend}
               disabled={loading || !input.trim()}
               className="bg-emerald-500 text-black hover:bg-emerald-400"
             >
               {loading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Send className="w-4 h-4 mr-2" />}
-              Gửi
+              Send
             </Button>
           </div>
         </div>
@@ -252,7 +252,7 @@ const AiTradingChat = () => {
           {messages.length === 0 && (
             <div className="h-full flex flex-col items-center justify-center text-center text-gray-500 space-y-2">
               <Bot className="w-12 h-12 text-emerald-500" />
-              <p>Bạn chưa có cuộc trò chuyện nào. Gửi câu hỏi để bắt đầu!</p>
+              <p>You haven't started any conversation yet. Send a question to get started!</p>
             </div>
           )}
 
@@ -296,19 +296,19 @@ const AiTradingChat = () => {
                   <div className="ml-0 md:ml-12 bg-emerald-500/10 border border-emerald-500/40 rounded-2xl p-4 text-sm text-emerald-100 space-y-2">
                     <div className="flex items-center justify-between">
                       <div className="font-semibold uppercase tracking-wide text-emerald-300">
-                        Gợi ý: {msg.tradeSuggestion.decision} {normalizeSymbol(msg.tradeSuggestion.symbol)}
+                        Suggestion: {msg.tradeSuggestion.decision} {normalizeSymbol(msg.tradeSuggestion.symbol)}
                       </div>
                       <div className="text-xs text-gray-400">
-                        Tự tin {(msg.tradeSuggestion.confidence * 100).toFixed(0)}%
+                        Confidence {(msg.tradeSuggestion.confidence * 100).toFixed(0)}%
                       </div>
                     </div>
                     <div className="grid sm:grid-cols-3 gap-3 text-gray-200">
                       <div>
-                        <p className="text-xs text-gray-400">Vốn đề xuất</p>
+                        <p className="text-xs text-gray-400">Suggested Capital</p>
                         <p className="text-base font-semibold">${msg.tradeSuggestion.amountUsdt.toLocaleString()}</p>
                       </div>
                       <div>
-                        <p className="text-xs text-gray-400">Kỳ vọng</p>
+                        <p className="text-xs text-gray-400">Expected</p>
                         <p className="text-base font-semibold">
                           {msg.tradeSuggestion.expectedReturnPct
                             ? `${msg.tradeSuggestion.expectedReturnPct.toFixed(1)}%`
@@ -316,7 +316,7 @@ const AiTradingChat = () => {
                         </p>
                       </div>
                       <div>
-                        <p className="text-xs text-gray-400">Thời gian nắm giữ</p>
+                        <p className="text-xs text-gray-400">Time Horizon</p>
                         <p className="text-base font-semibold capitalize">{msg.tradeSuggestion.timeHorizon}</p>
                       </div>
                     </div>
@@ -329,10 +329,10 @@ const AiTradingChat = () => {
                       {placingOrderId === msg.id ? (
                         <>
                           <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                          Đang đặt lệnh...
+                          Placing order...
                         </>
                       ) : (
-                        'Đặt lệnh theo gợi ý này'
+                        'Place order with this suggestion'
                       )}
                     </Button>
                   </div>
@@ -355,11 +355,11 @@ const AiTradingChat = () => {
                         </div>
                         <div className="grid sm:grid-cols-2 gap-3">
                           <div>
-                            <p className="text-xs text-gray-500">Vốn mỗi lệnh</p>
+                            <p className="text-xs text-gray-500">Capital per trade</p>
                             <p className="text-lg font-semibold">${bot.maxCapitalPerTrade.toLocaleString()}</p>
                           </div>
                           <div>
-                            <p className="text-xs text-gray-500">Tối đa mỗi ngày</p>
+                            <p className="text-xs text-gray-500">Max per day</p>
                             <p className="text-lg font-semibold">${bot.maxDailyExposure.toLocaleString()}</p>
                           </div>
                         </div>
@@ -369,7 +369,7 @@ const AiTradingChat = () => {
                           className="border-emerald-500 text-emerald-300 hover:bg-emerald-500/10"
                           onClick={() => handleApplyBotSuggestion(bot)}
                         >
-                          Tạo bot từ gợi ý này
+                          Create bot from this suggestion
                         </Button>
                       </div>
                     ))}
