@@ -112,7 +112,7 @@ const TraderBots = () => {
   }, [statusFilter, isPremium]);
 
   const activeCount = useMemo(
-    () => bots.filter((bot) => bot.status === 'RUNNING').length,
+    () => bots.filter((bot) => normalizeStatus(bot.status) === 'RUNNING').length,
     [bots]
   );
 
@@ -464,4 +464,3 @@ const TraderBots = () => {
 };
 
 export default TraderBots;
-

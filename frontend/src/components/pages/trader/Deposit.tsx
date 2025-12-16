@@ -97,7 +97,7 @@ export default function Deposit() {
         const currency = (sessionResult.data.sessionCurrency || 'usd').toUpperCase();
         const credited = confirmResult.data.creditedAmount;
         const formattedAmount = credited.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-        setSuccess(`✅ Nạp tiền thành công! ${currency === 'USD' ? '$' : ''}${formattedAmount} ${currency} đã được cộng vào tài khoản của bạn.`);
+        setSuccess(`✅ Deposit successful! ${currency === 'USD' ? '$' : ''}${formattedAmount} ${currency} has been credited to your account.`);
         refreshBalances();
         resetUrl();
       })();
@@ -106,7 +106,7 @@ export default function Deposit() {
 
     if (status === 'success') {
       const formattedVndAmount = amountParam ? parseFloat(amountParam).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 }) : '';
-      setSuccess(`✅ Nạp tiền thành công! ${formattedVndAmount ? `₫${formattedVndAmount} VND` : 'Số tiền'} đã được cộng vào tài khoản của bạn.`);
+      setSuccess(`✅ Deposit successful! ${formattedVndAmount ? `₫${formattedVndAmount} VND` : 'The amount'} has been credited to your account.`);
       refreshBalances();
       resetUrl();
     } else if (status === 'failed') {
